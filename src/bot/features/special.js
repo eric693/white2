@@ -14,6 +14,15 @@ const money = (c, n) => `${c.currency_emoji || '🪙'} ${Number(n).toLocaleStrin
 const shopsOf = (gid) => db.prepare('SELECT * FROM special_shops WHERE guild_id=? AND enabled=1 ORDER BY sort, id').all(gid);
 const itemsOfShop = (gid, shopId) => db.prepare('SELECT * FROM special_items WHERE guild_id=? AND enabled=1 AND shop_id=? ORDER BY sort, price').all(gid, shopId);
 
+// 欠稅（餘額負數）的人不能兌換：先把債還完才能花錢
+const debtError = (gid, uid, uname) => {
+  const w = wallet(gid, uid, uname);
+  if (w.coins >= 0) return null;
+  const gc = gcfg(gid);
+  return `🚫 你目前**欠稅**（餘額 ${w.coins.toLocaleString('en-US')} ${gc.currency_name || '星幣'}），` +
+    `要先把${gc.currency_name || '星幣'}賺回正數才能兌換。`;
+};
+
 // 一次可以兌換幾份：受庫存與餘額夾擊，上限 25（下拉選單最多 25 個選項）
 const QTY_MAX = 25;
 function qtyCap(gid, item, uid, uname) {
@@ -27,6 +36,8 @@ function qtyCap(gid, item, uid, uname) {
 async function doRedeem(client, gid, item, user, uname, qtyRaw = 1) {
   const c = scfg(gid), gc = gcfg(gid);
   const qty = Math.max(1, Math.min(QTY_MAX, Math.floor(Number(qtyRaw) || 1)));
+  const debt = debtError(gid, user.id, uname);
+  if (debt) return { error: debt };
   if (item.stock === 0) return { error: `**${item.name}** 已經兌換完了（庫存 0）。` };
   if (item.stock > 0 && qty > item.stock) return { error: `**${item.name}** 只剩 ${item.stock} 份，沒辦法一次換 ${qty} 份。` };
   const w = wallet(gid, user.id, uname);
@@ -143,6 +154,8 @@ function init(client) {
         const item = db.prepare('SELECT * FROM special_items WHERE guild_id=? AND enabled=1 AND id=?').get(gid, parseInt(i.values[0], 10));
         if (!item) return i.reply({ content: '這個獎勵已不存在。', flags: MessageFlags.Ephemeral });
         if (item.stock === 0) return i.reply({ content: `**${item.name}** 已經兌換完了（庫存 0）。`, flags: MessageFlags.Ephemeral });
+        const debt = debtError(gid, i.user.id, i.user.username);
+        if (debt) return i.reply({ content: debt, flags: MessageFlags.Ephemeral });
         const { cap, coins } = qtyCap(gid, item, i.user.id, i.user.username);
         if (cap <= 0) {
           return i.reply({ content: `${gc.currency_name}不夠：**${item.name}** 一份要 ${item.price.toLocaleString('en-US')}，你只有 ${coins.toLocaleString('en-US')}。`, flags: MessageFlags.Ephemeral });
@@ -179,6 +192,8 @@ function init(client) {
       const uid = i.user.id, uname = i.user.username;
       const reply = (payload) => i.reply({ ...payload, flags: MessageFlags.Ephemeral });
 
+      const debtMsg = debtError(gid, uid, uname);
+
       // ---- 特殊商店：列出各分店與商品 ----
       if (cmdName === '特殊商店') {
         // 頻道限定：這個頻道有綁分店 → 只列那幾間；沒綁的頻道維持列全部
@@ -202,6 +217,7 @@ function init(client) {
           `　${it.emoji || '🎁'} ${it.name}　${money(gc, it.price)}${it.stock < 0 ? '' : `（庫存 ${it.stock}）`}`).join('\n'));
         if (!blocks.length) return await reply({ content: scoped ? '這個頻道的商店目前沒有上架任何獎勵。' : '特殊商店目前還沒有任何獎勵。' });
         if (scoped) embed.setTitle('🎁 ' + shops.map(s => `${s.emoji || '🏷️'} ${s.name}`).join('・'));
+        if (debtMsg) blocks.unshift(debtMsg + '\n');
         embed.setDescription(blocks.join('\n\n'));
         // 兌換選單：跟商店面板一樣點一下就換，不用打 /兌換 名稱
         const pool = [];
@@ -220,6 +236,7 @@ function init(client) {
 
       // ---- 兌換 ----
       if (i.commandName === '兌換') {
+        if (debtMsg) return await reply({ content: debtMsg });
         const what = (i.options.getString('商品') || '').trim();
         const item = db.prepare('SELECT * FROM special_items WHERE guild_id=? AND enabled=1 AND name=?').get(gid, what);
         if (!item) return await reply({ content: `找不到獎勵「${what}」，用 \`/特殊商店\` 看看有哪些。` });

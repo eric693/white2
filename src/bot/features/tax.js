@@ -118,12 +118,16 @@ function assess(gid, userId) {
 //   floor 模式＝補到 relief_floor（負債的人會先被填平）
 //   fixed 模式＝每人固定發 relief_amount
 // relief_from_tax=1 時，總發放不會超過本期實收稅金，超過就等比例縮減（國庫不會憑空印錢）。
-function planRelief(gid, taxSum, client) {
+// after：{user_id: 課稅後餘額}。試算模式錢包還沒被扣，一定要靠這份對照表才算得準。
+function planRelief(gid, taxSum, client, after = new Map()) {
   const c = cfg(gid);
   if (!c.relief_enabled) return [];
   const guild = client && client.guilds ? client.guilds.cache.get(gid) : null;
   const below = c.relief_below || 0;
-  const rows = db.prepare('SELECT user_id, username, coins FROM econ_wallets WHERE guild_id=? AND coins < ?').all(gid, below);
+  const all = db.prepare('SELECT user_id, username, coins FROM econ_wallets WHERE guild_id=?').all(gid);
+  const rows = all
+    .map(w => ({ ...w, coins: after.has(w.user_id) ? after.get(w.user_id) : w.coins }))
+    .filter(w => w.coins < below);
   let list = [];
   for (const w of rows) {
     if (isExempt(gid, w.user_id, guild && guild.members.cache.get(w.user_id))) continue;   // 管理員不領普發
@@ -207,7 +211,8 @@ async function runGuild(client, gid, { force = false, dryRun = false } = {}) {
     pay();
   }
   const sum = bills.reduce((s, b) => s + (b.paid ?? b.total), 0);
-  const relief = planRelief(gid, sum, client);
+  const after = new Map(bills.map(b => [b.userId, b.balance - (b.paid ?? b.total)]));
+  const relief = planRelief(gid, sum, client, after);
   const reliefSum = dryRun ? relief.reduce((a, b) => a + b.amount, 0) : payRelief(gid, period, relief);
   if (!dryRun) await announce(client, gid, period, bills, relief, reliefSum).catch(() => {});
   return { period, bills, sum, relief, reliefSum };
