@@ -546,7 +546,7 @@
     <thead><tr><th>稅目</th><th class="wrap">課什麼</th><th class="wrap">預設稅額</th></tr></thead>
     <tbody>
       <tr><td>💰 所得稅</td><td class="wrap">你目前的<strong>星幣餘額</strong></td><td class="wrap">餘額低於免稅額不課；超過就<strong>整筆</strong>課 20% / 25% / 30% / 35%</td></tr>
-      <tr><td>📈 證券稅</td><td class="wrap">你的<strong>持股市值</strong>（股數 × 現價）</td><td class="wrap">市值的一定 %；現價是負數的股票不計入，也不會退稅</td></tr>
+      <tr><td>📈 證券稅</td><td class="wrap">你的<strong>持股市值</strong>（股數 × 現價）</td><td class="wrap">市值的 5%；現價是負數的股票不計入，也不會退稅</td></tr>
       <tr><td>🌾 農地稅</td><td class="wrap">正在<strong>種著作物</strong>的格數（空地不課）</td><td class="wrap">農地／溫室各以格計價，前幾格免稅</td></tr>
       <tr><td>🐄 養殖稅</td><td class="wrap">牧場動物數 ＋ 魚缸的魚數</td><td class="wrap">動物／魚各以隻計價，前幾隻免稅</td></tr>
     </tbody>
@@ -569,10 +569,11 @@
   <h3>🤝 普發（救濟金）</h3>
   <p>課完稅的下一步，系統會<strong>從剛收到的稅金裡</strong>撥錢給餘額低於門檻的人——有錢人繳的稅直接補給欠錢的人，星幣總量不會變多。</p>
   <ul>
-    <li><strong>誰能領</strong>：餘額低於設定門檻的人（預設是<strong>餘額變成負數</strong>的人）。</li>
-    <li><strong>發多少</strong>：預設是「把你補到保底金額」。例如餘額 −5,000、保底 10,000 → 發你 15,000，先還債再給底；但有<strong>每人單期上限</strong>，欠太多不會一次補滿。</li>
+    <li><strong>誰能領</strong>：結算後<strong>餘額是負數</strong>的人。</li>
+    <li><strong>發多少</strong>：目前是<strong>每人固定 5,000 星幣</strong>，不論你欠多少都一樣。</li>
+    <li><strong>多久發一次</strong>：跟稅金同一時間跑，<strong>每週一次</strong>，同一期不會重複發。</li>
     <li><strong>財源有限</strong>：發放總額不會超過本期稅收，全部人要領的超過預算時<strong>所有人等比例縮減</strong>。</li>
-    <li>跟稅金同一時間跑，<strong>一週一次</strong>，不會重複發。</li>
+    <li>欠很多的人不會一次被填平——<strong>5,000 是幫你慢慢爬回來，不是免死金牌</strong>，還是得靠自己賺。</li>
   </ul>
 
   <h3>規則</h3>
@@ -651,7 +652,7 @@
       <tr><td><code>/偷魚 對象</code></td><td class="wrap">偷別人魚缸沒領的星幣</td></tr>
       <tr><td><code>/股市</code></td><td class="wrap">看所有股票現價與走勢</td></tr>
       <tr><td><code>/個股 代號</code></td><td class="wrap">看單支股票 K 線與你的損益</td></tr>
-      <tr><td><code>/買股 代號 股數</code></td><td class="wrap">用星幣買股（收 2% 手續費）</td></tr>
+      <tr><td><code>/買股 代號 股數</code></td><td class="wrap">用星幣買股（收 1.5% 交易稅）</td></tr>
       <tr><td><code>/賣股 代號 股數</code></td><td class="wrap">賣股換回星幣，可填「全部」</td></tr>
       <tr><td><code>/稅單</code></td><td class="wrap">查本期要繳的稅（所得稅／農地稅／養殖稅）與上期實繳</td></tr>
       <tr><td><code>/持股</code> · <code>/股神榜</code></td><td class="wrap">看自己的持股／看誰賺最多</td></tr>
