@@ -237,12 +237,28 @@ ensureColumns('tax_config', {
   relief_amount: 'INTEGER NOT NULL DEFAULT 10000',
   relief_floor: 'INTEGER NOT NULL DEFAULT 0',
   relief_max: 'INTEGER NOT NULL DEFAULT 0',
-  relief_from_tax: 'INTEGER NOT NULL DEFAULT 1'
+  relief_from_tax: 'INTEGER NOT NULL DEFAULT 1',
+  // 消費稅：本期在神秘商店兌換掉的金額也要課，避免結算前把錢換成圖來逃稅
+  spend_enabled: 'INTEGER NOT NULL DEFAULT 0',
+  spend_pct: 'REAL NOT NULL DEFAULT 20',
+  spend_free: 'INTEGER NOT NULL DEFAULT 0',
+  last_run_at: "TEXT NOT NULL DEFAULT ''",    // 上次實際結算的時間，用來界定「本期」兌換
+  // 所得稅的稅基：balance＝目前餘額／earned＝本期總收入／max＝兩者取高（花掉也逃不掉）
+  income_base: "TEXT NOT NULL DEFAULT 'balance'"
 });
 
-// 稅單紀錄多一欄證券稅
+// 本期收入的起算點：earned_mark＝上次結算時的 total_earned，
+// 本期收入 = total_earned - earned_mark。新增欄位時先對齊現值，避免把歷史收入一次課下去。
+{
+  const had = db.prepare('PRAGMA table_info(econ_wallets)').all().some(c => c.name === 'earned_mark');
+  ensureColumns('econ_wallets', { earned_mark: 'INTEGER NOT NULL DEFAULT 0' });
+  if (!had) db.exec('UPDATE econ_wallets SET earned_mark = total_earned');
+}
+
+// 稅單紀錄多兩欄：證券稅、消費稅
 ensureColumns('tax_records', {
-  stock_tax: 'INTEGER NOT NULL DEFAULT 0'
+  stock_tax: 'INTEGER NOT NULL DEFAULT 0',
+  spend_tax: 'INTEGER NOT NULL DEFAULT 0'
 });
 
 ensureColumns('welcome_config', {

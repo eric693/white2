@@ -80,6 +80,11 @@ function assess(gid, userId) {
   for (const p of plots) { if (p.plot_type === 'greenhouse') green = p.n; else field += p.n; }
   const animals = db.prepare('SELECT COUNT(*) n FROM ranch_slots WHERE guild_id=? AND user_id=?').get(gid, userId).n;
   const fish = db.prepare('SELECT COUNT(*) n FROM aquarium_slots WHERE guild_id=? AND user_id=?').get(gid, userId).n;
+  // 本期兌換金額：上次結算之後在神秘商店花掉的錢（沒結算過就算全部）
+  const since = c.last_run_at || '';
+  const spent = since
+    ? db.prepare('SELECT COALESCE(SUM(price*qty),0) v FROM special_redeems WHERE guild_id=? AND user_id=? AND created_at > ?').get(gid, userId, since).v
+    : db.prepare('SELECT COALESCE(SUM(price*qty),0) v FROM special_redeems WHERE guild_id=? AND user_id=?').get(gid, userId).v;
   // 持股市值：只算「現價為正」的股票，負價股不會反過來變成退稅
   const stockVal = db.prepare(
     `SELECT COALESCE(SUM(h.shares * s.price),0) v FROM stock_holdings h JOIN stock_symbols s ON s.id=h.symbol_id
@@ -99,18 +104,26 @@ function assess(gid, userId) {
   // 證券稅：持股市值扣掉免稅額後，乘上稅率
   const stockTaxed = Math.max(0, stockVal - (c.stock_free || 0));
   const stock = c.stock_enabled ? Math.floor(stockTaxed * (c.stock_pct || 0) / 100) : 0;
-  let income = c.income_enabled ? incomeTax(w.coins, c.income_free || 0, brackets(c), !!c.income_flat) : 0;
+  // 消費稅：把錢換成圖也要繳，否則結算前掃貨就能完全逃稅
+  const spendTaxed = Math.max(0, spent - (c.spend_free || 0));
+  const spend = c.spend_enabled ? Math.floor(spendTaxed * (c.spend_pct || 0) / 100) : 0;
+  // 所得稅的稅基：餘額／本期總收入／兩者取高。取高＝錢花掉也逃不掉，囤著也逃不掉，但不會被課兩次。
+  const earned = Math.max(0, (w.total_earned || 0) - (w.earned_mark || 0));
+  const base = c.income_base === 'earned' ? earned
+    : c.income_base === 'max' ? Math.max(w.coins, earned)
+      : w.coins;
+  let income = c.income_enabled ? incomeTax(base, c.income_free || 0, brackets(c), !!c.income_flat) : 0;
   // 單次上限：三稅合計不超過餘額的 income_max_pct %，避免一次被抄家
   const cap = Math.floor(w.coins * Math.max(0, Math.min(100, c.income_max_pct ?? 50)) / 100);
-  let total = income + land + breed + stock;
+  let total = income + land + breed + stock + spend;
   if (cap > 0 && total > cap) {
-    // 超過上限時先砍所得稅（農地/養殖/證券是固定規費，該繳還是要繳）
-    income = Math.max(0, cap - land - breed - stock);
-    total = income + land + breed + stock;
+    // 超過上限時先砍所得稅（農地/養殖/證券/消費是固定規費，該繳還是要繳）
+    income = Math.max(0, cap - land - breed - stock - spend);
+    total = income + land + breed + stock + spend;
   }
   return {
-    wallet: w, balance: w.coins, income, land, breed, stock, total,
-    counts: { field, green, animals, fish, fieldTaxed, greenTaxed, animalTaxed, fishTaxed, stockVal, stockTaxed }
+    wallet: w, balance: w.coins, income, land, breed, stock, spend, total, earned, incomeBase: base,
+    counts: { field, green, animals, fish, fieldTaxed, greenTaxed, animalTaxed, fishTaxed, stockVal, stockTaxed, spent, spendTaxed, earned }
   };
 }
 
@@ -200,13 +213,15 @@ async function runGuild(client, gid, { force = false, dryRun = false } = {}) {
         db.prepare("UPDATE econ_wallets SET coins = coins - ?, updated_at = datetime('now','localtime') WHERE guild_id=? AND user_id=?")
           .run(paid, gid, b.userId);
         db.prepare(
-          `INSERT INTO tax_records (guild_id, period, user_id, username, balance, income_tax, land_tax, breed_tax, stock_tax, total, paid, detail)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`
-        ).run(gid, period, b.userId, b.wallet.username || '', b.balance, b.income, b.land, b.breed, b.stock || 0, b.total, paid,
+          `INSERT INTO tax_records (guild_id, period, user_id, username, balance, income_tax, land_tax, breed_tax, stock_tax, spend_tax, total, paid, detail)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`
+        ).run(gid, period, b.userId, b.wallet.username || '', b.balance, b.income, b.land, b.breed, b.stock || 0, b.spend || 0, b.total, paid,
           JSON.stringify(b.counts));
         b.paid = paid;
       }
-      db.prepare('UPDATE tax_config SET last_period=? WHERE guild_id=?').run(period, gid);
+      // 推進本期界線：下一期的消費稅只算這個時間點之後的兌換；收入也重新起算（全服一起，沒繳稅的人也要）
+      db.prepare('UPDATE econ_wallets SET earned_mark = total_earned WHERE guild_id=?').run(gid);
+      db.prepare("UPDATE tax_config SET last_period=?, last_run_at=datetime('now','localtime') WHERE guild_id=?").run(period, gid);
     });
     pay();
   }
@@ -234,7 +249,7 @@ async function announce(client, gid, period, bills, relief = [], reliefSum = 0) 
           name: '納稅大戶',
           value: top.map((b, i) => `${['🥇', '🥈', '🥉'][i] || `${i + 1}.`} <@${b.userId}> — ${money(gid, b.paid)}`).join('\n') || '—'
         })
-        .setFooter({ text: '所得稅算錢包餘額／證券稅算持股市值／農地稅算種著的格數／養殖稅算動物與魚。用 /稅單 查自己的明細。' })
+        .setFooter({ text: '所得稅算餘額／證券稅算持股市值／消費稅算本期兌換金額／農地稅算種著的格數／養殖稅算動物與魚。用 /稅單 查明細。' })
         .setColor(brandColor());
       if (relief.length) {
         const topR = [...relief].sort((a, b) => b.amount - a.amount).slice(0, 10);
@@ -256,10 +271,11 @@ async function announce(client, gid, period, bills, relief = [], reliefSum = 0) 
 
 function billEmbed(gid, b, period) {
   const lines = [];
-  if (b.income) lines.push(`💰 所得稅　${money(gid, b.income)}（餘額 ${b.balance.toLocaleString('en-US')}）`);
+  if (b.income) lines.push(`💰 所得稅　${money(gid, b.income)}（課稅基準 ${Number(b.incomeBase ?? b.balance).toLocaleString('en-US')}｜餘額 ${b.balance.toLocaleString('en-US')}、本期收入 ${Number(b.earned || 0).toLocaleString('en-US')}）`);
   if (b.land) lines.push(`🌾 農地稅　${money(gid, b.land)}（農地 ${b.counts.fieldTaxed} 格／溫室 ${b.counts.greenTaxed} 格）`);
   if (b.breed) lines.push(`🐄 養殖稅　${money(gid, b.breed)}（動物 ${b.counts.animalTaxed} 隻／魚 ${b.counts.fishTaxed} 條）`);
   if (b.stock) lines.push(`📈 證券稅　${money(gid, b.stock)}（持股市值 ${Number(b.counts.stockVal || 0).toLocaleString('en-US')}）`);
+  if (b.spend) lines.push(`🛍️ 消費稅　${money(gid, b.spend)}（本期兌換 ${Number(b.counts.spent || 0).toLocaleString('en-US')}）`);
   const emb = new EmbedBuilder()
     .setTitle('🧾 你的稅單')
     .setDescription(lines.join('\n') || '本期免稅 🎉')
@@ -289,6 +305,10 @@ function infoEmbed(gid, userId, username) {
   const lines = [];
   if (c.income_enabled) {
     const bs = brackets(c);
+    const baseLabel = c.income_base === 'earned' ? '**本期總收入**（這一期賺到的錢，花掉也算）'
+      : c.income_base === 'max' ? '**餘額與本期總收入取高的那個**（花掉逃不掉、囤著也逃不掉，但不會課兩次）'
+        : '**錢包餘額**';
+    lines.push(`　課稅基準：${baseLabel}`);
     lines.push(c.income_flat
       ? `💰 **所得稅**　**整筆跳級**：看餘額落在哪一級，就用那一級的 % 課**整個餘額**（免稅額 ${money(gid, c.income_free || 0)}）\n` +
         bs.map(b => `　・餘額超過 ${Number(b.over).toLocaleString('en-US')}　→　整筆課 ${b.pct}%`).join('\n')
@@ -320,11 +340,17 @@ function infoEmbed(gid, userId, username) {
     if (a.land) detail.push(`🌾 農地稅 ${money(gid, a.land)}（農地 ${a.counts.fieldTaxed}／溫室 ${a.counts.greenTaxed} 格）`);
     if (a.breed) detail.push(`🐄 養殖稅 ${money(gid, a.breed)}（動物 ${a.counts.animalTaxed}／魚 ${a.counts.fishTaxed}）`);
     if (a.stock) detail.push(`📈 證券稅 ${money(gid, a.stock)}（持股市值 ${Number(a.counts.stockVal || 0).toLocaleString('en-US')}）`);
+    if (a.spend) detail.push(`🛍️ 消費稅 ${money(gid, a.spend)}（本期兌換 ${Number(a.counts.spent || 0).toLocaleString('en-US')}）`);
     emb.addFields({
       name: '你這期預估要繳',
       value: (detail.length ? detail.join('\n') + `\n**合計 ${money(gid, a.total)}**` : '本期免稅 🎉') +
         `\n（目前餘額 ${money(gid, a.balance)}）`
     });
+  }
+  if (c.spend_enabled) {
+    lines.push(`🛍️ **消費稅**　本期在神秘商店**兌換掉的金額**課 ${c.spend_pct || 0}%` +
+      ((c.spend_free || 0) > 0 ? `（${money(gid, c.spend_free)} 以內免稅）` : '') +
+      `\n　把錢換成獎勵一樣要繳，不能靠結算前掃貨逃稅。`);
   }
   if (c.relief_enabled) {
     emb.addFields({
@@ -347,6 +373,7 @@ function infoEmbed(gid, userId, username) {
     if (last.land_tax) parts2.push(`農地 ${money(gid, last.land_tax)}`);
     if (last.breed_tax) parts2.push(`養殖 ${money(gid, last.breed_tax)}`);
     if (last.stock_tax) parts2.push(`證券 ${money(gid, last.stock_tax)}`);
+    if (last.spend_tax) parts2.push(`消費 ${money(gid, last.spend_tax)}`);
     emb.addFields({
       name: `上一期（${last.period}）你繳了`,
       value: `**${money(gid, last.paid)}**` + (parts2.length ? `\n　${parts2.join('　')}` : '') +

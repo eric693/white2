@@ -53,6 +53,13 @@ App.page('tax', {
           <div class="field"><label>單次稅額上限（占餘額 %）</label><input name="income_max_pct" type="number" min="0" max="100" value="${c.income_max_pct ?? 50}">
             <div class="hint">三稅合計不會超過餘額的這個比例，避免一次被抄家。</div></div>
         </div>
+        <div class="field"><label>課稅基準（要對什麼課）</label>
+          <select name="income_base">
+            <option value="balance" ${(c.income_base||'balance')==='balance'?'selected':''}>目前錢包餘額（花掉就課不到）</option>
+            <option value="earned" ${c.income_base==='earned'?'selected':''}>本期總收入（這期賺多少就課多少，花掉也逃不掉）</option>
+            <option value="max" ${c.income_base==='max'?'selected':''}>兩者取高（推薦：花掉、囤著都逃不掉，且不會重複課）</option>
+          </select>
+          <div class="hint">本期總收入＝上次結算之後入帳的星幣總和（採集、收成、撈金、賣股…都算）。結算後自動歸零重新算。</div></div>
         <div class="field">${H.toggle('income_flat', c.income_flat ?? 1, '整筆跳級（餘額落在哪一級，就用那一級的 % 課整個餘額）')}
           <div class="hint">關閉＝分段累進（像真實所得稅，只對超過的那一段課）。</div></div>
         <div class="table-wrap"><table class="list" id="bktable">
@@ -83,6 +90,17 @@ App.page('tax', {
         </div>
 
 
+
+        <hr style="border:none;border-top:1px solid var(--border);margin:16px 0">
+        <h3>🛍️ 消費稅（本期在神秘商店兌換掉的金額）</h3>
+        <div class="hint" style="margin-bottom:10px">堵住「結算前把錢換成圖就課不到」的漏洞：這一期兌換花掉多少，就照比例課。上次結算之後的兌換才算，同一筆不會被課兩次。</div>
+        <div class="field">${H.toggle('spend_enabled', c.spend_enabled, '開徵消費稅')}</div>
+        <div class="form-row">
+          <div class="field"><label>稅率 %（本期兌換金額）</label><input name="spend_pct" type="number" min="0" max="100" step="0.5" value="${c.spend_pct ?? 20}">
+            <div class="hint">例如 20%：這期兌換花了 20,000 → 課 4,000。</div></div>
+          <div class="field"><label>兌換金額免稅額</label><input name="spend_free" type="number" min="0" value="${c.spend_free ?? 0}">
+            <div class="hint">這期兌換總額低於這個數字的部分不課。</div></div>
+        </div>
         <hr style="border:none;border-top:1px solid var(--border);margin:16px 0">
         <h3>🤝 普發（救濟金）</h3>
         <div class="hint" style="margin-bottom:10px">課完稅之後立刻執行：把窮的／欠稅的人拉回來，縮小貧富差距。管理員免稅名單內的人不會領。</div>
@@ -185,9 +203,9 @@ App.page('tax', {
       UI.modal({
         title: `${b.dataset.period} 稅單明細`,
         bodyHTML: `<div class="table-wrap"><table class="list">
-          <thead><tr><th>玩家</th><th>當時餘額</th><th>所得稅</th><th>農地稅</th><th>養殖稅</th><th>證券稅</th><th>應繳</th><th>實繳</th></tr></thead>
+          <thead><tr><th>玩家</th><th>當時餘額</th><th>所得稅</th><th>農地稅</th><th>養殖稅</th><th>證券稅</th><th>消費稅</th><th>應繳</th><th>實繳</th></tr></thead>
           <tbody>${rows.map(r => `<tr><td>${UI.esc(r.username || r.user_id)}</td><td>${coin(r.balance)}</td>
-            <td>${coin(r.income_tax)}</td><td>${coin(r.land_tax)}</td><td>${coin(r.breed_tax)}</td><td>${coin(r.stock_tax)}</td>
+            <td>${coin(r.income_tax)}</td><td>${coin(r.land_tax)}</td><td>${coin(r.breed_tax)}</td><td>${coin(r.stock_tax)}</td><td>${coin(r.spend_tax)}</td>
             <td>${coin(r.total)}</td><td>${r.balance - r.paid < 0 ? `<span style="color:#e74c3c">${coin(r.paid)}（欠稅，餘額變 ${coin(r.balance - r.paid)}）</span>` : coin(r.paid)}</td>
           </tr>`).join('')}</tbody></table></div>`,
         okText: '關閉'

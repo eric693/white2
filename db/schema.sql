@@ -1314,6 +1314,7 @@ CREATE TABLE IF NOT EXISTS tax_config (
   income_brackets TEXT NOT NULL DEFAULT '',        -- JSON [{"over":100000,"pct":5},…]：超過 over 的部分課 pct%
   income_max_pct INTEGER NOT NULL DEFAULT 50,      -- 單次稅額上限（占餘額 %），避免一次被抄家
   income_flat    INTEGER NOT NULL DEFAULT 1,       -- 1＝整筆跳級（整個餘額 × 適用級距 %）；0＝分段累進
+  income_base    TEXT NOT NULL DEFAULT 'balance', -- balance＝目前餘額／earned＝本期總收入／max＝兩者取高
   -- 農地稅（依「已種著的格數」課，空地不課）
   land_enabled   INTEGER NOT NULL DEFAULT 1,
   land_field     INTEGER NOT NULL DEFAULT 50,      -- 每格農地
@@ -1328,6 +1329,11 @@ CREATE TABLE IF NOT EXISTS tax_config (
   stock_enabled  INTEGER NOT NULL DEFAULT 0,
   stock_pct      REAL NOT NULL DEFAULT 5,        -- 持股市值的 %
   stock_free     INTEGER NOT NULL DEFAULT 0,     -- 市值免稅額
+  -- 消費稅：本期在神秘商店兌換掉的金額（花掉的錢也要課，堵住「換圖逃稅」）
+  spend_enabled  INTEGER NOT NULL DEFAULT 0,
+  spend_pct      REAL NOT NULL DEFAULT 20,       -- 本期兌換金額的 %
+  spend_free     INTEGER NOT NULL DEFAULT 0,     -- 兌換金額免稅額
+  last_run_at    TEXT NOT NULL DEFAULT '',       -- 上次實際結算時間，界定「本期」
   -- 普發（救濟金）：課完稅後，把窮／欠稅的人拉回來，縮小貧富差距
   relief_enabled INTEGER NOT NULL DEFAULT 0,
   relief_below   INTEGER NOT NULL DEFAULT 0,       -- 餘額低於這個數字才發（0＝只發給負債的人）
@@ -1353,6 +1359,7 @@ CREATE TABLE IF NOT EXISTS tax_records (
   land_tax   INTEGER NOT NULL DEFAULT 0,
   breed_tax  INTEGER NOT NULL DEFAULT 0,
   stock_tax  INTEGER NOT NULL DEFAULT 0,      -- 證券稅（持股市值）
+  spend_tax  INTEGER NOT NULL DEFAULT 0,      -- 消費稅（本期兌換金額）
   total      INTEGER NOT NULL DEFAULT 0,      -- 應繳
   paid       INTEGER NOT NULL DEFAULT 0,      -- 實繳（＝應繳全額，餘額不夠就欠稅變負數）
   detail     TEXT NOT NULL DEFAULT '',        -- 課稅明細（格數/隻數）

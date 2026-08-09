@@ -311,7 +311,9 @@ function sell(gid, uid, username, key, sharesRaw) {
   const pnl = net - costPart;
 
   db.transaction(() => {
-    db.prepare('UPDATE econ_wallets SET coins = coins + ? WHERE guild_id=? AND user_id=?').run(net, gid, uid);
+    // 賣股的實收也算收入（total_earned），才不會讓「本期收入」漏掉股市這一大塊
+    db.prepare('UPDATE econ_wallets SET coins = coins + ?, total_earned = total_earned + ? WHERE guild_id=? AND user_id=?')
+      .run(net, Math.max(0, net), gid, uid);
     if (shares === h.shares) {
       db.prepare('UPDATE stock_holdings SET shares=0, cost_sum=0, realized=realized+? WHERE guild_id=? AND user_id=? AND symbol_id=?')
         .run(pnl, gid, uid, s.id);
