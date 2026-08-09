@@ -52,8 +52,11 @@ function buildStockPanel(gid) {
   const row2 = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('stk:news').setLabel('財經新聞').setEmoji('📰').setStyle(ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId('stk:quotes').setLabel('目前行情').setEmoji('📊').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId('adv:tax').setLabel('稅務').setEmoji('🧾').setStyle(ButtonStyle.Secondary));
-  return { embeds: [embed], components: [row1, row2] };
+    new ButtonBuilder().setCustomId('adv:tax').setLabel('稅務').setEmoji('🧾').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('adv:charity').setLabel('基金會').setEmoji('❤️').setStyle(ButtonStyle.Secondary));
+  const row3 = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('adv:loan').setLabel('物資貸款').setEmoji('🏦').setStyle(ButtonStyle.Secondary));
+  return { embeds: [embed], components: [row1, row2, row3] };
 }
 
 async function publishPanel(channel) {

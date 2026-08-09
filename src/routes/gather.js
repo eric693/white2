@@ -27,7 +27,7 @@ router.put('/gather', (req, res) => {
     `UPDATE gather_config SET enabled=@enabled, channels=@channels, currency_name=@currency_name,
        currency_emoji=@currency_emoji, fish_cooldown=@fish_cooldown, mine_cooldown=@mine_cooldown,
        daily_limit=@daily_limit, daily_points=@daily_points, start_coins=@start_coins, announce_rare=@announce_rare,
-       other_cooldown=@other_cooldown, transfer_enabled=@transfer_enabled,
+       other_cooldown=@other_cooldown, require_tool=@require_tool, transfer_enabled=@transfer_enabled,
        transfer_fee_pct=@transfer_fee_pct, transfer_min=@transfer_min, transfer_daily_max=@transfer_daily_max
      WHERE guild_id=@guild_id`
   ).run({
@@ -38,6 +38,7 @@ router.put('/gather', (req, res) => {
     fish_cooldown: int(b.fish_cooldown, 300, 1),
     mine_cooldown: int(b.mine_cooldown, 300, 1),
     other_cooldown: int(b.other_cooldown, 300, 1),
+    require_tool: b.require_tool ? 1 : 0,
     transfer_enabled: b.transfer_enabled ? 1 : 0,
     transfer_fee_pct: Math.min(50, int(b.transfer_fee_pct, 5)),
     transfer_min: int(b.transfer_min, 10),

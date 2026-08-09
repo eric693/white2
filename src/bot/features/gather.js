@@ -827,6 +827,17 @@ function init(client) {
       if (GATHER_CMD[name]) {
         const kind = GATHER_CMD[name];
         const tool = currentTool(gid, uid, kind);
+        // 禁止徒手：工具壞了／被抵押走了就不能採集，要先修理或贖回（後台 require_tool 可關）
+        if (c.require_tool && !tool.id) {
+          const any = db.prepare('SELECT name, emoji FROM gather_tools WHERE guild_id=? AND kind=? AND enabled=1 ORDER BY tier ASC LIMIT 1').get(gid, kind);
+          if (any) {
+            return i.reply({
+              content: `✋ **徒手不能${KIND_NAME[kind]}**：你目前沒有可用的工具（壞掉、還沒買，或被抵押給貸款了）。\n`
+                + `用 \`/修理\` 修好、\`/一般商店\` 買一支 ${any.emoji || ''}${any.name}，或 \`/還款\` 把抵押的工具贖回來。`,
+              flags: MessageFlags.Ephemeral
+            });
+          }
+        }
         const base = kind === 'fish' ? c.fish_cooldown : (kind === 'mine' ? c.mine_cooldown : (c.other_cooldown || c.fish_cooldown));
         const wait = Math.max(1, Math.round(base * (1 - (tool.cooldown_cut || 0) / 100)));
 

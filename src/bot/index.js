@@ -45,7 +45,7 @@ let ready = false;
 // 要載入的功能模組（每個匯出 init(client)）
 const FEATURES = [
   'keywords', 'alerts', 'forum', 'reactionroles', 'welcome', 'birthday', 'announcements',
-  'poll', 'giveaway', 'wheel', 'reminder', 'music', 'tickets', 'xp', 'gather', 'facility', 'ranch', 'aquarium', 'special', 'trades', 'crops', 'stock', 'tax', 'help', 'panel'
+  'poll', 'giveaway', 'wheel', 'reminder', 'music', 'tickets', 'xp', 'gather', 'facility', 'ranch', 'aquarium', 'special', 'trades', 'crops', 'stock', 'tax', 'charity', 'loans', 'help', 'panel'
 ];
 
 client.once('clientReady', async () => {

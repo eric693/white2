@@ -612,6 +612,7 @@ CREATE TABLE IF NOT EXISTS gather_config (
   channels       TEXT NOT NULL DEFAULT '',        -- 限定可用頻道（逗號分隔，空＝全部）
   currency_name  TEXT NOT NULL DEFAULT '星幣',
   currency_emoji TEXT NOT NULL DEFAULT '🪙',
+  require_tool   INTEGER NOT NULL DEFAULT 1,       -- 1＝禁止徒手採集（工具壞掉／被抵押就不能採）
   fish_cooldown  INTEGER NOT NULL DEFAULT 300,    -- 秒
   mine_cooldown  INTEGER NOT NULL DEFAULT 300,
   daily_limit    INTEGER NOT NULL DEFAULT 0,      -- 每人每日次數上限（0＝不限）
@@ -1343,7 +1344,7 @@ CREATE TABLE IF NOT EXISTS tax_config (
   last_run_at    TEXT NOT NULL DEFAULT '',       -- 上次實際結算時間，界定「本期」
   -- 強制清算：課完稅還是負數的人，系統自動變賣資產抵債
   liquidate_enabled INTEGER NOT NULL DEFAULT 0,
-  liquidate_order TEXT NOT NULL DEFAULT 'bag,stock,fish,animal',   -- 變賣順序
+  liquidate_order TEXT NOT NULL DEFAULT 'stock',   -- 變賣順序（預設只賣股票：農場／魚缸被收會讓人不想玩）
   -- 普發（救濟金）：課完稅後，把窮／欠稅的人拉回來，縮小貧富差距
   relief_enabled INTEGER NOT NULL DEFAULT 0,
   relief_below   INTEGER NOT NULL DEFAULT 0,       -- 餘額低於這個數字才發（0＝只發給負債的人）
@@ -1354,6 +1355,7 @@ CREATE TABLE IF NOT EXISTS tax_config (
   relief_from_tax INTEGER NOT NULL DEFAULT 1,      -- 1＝總發放不超過本期稅收（不夠就等比例縮減）
   exempt_users   TEXT NOT NULL DEFAULT '',        -- 免稅名單：user_id 逗號分隔（管理員/測試帳號）
   exempt_roles   TEXT NOT NULL DEFAULT '',        -- 免稅身分組：role_id 逗號分隔
+  no_debt        INTEGER NOT NULL DEFAULT 1,       -- 1＝課完稅不讓餘額變負數（錢不夠就只課到 0，差額記為未繳）
   last_period    TEXT NOT NULL DEFAULT ''          -- 上次結算的期間代碼，避免同一期重複課
 );
 
@@ -1404,3 +1406,94 @@ CREATE TABLE IF NOT EXISTS tax_liquidations (
   created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
 CREATE INDEX IF NOT EXISTS idx_tax_liq ON tax_liquidations(guild_id, period);
+
+-- ================== 慈善基金會 ==================
+-- 玩家 /捐款 把星幣捐進基金會，餘額全服公開；捐款可折抵稅額，
+-- 基金會的錢再流進普發池 → 捐款直接變成救濟金。
+CREATE TABLE IF NOT EXISTS charity_config (
+  guild_id       TEXT PRIMARY KEY DEFAULT '',
+  enabled        INTEGER NOT NULL DEFAULT 0,
+  name           TEXT NOT NULL DEFAULT '慈善基金會',
+  min_donate     INTEGER NOT NULL DEFAULT 1000,   -- 單筆最低捐款
+  deduct_pct     REAL NOT NULL DEFAULT 10,        -- 捐款可折抵稅額的比例（10＝捐 10 萬折抵 1 萬）
+  deduct_max     INTEGER NOT NULL DEFAULT 0,      -- 每人每期折抵上限（0＝不限）
+  deduct_max_pct INTEGER NOT NULL DEFAULT 100,    -- 折抵最多能抵掉稅金的 %（100＝可全免）
+  to_relief      INTEGER NOT NULL DEFAULT 1,      -- 1＝基金會餘額自動當普發財源
+  channel        TEXT NOT NULL DEFAULT '',        -- 捐款公告頻道（空＝不公告）
+  pool           INTEGER NOT NULL DEFAULT 0,      -- 目前基金會餘額
+  total_in       INTEGER NOT NULL DEFAULT 0,      -- 歷史累計募得
+  total_out      INTEGER NOT NULL DEFAULT 0       -- 歷史累計撥給普發
+);
+
+-- 每一筆捐款（公開透明：誰捐了多少）
+CREATE TABLE IF NOT EXISTS charity_donations (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id   TEXT NOT NULL DEFAULT '',
+  user_id    TEXT NOT NULL,
+  username   TEXT NOT NULL DEFAULT '',
+  amount     INTEGER NOT NULL DEFAULT 0,
+  credit     INTEGER NOT NULL DEFAULT 0,      -- 捐款當下的可折抵稅額（預估，實際折抵記在 tax_records）
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_charity_don ON charity_donations(guild_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_charity_don_user ON charity_donations(guild_id, user_id);
+
+-- 基金會撥款紀錄（撥給哪一期的普發、撥了多少）
+CREATE TABLE IF NOT EXISTS charity_payouts (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id   TEXT NOT NULL DEFAULT '',
+  period     TEXT NOT NULL DEFAULT '',
+  amount     INTEGER NOT NULL DEFAULT 0,
+  people     INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_charity_pay ON charity_payouts(guild_id, period);
+
+-- ================== 物資貸款（抵押借星幣） ==================
+-- 拿工具／農地作物／魚缸的魚當抵押品借錢，抵押品由系統代管（借出期間不能用、不能賣）。
+-- 工具被抵押走就不能採集（禁止徒手），農地作物被押走就收不到成、魚被押走就不產星幣。
+-- 到期還不出來 → 沒收抵押品（延後版的強制清算，給人喘息空間）。
+CREATE TABLE IF NOT EXISTS loan_config (
+  guild_id     TEXT PRIMARY KEY DEFAULT '',
+  enabled      INTEGER NOT NULL DEFAULT 0,
+  ltv_pct      INTEGER NOT NULL DEFAULT 70,     -- 可借金額 ÷ 抵押品估值
+  max_loan     INTEGER NOT NULL DEFAULT 0,      -- 單筆上限（0＝不限）
+  max_open     INTEGER NOT NULL DEFAULT 1,      -- 同時最多幾筆未還清
+  term_days    INTEGER NOT NULL DEFAULT 7,      -- 幾天內要還
+  interest_pct REAL NOT NULL DEFAULT 5,         -- 利息（一次性，借出時就算進應還金額）
+  debtor_only  INTEGER NOT NULL DEFAULT 0,      -- 1＝只有餘額負數（欠稅）的人能借
+  collateral_order TEXT NOT NULL DEFAULT 'tool,crop,fish',  -- 自動挑抵押品的順序（只有這三類可抵押）
+  channel      TEXT NOT NULL DEFAULT ''         -- 借款／沒收公告頻道（空＝不公告）
+);
+
+CREATE TABLE IF NOT EXISTS loans (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id    TEXT NOT NULL DEFAULT '',
+  user_id     TEXT NOT NULL,
+  username    TEXT NOT NULL DEFAULT '',
+  principal   INTEGER NOT NULL DEFAULT 0,       -- 實際借到手的金額
+  interest    INTEGER NOT NULL DEFAULT 0,       -- 利息
+  owed        INTEGER NOT NULL DEFAULT 0,       -- 還欠多少（本金＋利息 −已還）
+  collateral_value INTEGER NOT NULL DEFAULT 0,  -- 抵押品估值
+  status      TEXT NOT NULL DEFAULT 'open',     -- open／repaid／defaulted
+  due_ms      INTEGER NOT NULL DEFAULT 0,       -- 到期時間（unix 毫秒）
+  created_at  TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  closed_at   TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_loans ON loans(guild_id, user_id, status);
+
+-- 被代管的抵押品（還清就還回去，違約就沒收）
+CREATE TABLE IF NOT EXISTS loan_collaterals (
+  id       INTEGER PRIMARY KEY AUTOINCREMENT,
+  loan_id  INTEGER NOT NULL,
+  guild_id TEXT NOT NULL DEFAULT '',
+  kind     TEXT NOT NULL DEFAULT '',    -- tool / crop / fish
+  ref_id   INTEGER NOT NULL DEFAULT 0,  -- tool_id / seed_id / fish_id
+  slot     INTEGER NOT NULL DEFAULT -1, -- 原本的格子（魚缸／農地，還回去時放回原位）
+  qty      INTEGER NOT NULL DEFAULT 0,  -- 工具剩餘耐久 / 數量
+  pending  INTEGER NOT NULL DEFAULT 0,  -- 魚的未領取星幣（贖回時一起還）
+  meta     TEXT NOT NULL DEFAULT '',    -- 還原用的額外資料（作物成熟時間、plot_type…）
+  value    INTEGER NOT NULL DEFAULT 0,  -- 估值
+  detail   TEXT NOT NULL DEFAULT ''     -- 顯示用名稱
+);
+CREATE INDEX IF NOT EXISTS idx_loan_coll ON loan_collaterals(loan_id);

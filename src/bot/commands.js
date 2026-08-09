@@ -171,6 +171,16 @@ const builders = [
   new SlashCommandBuilder().setName('稅單').setDescription('查看本期要繳的稅（農地稅／養殖稅／所得稅）與上期實繳')
     .addUserOption(o => o.setName('玩家').setDescription('查看其他玩家的稅單（不填＝自己）')),
 
+  new SlashCommandBuilder().setName('捐款').setDescription('捐星幣：不填對象＝捐進基金會（折抵稅額）；填對象＝直接資助那位玩家')
+    .addIntegerOption(o => o.setName('金額').setDescription('要捐多少星幣').setRequired(true).setMinValue(1))
+    .addUserOption(o => o.setName('對象').setDescription('直接把星幣送給這位玩家（不填＝捐進基金會）')),
+  new SlashCommandBuilder().setName('基金會').setDescription('查看慈善基金會的帳目、捐款榜與抵稅比例'),
+
+  new SlashCommandBuilder().setName('貸款').setDescription('用工具／作物／魚缸的魚當抵押品借星幣（不填金額＝查額度）')
+    .addIntegerOption(o => o.setName('金額').setDescription('要借多少星幣（不填＝只查可借額度與現有貸款）').setMinValue(1)),
+  new SlashCommandBuilder().setName('還款').setDescription('償還物資貸款（全部還清就贖回抵押品）')
+    .addIntegerOption(o => o.setName('金額').setDescription('要還多少（不填＝全部還清）').setMinValue(1)),
+
   new SlashCommandBuilder().setName('幫助').setDescription('冒險生活指令總表（採集/牧場/種植/交易/兌換…）'),
   new SlashCommandBuilder().setName('冒險面板').setDescription('（管理員）在目前頻道發布一鍵按鈕面板，玩家點按鈕就能玩'),
 

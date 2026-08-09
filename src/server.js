@@ -101,6 +101,8 @@ app.use('/api', require('./routes/aquarium'));
 app.use('/api', require('./routes/special'));
 app.use('/api', require('./routes/stock'));
 app.use('/api', require('./routes/tax'));
+app.use('/api', require('./routes/charity'));
+app.use('/api', require('./routes/loans'));
 app.use('/api', require('./routes/users'));
 
 // 公開功能介紹頁（乾淨網址 /intro，不需登入）

@@ -187,6 +187,8 @@
     <a href="#aquarium">魚缸</a>
     <a href="#stock">股市</a>
     <a href="#tax">稅金</a>
+    <a href="#charity">基金會</a>
+    <a href="#loan">物資貸款</a>
     <a href="#more">其他玩法</a>
     <a href="#cmd">指令速查</a>
   </nav>
@@ -248,7 +250,8 @@
     </tbody>
   </table></div>
   <ul>
-    <li><strong>一階工具每人第一把免費送</strong>，用壞後再要一把（或 <code>/修理</code>）要 100 星幣。壞掉沒修時會自動改用<strong>徒手</strong>（沒有加成）。</li>
+    <li><strong>一階工具每人第一把免費送</strong>，用壞後再要一把（或 <code>/修理</code>）要 100 星幣。</li>
+    <li>⚠️ <strong>徒手不能採集</strong>：工具壞掉、還沒買、或被抵押給物資貸款時，釣魚／挖礦／伐木／採集／狩獵都會被擋下，要先 <code>/修理</code>、買一把新的，或 <code>/還款</code> 把工具贖回來。</li>
     <li>系統會<strong>自動使用你擁有的最高階</strong>，不用手動裝備。</li>
     <li>每採集一次扣 1 點耐久，歸零就壞掉，用 <code>/修理</code> 花星幣修好（費用如上表）。</li>
     <li>五種採集各有各的工具（釣竿／鎬／斧／籃／弓），要分開買。</li>
@@ -537,33 +540,42 @@
   <p class="sub">🧾 錢囤著不花、地占著不收、動物養一堆不管，都要繳稅。稅是<strong>定期自動結算</strong>的，時間到直接從錢包扣。</p>
 
   <div class="note warn">
-    <span class="h">只扣錢包，不會沒收東西</span>
-    稅只從<strong>星幣餘額</strong>扣，不會動你的背包、作物、動物或魚。但<strong>餘額不夠會欠稅、變成負數</strong>，要自己賺回來才會回正。<strong>欠稅期間不能使用神秘商店</strong>。
+    <span class="h">只扣錢包，也不會把你課成負數</span>
+    稅只從<strong>星幣餘額</strong>扣，不會動你的背包、作物、動物或魚。而且錢不夠時<strong>最多只課到餘額歸零</strong>——差額算「未繳」，<strong>不會變成負債、不會追討</strong>。
+    （負數餘額只會來自其他情況，例如賣出負股價的股票、被看門動物罰款。）
   </div>
 
   <h3>三種稅</h3>
   <div class="scroll"><table>
     <thead><tr><th>稅目</th><th class="wrap">課什麼</th><th class="wrap">預設稅額</th></tr></thead>
     <tbody>
-      <tr><td>💰 所得稅</td><td class="wrap">你目前的<strong>星幣餘額</strong></td><td class="wrap">餘額低於免稅額不課；超過就<strong>整筆</strong>課 20% / 25% / 30% / 35%</td></tr>
+      <tr><td>💰 所得稅</td><td class="wrap">你目前的<strong>星幣餘額</strong></td><td class="wrap">免稅額（3 萬）以上<strong>累進課稅</strong>（只課超過的部分），5%～30%，見下表</td></tr>
       <tr><td>📈 證券稅</td><td class="wrap">你的<strong>持股市值</strong>（股數 × 現價）</td><td class="wrap">市值的 5%；現價是負數的股票不計入，也不會退稅</td></tr>
       <tr><td>🌾 農地稅</td><td class="wrap">正在<strong>種著作物</strong>的格數（空地不課）</td><td class="wrap">農地／溫室各以格計價，前幾格免稅</td></tr>
       <tr><td>🐄 養殖稅</td><td class="wrap">牧場動物數 ＋ 魚缸的魚數</td><td class="wrap">動物／魚各以隻計價，前幾隻免稅</td></tr>
     </tbody>
   </table></div>
 
-  <h3>所得稅是「整筆跳級」</h3>
-  <p>看你的餘額落在哪一級，就用<strong>那一級的稅率課掉整個餘額</strong>——不是只課超過的那一段。所以<strong>多賺一塊跨過門檻，整筆的稅率就會跳上去</strong>，快到門檻時要特別小心。</p>
+  <h3>所得稅是「累進課稅」（只課超過的部分）</h3>
+  <p>採<strong>累進級距</strong>：<strong>不是整筆課</strong>，而是每一段各用自己的稅率——跨過門檻，<strong>只有超過的那一段</strong>才適用更高的稅率。所以<strong>不會「多賺一塊整筆爆增」</strong>，越有錢的部分才課越重，中低玩家幾乎沒感覺。</p>
+  <p>免稅額 <strong>3 萬</strong>，超過的部分分段課，最高 30%：</p>
   <div class="scroll"><table>
-    <thead><tr><th class="wrap">餘額落在</th><th class="num">稅率</th><th class="wrap">例子</th></tr></thead>
+    <thead><tr><th class="wrap">這一段餘額</th><th class="num">稅率</th></tr></thead>
     <tbody>
-      <tr><td class="wrap">免稅額以下</td><td class="num">0%</td><td class="wrap">不課</td></tr>
-      <tr><td class="wrap">超過 10 萬</td><td class="num">20%</td><td class="wrap">餘額 30 萬 → 課 <strong>60,000</strong></td></tr>
-      <tr><td class="wrap">超過 50 萬</td><td class="num">25%</td><td class="wrap">餘額 60 萬 → 課 <strong>150,000</strong></td></tr>
-      <tr><td class="wrap">超過 200 萬</td><td class="num">30%</td><td class="wrap">餘額 300 萬 → 課 <strong>900,000</strong></td></tr>
-      <tr><td class="wrap">超過 1000 萬</td><td class="num">35%</td><td class="wrap">餘額 2000 萬 → 課 <strong>7,000,000</strong></td></tr>
+      <tr><td class="wrap">3 萬以下（免稅額）</td><td class="num">0%</td></tr>
+      <tr><td class="wrap">3 萬 ～ 6 萬</td><td class="num">5%</td></tr>
+      <tr><td class="wrap">6 萬 ～ 15 萬</td><td class="num">8%</td></tr>
+      <tr><td class="wrap">15 萬 ～ 50 萬</td><td class="num">12%</td></tr>
+      <tr><td class="wrap">50 萬 ～ 200 萬</td><td class="num">16%</td></tr>
+      <tr><td class="wrap">200 萬 ～ 1000 萬</td><td class="num">22%</td></tr>
+      <tr><td class="wrap">1000 萬以上</td><td class="num">30%</td></tr>
     </tbody>
   </table></div>
+  <div class="note">
+    <span class="h">怎麼算的（舉例）</span>
+    餘額 <strong>10 萬</strong>：3～6 萬那段 3 萬 ×5%＝1,500，加 6～10 萬那段 4 萬 ×8%＝3,200，<strong>合計 4,700</strong>（有效稅率才 4.7%）。<br>
+    餘額 <strong>100 萬</strong>：分段加起來約 <strong>13 萬</strong>（13%）。越往上、超過的部分才課越重。
+  </div>
   <p class="sub">級距與免稅額工程師可能會調整，實際以 <code>/稅單</code> 或冒險面板的 🧾稅務 顯示為準。</p>
 
   <h3>🤝 普發（救濟金）</h3>
@@ -579,7 +591,7 @@
   <h3>規則</h3>
   <ul>
     <li><strong>預設每週一 09:00</strong> 結算一次（台灣時間），結算後會在公告頻道公布總稅收與納稅大戶，並私訊你自己的稅單。</li>
-    <li><strong>錢不夠會欠稅</strong>：餘額會被扣成<strong>負數</strong>，欠稅期間<strong>不能使用神秘商店</strong>，要把星幣賺回正數才恢復。</li>
+    <li><strong>錢不夠不會變負債</strong>：這期最多只課到餘額歸零，差額算未繳、下期不累積。（若餘額因為其他原因變成負數，<strong>不能使用神秘商店</strong>，而且系統會自動<strong>變賣你的股票</strong>抵債——只賣股票，農場、魚缸、背包都不會被收。）</li>
     <li>稅額太小就免徵，新手基本上課不到。</li>
     <li><strong>農地稅只算種著的格子</strong>：成熟了放著不採收＝一直被課稅，收成完的空地不用繳。</li>
     <li>用 <code>/稅單</code>，或冒險面板的 <strong>🧾稅務</strong> 按鈕，隨時查本期預估要繳多少、上期實際繳了多少、上期領了多少普發，以及下次什麼時候結算。</li>
@@ -588,13 +600,75 @@
   <div class="note">
     <span class="h">怎麼少繳一點</span>
     把錢<strong>花掉</strong>（買地、買動物、做道具）可以避開所得稅；作物成熟就趕快採收；養不動的動物與魚早點賣掉。<br>
-    但<strong>買股票躲不掉</strong>——持股市值一樣要繳證券稅，而且股價跌了市值還在，稅照收。
+    但<strong>買股票躲不掉</strong>——持股市值一樣要繳證券稅，而且股價跌了市值還在，稅照收。<br>
+    最正派的省稅方式是<strong>捐款</strong>：捐進 ❤️慈善基金會的金額有 <strong>10%</strong> 直接折抵稅金（見下一節）。
   </div>
   <p class="sub">以上為預設數值，工程師可能會調整稅率與結算時間，實際以 <code>/稅單</code> 顯示為準。稅金系統可由工程師關閉，關閉期間完全不課稅。</p>
 </section>
 
+<section id="charity">
+  <h2><span class="num">12</span>慈善基金會</h2>
+  <p class="sub">❤️ 把星幣捐出去，<strong>抵稅</strong>又<strong>救人</strong>——帳目全服公開，誰捐了多少大家都看得到。</p>
+
+  <h3>怎麼捐</h3>
+  <ul>
+    <li><code>/捐款 金額</code> 把星幣捐進基金會（單筆有最低金額限制）。錢一捐出去就<strong>不會再回到你手上</strong>，這不是存錢。</li>
+    <li><code>/捐款 金額 對象</code> <strong>直接資助特定玩家</strong>：星幣直接進對方錢包（公開公告）。這是純善舉，<strong>不折抵稅額、也不上捐款榜</strong>，適合直接幫負債的朋友一把。</li>
+    <li><code>/基金會</code> 或股市面板的 <strong>❤️基金會</strong> 按鈕，看目前餘額、累計募得、已撥出多少、以及<strong>捐款榜</strong>。</li>
+    <li>餘額是負數時不能捐款／資助（先把餘額弄回正數）。</li>
+  </ul>
+
+  <h3>捐款可以抵稅</h3>
+  <p>捐款金額的 <strong>10%</strong> 直接折抵你這期的稅金：<strong>捐 100,000 → 少繳 10,000 稅金</strong>。</p>
+  <ul>
+    <li>只算<strong>上次結算之後</strong>的捐款，結算完就重新起算——這期捐的抵這期的稅，不能累積到下期。</li>
+    <li>折抵是從「應繳稅額」直接扣掉的，扣到 0 為止（不會倒退變成退稅）。</li>
+    <li>用 <code>/稅單</code> 可以看到折抵後的預估稅額（會標「慈善折抵 −xxx」）。</li>
+  </ul>
+
+  <h3>錢去哪了</h3>
+  <p>基金會的餘額會自動變成<strong>普發（救濟金）的財源</strong>：結算時稅收不夠發的部分，就從基金會撥出去。也就是說<strong>你捐的錢會直接變成別人的救濟金</strong>，而不是進工程師口袋。每次撥款都有紀錄，<code>/基金會</code> 看得到。</p>
+
+  <div class="note">
+    <span class="h">為什麼要捐</span>
+    ① 少繳稅（10% 折抵）　② 捐款榜排名公開，面子　③ 救到的是同一個伺服器裡真的沒錢的人。
+  </div>
+  <p class="sub">折抵比例、最低捐款、每期折抵上限都可由工程師調整，實際以 <code>/基金會</code> 顯示為準。</p>
+</section>
+
+<section id="loan">
+  <h2><span class="num">13</span>物資貸款</h2>
+  <p class="sub">🏦 沒錢又急用？拿<strong>工具、農地作物、魚缸的魚</strong>當抵押品借星幣，還得出來就原封不動還你。</p>
+
+  <h3>怎麼借</h3>
+  <ol class="steps">
+    <li><strong>先查額度。</strong><code>/貸款</code>（不填金額）或面板 <strong>🏦物資貸款</strong>，看你目前最多能借多少。</li>
+    <li><strong>借錢。</strong><code>/貸款 金額</code>，系統會自動挑抵押品——同一類裡面<strong>便宜的先押</strong>，盡量不動到你最貴的東西。</li>
+    <li><strong>還錢。</strong><code>/還款</code>（不填金額＝全部還清）。<strong>全部還清才會贖回抵押品</strong>，部分還款只是減少債務。</li>
+  </ol>
+
+  <h3>規則</h3>
+  <ul>
+    <li>⚠️ <strong>目前只有「餘額是負數（欠稅／負債）」的人可以貸款</strong>——這是給還不出錢的人的救急管道，有正餘額的人請直接花自己的錢。</li>
+    <li><strong>可借金額 ＝ 抵押品估值 × 70%</strong>。估值：工具照售價 ×剩餘耐久比例、作物照收成物的即時賣價、魚照回收半價＋缸裡沒領的星幣。</li>
+    <li><strong>只能抵押這三種</strong>：🔨工具、🌾農地／溫室正在種的作物、🐠魚缸的魚。牧場動物、背包物品、股票<strong>不收</strong>。</li>
+    <li><strong>抵押品由系統代管</strong>，借款期間你用不到：工具押走了<strong>就不能採集</strong>（徒手不能採）、作物<strong>收不到成</strong>、魚<strong>不產星幣</strong>。這就是借錢的代價。</li>
+    <li><strong>期限 7 天、利息 5%</strong>（借出時就算進應還金額）。借 10,000 就要還 10,500。</li>
+    <li><strong>到期沒還 → 沒收抵押品</strong>，同時債務一併結清（不會繼續欠）。到期前會看得到倒數，別忘記。</li>
+    <li>同時最多 <strong>1 筆</strong>未還清的貸款，還清才能再借。</li>
+    <li>還清時如果原本的格子已經被別的東西佔走，那份抵押品會<strong>照估值折現</strong>還你星幣。</li>
+    <li>借來的錢<strong>不算收入</strong>，不會因此被多課所得稅。</li>
+  </ul>
+
+  <div class="note warn">
+    <span class="h">先算清楚再借</span>
+    抵押率 70% ＋ 利息 5%：估值 10,000 的物資只借到 7,000，違約等於用 7,000 賣掉 10,000 的東西。<strong>借了就一定要還</strong>，不然是虧的。
+  </div>
+  <p class="sub">抵押率、期限、利息、可抵押的種類都可由工程師調整；貸款功能也可能整個關閉，實際以 <code>/貸款</code> 顯示為準。</p>
+</section>
+
 <section id="more">
-  <h2><span class="num">12</span>其他玩法</h2>
+  <h2><span class="num">14</span>其他玩法</h2>
   <p class="sub">賺到的星幣不是只能買地買動物。</p>
 
   <h3>🎁 特殊兌換商店</h3>
@@ -637,7 +711,7 @@
 </section>
 
 <section id="cmd">
-  <h2><span class="num">13</span>指令速查</h2>
+  <h2><span class="num">15</span>指令速查</h2>
   <p class="sub">面板按鈕能做九成的事。以下是需要打字或按鈕沒有的功能。</p>
   <div class="scroll"><table>
     <thead><tr><th>指令</th><th class="wrap">用途</th></tr></thead>
@@ -655,6 +729,10 @@
       <tr><td><code>/買股 代號 股數</code></td><td class="wrap">用星幣買股（收 1.5% 交易稅）</td></tr>
       <tr><td><code>/賣股 代號 股數</code></td><td class="wrap">賣股換回星幣，可填「全部」</td></tr>
       <tr><td><code>/稅單</code></td><td class="wrap">查本期要繳的稅（所得稅／農地稅／養殖稅）與上期實繳</td></tr>
+      <tr><td><code>/捐款 金額</code></td><td class="wrap">捐進慈善基金會（10% 折抵稅金，帳目公開）</td></tr>
+      <tr><td><code>/基金會</code></td><td class="wrap">看基金會餘額、捐款榜與抵稅比例</td></tr>
+      <tr><td><code>/貸款 金額</code></td><td class="wrap">抵押工具／作物／魚借星幣（不填金額＝查額度）</td></tr>
+      <tr><td><code>/還款 金額</code></td><td class="wrap">還貸款（不填＝全部還清並贖回抵押品）</td></tr>
       <tr><td><code>/持股</code> · <code>/股神榜</code></td><td class="wrap">看自己的持股／看誰賺最多</td></tr>
       <tr><td><code>/修理 道具</code></td><td class="wrap">修好耐久歸零的工具</td></tr>
       <tr><td><code>/製作 配方 次數</code></td><td class="wrap">一次做多份（面板選單固定做 1 次）</td></tr>

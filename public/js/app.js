@@ -85,7 +85,7 @@ const App = {
     { name: '', keys: ['dashboard'] },
     { name: '互動', keys: ['keywords', 'mentions', 'alerts', 'warnings', 'welcome', 'birthday'] },
     { name: '活動', keys: ['announcements', 'polls', 'giveaways', 'wheels', 'reminders'] },
-    { name: '其他', keys: ['music', 'forum', 'tickets', 'levels', 'gather', 'ranch', 'aquarium', 'crops', 'stock', 'tax', 'special', 'media', 'blacklist'] },
+    { name: '其他', keys: ['music', 'forum', 'tickets', 'levels', 'gather', 'ranch', 'aquarium', 'crops', 'stock', 'tax', 'charity', 'loans', 'special', 'media', 'blacklist'] },
     { name: '設定', keys: ['appearance', 'perms', 'system', 'guilds', 'users'] }
   ],
 

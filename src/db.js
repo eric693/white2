@@ -160,7 +160,15 @@ ensureColumns('aquarium_config', {
   steal_penalty_to_victim: 'INTEGER NOT NULL DEFAULT 1'   // 1＝罰款賠給受害者，0＝直接沒收
 });
 
+// 修正貸款抵押順序的舊值：早期版本預設 'bag,fish,animal,stock'（跟實際抵押品 tool/crop/fish 對不上，
+// 過濾後只剩 fish → 工具/作物押不了）。一律正規化成 'tool,crop,fish'。
+try {
+  db.prepare("UPDATE loan_config SET collateral_order='tool,crop,fish' WHERE collateral_order LIKE '%bag%' OR collateral_order LIKE '%animal%' OR collateral_order LIKE '%stock%'").run();
+} catch {}
+
 ensureColumns('gather_config', {
+  // 禁止徒手採集：工具壞掉／被抵押走就不能採（1＝禁止，0＝像以前一樣可以徒手）
+  require_tool: 'INTEGER NOT NULL DEFAULT 1',
   // 伐木/採集/狩獵共用一組冷卻，不必為每個新種類都開一個欄位
   other_cooldown: 'INTEGER NOT NULL DEFAULT 300',
   transfer_enabled:   'INTEGER NOT NULL DEFAULT 0',
@@ -266,7 +274,7 @@ ensureColumns('tax_config', {
   income_base: "TEXT NOT NULL DEFAULT 'balance'",
   // 強制清算：欠稅的人由系統自動變賣資產抵債
   liquidate_enabled: 'INTEGER NOT NULL DEFAULT 0',
-  liquidate_order: "TEXT NOT NULL DEFAULT 'bag,stock,fish,animal'"
+  liquidate_order: "TEXT NOT NULL DEFAULT 'stock'"
 });
 
 // 本期收入的起算點：earned_mark＝上次結算時的 total_earned，
@@ -277,10 +285,18 @@ ensureColumns('tax_config', {
   if (!had) db.exec('UPDATE econ_wallets SET earned_mark = total_earned');
 }
 
-// 稅單紀錄多兩欄：證券稅、消費稅
+// 強制清算預設改成「只賣股票」：玩家反映農場／魚缸被收掉會完全不想玩。
+// 只搬移還停在舊預設值的伺服器，管理員自己改過的順序不動。
+try { db.prepare("UPDATE tax_config SET liquidate_order='stock' WHERE liquidate_order='bag,stock,fish,animal'").run(); } catch {}
+
+// 稅金：課完稅不讓餘額變負數（錢不夠就只課到 0，差額當「未繳」記在稅單上）
+ensureColumns('tax_config', { no_debt: 'INTEGER NOT NULL DEFAULT 1' });
+
+// 稅單紀錄多幾欄：證券稅、消費稅、慈善捐款折抵
 ensureColumns('tax_records', {
   stock_tax: 'INTEGER NOT NULL DEFAULT 0',
-  spend_tax: 'INTEGER NOT NULL DEFAULT 0'
+  spend_tax: 'INTEGER NOT NULL DEFAULT 0',
+  charity_credit: 'INTEGER NOT NULL DEFAULT 0'   // 本期捐款折抵掉的稅額
 });
 
 ensureColumns('welcome_config', {
@@ -411,6 +427,8 @@ const GUILD_TABLES = [
   'special_config', 'special_items', 'special_redeems', 'special_shops',
   'crop_config', 'crop_seeds', 'crop_plots', 'crop_unlocks',
   'aquarium_config', 'aquarium_fish', 'aquarium_slots', 'aquarium_steal', 'aquarium_unlocks',
+  'charity_config', 'charity_donations', 'charity_payouts',
+  'loan_config', 'loans', 'loan_collaterals',
   'facility_defs', 'facility_owned',
   'gather_points', 'lottery_draws', 'lottery_prizes', 'luck_buffs', 'trades', 'gather_maps', 'gather_user_map',
   'keywords', 'keyword_logs', 'keyword_mentions', 'alert_rules', 'alert_logs',
@@ -519,7 +537,7 @@ function guildConfig(table, guildId) {
 }
 
 // 新伺服器加入時，確保 8 張設定表各有一筆
-const SETTING_TABLES = ['warn_config', 'welcome_config', 'birthday_config', 'verify_config', 'music_config', 'xp_config', 'ticket_config', 'forum_config', 'gather_config', 'ranch_config', 'special_config', 'crop_config', 'aquarium_config', 'tax_config'];
+const SETTING_TABLES = ['warn_config', 'welcome_config', 'birthday_config', 'verify_config', 'music_config', 'xp_config', 'ticket_config', 'forum_config', 'gather_config', 'ranch_config', 'special_config', 'crop_config', 'aquarium_config', 'tax_config', 'charity_config', 'loan_config'];
 function ensureGuild(guildId, name, icon) {
   if (!guildId) return;
   db.prepare('INSERT INTO guilds (guild_id, name, icon, active) VALUES (?, ?, ?, 1) ON CONFLICT(guild_id) DO UPDATE SET name=excluded.name, icon=excluded.icon, active=1')

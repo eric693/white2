@@ -38,6 +38,8 @@ App.page('tax', {
           <div class="field"><label>稅額低於多少就免徵</label><input name="min_total" type="number" min="0" value="${c.min_total ?? 1}">
             <div class="hint">避免對只有幾十塊的新手洗版。</div></div>
         </div>
+        <div class="field">${H.toggle('no_debt', c.no_debt ?? 1, '課完稅不讓餘額變負數（錢不夠只課到 0，差額算未繳）')}
+          <div class="hint">建議開啟：被課成負債的玩家常會直接不玩。關掉＝錢不夠就欠稅、餘額變負數。</div></div>
         <div class="field"><label>免稅名單：玩家 ID（一行一個，或用逗號分隔）</label>
           <textarea name="exempt_users" rows="3" placeholder="1408375041954943030">${UI.esc(c.exempt_users || '')}</textarea>
           <div class="hint">名單內的人完全不課稅、也不會出現在納稅大戶排行。管理員／活動帳號放這裡。</div></div>
@@ -67,8 +69,9 @@ App.page('tax', {
           <tbody>${(c.brackets || []).map(bracketRow).join('')}</tbody>
         </table></div>
         <button class="btn small secondary" id="addbk" style="margin-top:8px">＋ 新增級距</button>
-        <div class="hint" style="margin-top:6px"><b>整筆跳級</b>（預設）：餘額 60 萬、級距「超過 50 萬課 10%」→ 直接課 60 萬的 10% ＝ 6 萬。<br>
-          <b>分段累進</b>（關掉開關）：只對第 50 萬以上的 10 萬課 10% ＝ 1 萬。</div>
+        <div class="hint" style="margin-top:6px"><b>整筆跳級</b>（預設）：餘額 60 萬、級距「超過 40 萬課 3%」→ 直接課 60 萬的 3% ＝ 18,000。<br>
+          <b>分段累進</b>（關掉開關）：只對第 40 萬以上的 20 萬課 3% ＝ 6,000。<br>
+          預設級距已改成<b>級距小、稅率低</b>（1／2／3／5／7／10／13／17／20%，共 9 級）：跳一級不會突然爆增，級距之間的差別也比較有感。要恢復預設就把下面的級距全部刪掉再儲存。</div>
 
         <hr style="border:none;border-top:1px solid var(--border);margin:16px 0">
         <h3>🌾 農地稅（依「種著作物的格數」課，空地不課）</h3>
@@ -104,14 +107,14 @@ App.page('tax', {
 
         <hr style="border:none;border-top:1px solid var(--border);margin:16px 0">
         <h3>⚖️ 欠稅強制清算</h3>
-        <div class="hint" style="margin-bottom:10px">課完稅還是負數的人，系統自動變賣資產抵債，<b>只賣到剛好還清為止</b>。背包照 <code>/賣出</code> 的即時價、股票照現價扣交易稅（現價是負數的不賣）、動物與魚回收半價。免稅名單的人不會被清算。</div>
+        <div class="hint" style="margin-bottom:10px">餘額是負數的人，系統自動變賣資產抵債，<b>只賣到剛好還清為止</b>。<b>預設只賣股票</b>——農場／魚缸被系統收掉玩家會直接不想玩。股票照現價扣交易稅（現價是負數的不賣）、背包照 <code>/賣出</code> 的即時價、動物與魚回收半價。免稅名單的人不會被清算。<br>另外課稅本身已<b>不會</b>把人課成負數（見下方「課完稅不讓餘額變負數」），所以這裡通常只會處理負價股造成的負債。</div>
         <div class="field">${H.toggle('liquidate_enabled', c.liquidate_enabled, '啟用強制清算')}</div>
         <div class="field"><label>變賣順序</label>
           <select name="liquidate_order">
-            <option value="bag,stock,fish,animal" ${(c.liquidate_order||'bag,stock,fish,animal')==='bag,stock,fish,animal'?'selected':''}>背包 → 股票 → 魚 → 動物（推薦）</option>
-            <option value="stock,bag,fish,animal" ${c.liquidate_order==='stock,bag,fish,animal'?'selected':''}>股票 → 背包 → 魚 → 動物</option>
-            <option value="bag,fish,animal,stock" ${c.liquidate_order==='bag,fish,animal,stock'?'selected':''}>背包 → 魚 → 動物 → 股票（股票最後才動）</option>
-            <option value="bag,stock" ${c.liquidate_order==='bag,stock'?'selected':''}>只賣背包與股票（不動動物與魚）</option>
+            <option value="stock" ${(c.liquidate_order||'stock')==='stock'?'selected':''}>只賣股票（推薦：不動農場／魚缸／背包）</option>
+            <option value="stock,bag" ${c.liquidate_order==='stock,bag'?'selected':''}>股票 → 背包物品</option>
+            <option value="bag,stock" ${c.liquidate_order==='bag,stock'?'selected':''}>背包物品 → 股票</option>
+            <option value="stock,bag,fish,animal" ${c.liquidate_order==='stock,bag,fish,animal'?'selected':''}>股票 → 背包 → 魚 → 動物（最嚴格，玩家會很痛）</option>
           </select></div>
         <hr style="border:none;border-top:1px solid var(--border);margin:16px 0">
         <h3>🤝 普發（救濟金）</h3>
@@ -215,10 +218,11 @@ App.page('tax', {
       UI.modal({
         title: `${b.dataset.period} 稅單明細`,
         bodyHTML: `<div class="table-wrap"><table class="list">
-          <thead><tr><th>玩家</th><th>當時餘額</th><th>所得稅</th><th>農地稅</th><th>養殖稅</th><th>證券稅</th><th>消費稅</th><th>應繳</th><th>實繳</th></tr></thead>
+          <thead><tr><th>玩家</th><th>當時餘額</th><th>所得稅</th><th>農地稅</th><th>養殖稅</th><th>證券稅</th><th>消費稅</th><th>慈善折抵</th><th>應繳</th><th>實繳</th></tr></thead>
           <tbody>${rows.map(r => `<tr><td>${UI.esc(r.username || r.user_id)}</td><td>${coin(r.balance)}</td>
             <td>${coin(r.income_tax)}</td><td>${coin(r.land_tax)}</td><td>${coin(r.breed_tax)}</td><td>${coin(r.stock_tax)}</td><td>${coin(r.spend_tax)}</td>
-            <td>${coin(r.total)}</td><td>${r.balance - r.paid < 0 ? `<span style="color:#e74c3c">${coin(r.paid)}（欠稅，餘額變 ${coin(r.balance - r.paid)}）</span>` : coin(r.paid)}</td>
+            <td>${r.charity_credit ? `−${coin(r.charity_credit)}` : '—'}</td>
+            <td>${coin(r.total)}</td><td>${r.total > r.paid ? `<span style="color:#e67e22">${coin(r.paid)}（未繳 ${coin(r.total - r.paid)}）</span>` : coin(r.paid)}</td>
           </tr>`).join('')}</tbody></table></div>`,
         okText: '關閉'
       });

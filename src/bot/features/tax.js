@@ -17,12 +17,18 @@ const money = (gid, n) => {
   return `${c.currency_emoji || '🪙'} ${Number(n || 0).toLocaleString('en-US')} ${c.currency_name || '星幣'}`;
 };
 
-// 預設級距：免稅額以上開始，越有錢抽越兇。後台可自由改。
+// 預設級距：級距切細、稅率壓低（整筆跳級時跳一級不會突然變貴），越有錢才慢慢抽多一點。
+// 舊版是 5/10/20/35 四大級，玩家反映「跳一級就爆增、感覺不出差別」→ 改成 9 小級，整體再下修 5 個百分點。
 const DEFAULT_BRACKETS = [
-  { over: 100000, pct: 5 },
-  { over: 500000, pct: 10 },
-  { over: 2000000, pct: 20 },
-  { over: 10000000, pct: 35 }
+  { over: 100000, pct: 1 },
+  { over: 200000, pct: 2 },
+  { over: 400000, pct: 3 },
+  { over: 700000, pct: 5 },
+  { over: 1000000, pct: 7 },
+  { over: 2000000, pct: 10 },
+  { over: 4000000, pct: 13 },
+  { over: 7000000, pct: 17 },
+  { over: 10000000, pct: 20 }
 ];
 
 function brackets(c) {
@@ -122,9 +128,13 @@ function assess(gid, userId) {
     income = Math.max(0, cap - land - breed - stock - spend);
     total = income + land + breed + stock + spend;
   }
+  // 慈善捐款折抵：本期捐款 × 折抵比例，直接從應繳稅額扣掉（不會扣成負數）
+  const gross = total;
+  const { credit, donated } = require('./charity').creditFor(gid, userId, total);
+  total = Math.max(0, total - credit);
   return {
-    wallet: w, balance: w.coins, income, land, breed, stock, spend, total, earned, incomeBase: base,
-    counts: { field, green, animals, fish, fieldTaxed, greenTaxed, animalTaxed, fishTaxed, stockVal, stockTaxed, spent, spendTaxed, earned }
+    wallet: w, balance: w.coins, income, land, breed, stock, spend, gross, credit, donated, total, earned, incomeBase: base,
+    counts: { field, green, animals, fish, fieldTaxed, greenTaxed, animalTaxed, fishTaxed, stockVal, stockTaxed, spent, spendTaxed, earned, donated, credit }
   };
 }
 
@@ -133,12 +143,14 @@ function assess(gid, userId) {
 // 一律「便宜的先賣」，讓最後那一份的超賣金額最小；超賣的部分會留在玩家錢包裡。
 // 動物與魚回收半價（跟 /放生、/賣魚 一致），
 // 背包物品照 /賣出 的即時賣價，股票照現價扣交易稅（負價股不賣，賣了只會更負）。
+// ⚠️ 預設只賣**股票**：農場／魚缸／背包被系統收掉會讓玩家直接不想玩，
+//    要動那些資產只能由管理員在後台自己把順序加回去。
 const LIQ_LABEL = { bag: '🎒 背包物品', stock: '📈 股票', fish: '🐠 魚缸的魚', animal: '🐄 牧場動物' };
 const SELL_PCT = 0.5;   // 動物／魚的回收比例，與 ranch.js／aquarium.js 相同
 
 function liquidate(gid, userId, debt) {
   const c = cfg(gid);
-  const order = String(c.liquidate_order || 'bag,stock,fish,animal').split(',').map(x => x.trim()).filter(Boolean);
+  const order = String(c.liquidate_order || 'stock').split(',').map(x => x.trim()).filter(Boolean);
   const sold = [];
   let left = debt;   // 還差多少才回到 0（正數）
 
@@ -275,8 +287,9 @@ function planRelief(gid, taxSum, client, after = new Map()) {
     if (amt > 0) list.push({ userId: w.user_id, username: w.username || '', before: w.coins, amount: Math.floor(amt) });
   }
   // 預算控管：發不出這麼多就等比例縮減（至少留 1 塊，免得縮成 0 還記一筆）
+  // 財源＝本期稅收＋慈善基金會餘額（捐款直接變成救濟金）
   if (c.relief_from_tax) {
-    const budget = Math.max(0, taxSum);
+    const budget = Math.max(0, taxSum) + require('./charity').reliefBudget(gid);
     const want = list.reduce((a, b) => a + b.amount, 0);
     if (want > budget) {
       const ratio = budget / want;
@@ -286,7 +299,8 @@ function planRelief(gid, taxSum, client, after = new Map()) {
   return list;
 }
 
-function payRelief(gid, period, list) {
+// taxSum：本期實收稅金。發放總額超過稅收的部分，從慈善基金會的餘額撥出。
+function payRelief(gid, period, list, taxSum = 0) {
   if (!list.length) return 0;
   db.transaction(() => {
     for (const r of list) {
@@ -296,7 +310,10 @@ function payRelief(gid, period, list) {
         .run(gid, period, r.userId, r.username, r.before, r.amount);
     }
   })();
-  return list.reduce((a, b) => a + b.amount, 0);
+  const sum = list.reduce((a, b) => a + b.amount, 0);
+  const fromPool = require('./charity').takeFromPool(gid, Math.max(0, sum - Math.max(0, taxSum)));
+  if (fromPool > 0) require('./charity').logPayout(gid, period, fromPool, list.length);
+  return sum;
 }
 
 // 期間代碼：同一期只課一次（用結算日的日期字串當代碼）
@@ -320,6 +337,9 @@ async function runGuild(client, gid, { force = false, dryRun = false } = {}) {
     if (c.last_period === periodCode()) return null;   // 同一期已經課過
   }
   const period = periodCode();
+  // 本期捐款榜要先抓：結算會把 last_run_at 推到現在，之後就查不到「本期」捐款了
+  const charity = require('./charity');
+  const donTop = charity.cfg(gid).enabled ? charity.periodTop(gid, 5) : [];
   const wallets = db.prepare('SELECT user_id FROM econ_wallets WHERE guild_id=?').all(gid);
   const guild = client && client.guilds ? client.guilds.cache.get(gid) : null;
   const bills = [];
@@ -333,13 +353,14 @@ async function runGuild(client, gid, { force = false, dryRun = false } = {}) {
   if (!dryRun) {
     const pay = db.transaction(() => {
       for (const b of bills) {
-        const paid = b.total;   // 全額課徵：錢不夠就欠稅，餘額會變成負數
+        // no_debt（預設開）：最多只課到餘額歸零，差額當「未繳」記在稅單上，不會把人課成負債。
+        const paid = c.no_debt ? Math.max(0, Math.min(b.total, b.balance)) : b.total;
         db.prepare("UPDATE econ_wallets SET coins = coins - ?, updated_at = datetime('now','localtime') WHERE guild_id=? AND user_id=?")
           .run(paid, gid, b.userId);
         db.prepare(
-          `INSERT INTO tax_records (guild_id, period, user_id, username, balance, income_tax, land_tax, breed_tax, stock_tax, spend_tax, total, paid, detail)
-           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`
-        ).run(gid, period, b.userId, b.wallet.username || '', b.balance, b.income, b.land, b.breed, b.stock || 0, b.spend || 0, b.total, paid,
+          `INSERT INTO tax_records (guild_id, period, user_id, username, balance, income_tax, land_tax, breed_tax, stock_tax, spend_tax, charity_credit, total, paid, detail)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
+        ).run(gid, period, b.userId, b.wallet.username || '', b.balance, b.income, b.land, b.breed, b.stock || 0, b.spend || 0, b.credit || 0, b.total, paid,
           JSON.stringify(b.counts));
         b.paid = paid;
       }
@@ -349,6 +370,7 @@ async function runGuild(client, gid, { force = false, dryRun = false } = {}) {
     });
     pay();
   }
+  if (dryRun) for (const b of bills) b.paid = c.no_debt ? Math.max(0, Math.min(b.total, b.balance)) : b.total;
   const sum = bills.reduce((s, b) => s + (b.paid ?? b.total), 0);
   // 試算時錢包還沒被扣，先把「課稅後餘額」寫進去，清算與普發才算得準
   const after = new Map(bills.map(b => [b.userId, b.balance - (b.paid ?? b.total)]));
@@ -362,13 +384,13 @@ async function runGuild(client, gid, { force = false, dryRun = false } = {}) {
     for (const b of bills) db.prepare('UPDATE econ_wallets SET coins=? WHERE guild_id=? AND user_id=?').run(b.balance, gid, b.userId);
   }
   const relief = planRelief(gid, sum, client, after);
-  const reliefSum = dryRun ? relief.reduce((a, b) => a + b.amount, 0) : payRelief(gid, period, relief);
-  if (!dryRun) await announce(client, gid, period, bills, relief, reliefSum, liq).catch(() => {});
-  return { period, bills, sum, relief, reliefSum, liq };
+  const reliefSum = dryRun ? relief.reduce((a, b) => a + b.amount, 0) : payRelief(gid, period, relief, sum);
+  if (!dryRun) await announce(client, gid, period, bills, relief, reliefSum, liq, donTop).catch(() => {});
+  return { period, bills, sum, relief, reliefSum, liq, donTop };
 }
 
 // 公告本期稅收＋納稅大戶，並（可選）私訊每個人自己的稅單
-async function announce(client, gid, period, bills, relief = [], reliefSum = 0, liq = []) {
+async function announce(client, gid, period, bills, relief = [], reliefSum = 0, liq = [], donTop = []) {
   const c = cfg(gid);
   if (!bills.length && !relief.length && !liq.length) return;
   const sum = bills.reduce((s, b) => s + b.paid, 0);
@@ -389,6 +411,14 @@ async function announce(client, gid, period, bills, relief = [], reliefSum = 0, 
         emb.addFields({
           name: `⚖️ 欠稅強制清算　${liq.length} 人被變賣資產`,
           value: liq.slice(0, 10).map(l => `<@${l.userId}> — 變賣 ${money(gid, l.total)}（${l.sold.length} 項）`).join('\n').slice(0, 1024)
+        });
+      }
+      if (donTop.length) {
+        const credited = bills.reduce((a, b) => a + (b.credit || 0), 0);
+        emb.addFields({
+          name: `❤️ 本期捐款榜（${require('./charity').fundName(gid)}）`
+            + (credited > 0 ? `　·　共折抵 ${money(gid, credited)} 稅金` : ''),
+          value: donTop.map((d, i) => `${['🥇', '🥈', '🥉'][i] || `${i + 1}.`} <@${d.user_id}> — ${money(gid, d.amount)}`).join('\n').slice(0, 1024)
         });
       }
       if (relief.length) {
@@ -416,13 +446,23 @@ function billEmbed(gid, b, period) {
   if (b.breed) lines.push(`🐄 養殖稅　${money(gid, b.breed)}（動物 ${b.counts.animalTaxed} 隻／魚 ${b.counts.fishTaxed} 條）`);
   if (b.stock) lines.push(`📈 證券稅　${money(gid, b.stock)}（持股市值 ${Number(b.counts.stockVal || 0).toLocaleString('en-US')}）`);
   if (b.spend) lines.push(`🛍️ 消費稅　${money(gid, b.spend)}（本期兌換 ${Number(b.counts.spent || 0).toLocaleString('en-US')}）`);
+  if (b.credit) {
+    lines.push(`❤️ 慈善折抵　**−${money(gid, b.credit)}**（本期捐款 ${Number(b.donated || 0).toLocaleString('en-US')}）`);
+  }
   const emb = new EmbedBuilder()
     .setTitle('🧾 你的稅單')
     .setDescription(lines.join('\n') || '本期免稅 🎉')
-    .addFields({ name: '合計', value: money(gid, b.total), inline: true })
+    .addFields({ name: '合計', value: money(gid, b.total) + (b.credit ? `（折抵前 ${Number(b.gross || 0).toLocaleString('en-US')}）` : ''), inline: true })
     .setColor(brandColor());
   if (period) emb.setFooter({ text: `期間 ${period}` });
-  if (b.paid !== undefined && b.balance !== undefined && b.balance - b.paid < 0) {
+  // 課稅不會把人課成負數（no_debt）：錢不夠時只課到 0，差額記為未繳
+  if (b.paid !== undefined && b.total > b.paid) {
+    emb.addFields({
+      name: '⚠️ 餘額不足',
+      value: `應繳 ${money(gid, b.total)}，但你只有 ${money(gid, b.balance)}，這期**只課到餘額歸零**（未繳 ${money(gid, b.total - b.paid)}，不會變成負債）。`,
+      inline: true
+    });
+  } else if (b.paid !== undefined && b.balance !== undefined && b.balance - b.paid < 0) {
     emb.addFields({
       name: '⚠️ 欠稅',
       value: `餘額不足，繳完後變成 ${money(gid, b.balance - b.paid)}（負債），要先賺回來才會回到正數。`,
@@ -481,6 +521,7 @@ function infoEmbed(gid, userId, username) {
     if (a.breed) detail.push(`🐄 養殖稅 ${money(gid, a.breed)}（動物 ${a.counts.animalTaxed}／魚 ${a.counts.fishTaxed}）`);
     if (a.stock) detail.push(`📈 證券稅 ${money(gid, a.stock)}（持股市值 ${Number(a.counts.stockVal || 0).toLocaleString('en-US')}）`);
     if (a.spend) detail.push(`🛍️ 消費稅 ${money(gid, a.spend)}（本期兌換 ${Number(a.counts.spent || 0).toLocaleString('en-US')}）`);
+    if (a.credit) detail.push(`❤️ 慈善折抵 **−${money(gid, a.credit)}**（本期捐款 ${Number(a.donated || 0).toLocaleString('en-US')}）`);
     emb.addFields({
       name: '你這期預估要繳',
       value: (detail.length ? detail.join('\n') + `\n**合計 ${money(gid, a.total)}**` : '本期免稅 🎉') +
@@ -493,12 +534,26 @@ function infoEmbed(gid, userId, username) {
       `\n　把錢換成獎勵一樣要繳，不能靠結算前掃貨逃稅。`);
   }
   if (c.liquidate_enabled) {
-    const order = String(c.liquidate_order || 'bag,stock,fish,animal').split(',').map(x => LIQ_LABEL[x.trim()] || x.trim());
+    const order = String(c.liquidate_order || 'stock').split(',').map(x => LIQ_LABEL[x.trim()] || x.trim());
     emb.addFields({
       name: '⚖️ 欠稅會被強制清算',
       value: `課完稅還是負數的話，系統會**自動變賣你的資產**抵債，順序是：\n　${order.join(' → ')}\n` +
         `只賣到剛好把債還清為止，不會多賣。背包照 \`/賣出\` 的價格、股票照現價（扣交易稅、負價股不賣）、動物與魚回收半價。`
     });
+  }
+  {
+    const ch = require('./charity');
+    const cc = ch.cfg(gid);
+    if (cc.enabled && cc.deduct_pct > 0) {
+      emb.addFields({
+        name: `❤️ 捐款可以抵稅（${ch.fundName(gid)}）`,
+        value: `\`/捐款 金額\` 捐進基金會，捐款的 **${cc.deduct_pct}%** 直接折抵這期稅金`
+          + `（捐 100,000 → 少繳 ${money(gid, Math.floor(100000 * cc.deduct_pct / 100))}）。`
+          + (cc.deduct_max > 0 ? `\n每人每期折抵上限 ${money(gid, cc.deduct_max)}。` : '')
+          + ((cc.deduct_max_pct ?? 100) < 100 ? `\n最多只能抵掉稅金的 ${cc.deduct_max_pct}%。` : '')
+          + `\n基金會目前餘額 ${money(gid, cc.pool)}${cc.to_relief ? '，會自動變成普發救濟金' : ''}。用 \`/基金會\` 查帳目。`
+      });
+    }
   }
   if (c.relief_enabled) {
     emb.addFields({
@@ -553,7 +608,9 @@ function infoEmbed(gid, userId, username) {
   emb.addFields({
     name: '結算方式',
     value: `${nextRunText(c)}` + ((c.income_max_pct ?? 50) > 0 ? `　·　單期最多課走餘額的 ${c.income_max_pct}%` : '') + '\n' +
-      `只從**錢包**扣（背包與資產不會被動），但**錢不夠會欠稅、餘額變成負數**，要賺回來才會回正。`
+      (c.no_debt
+        ? `只從**錢包**扣（背包與資產不會被動），而且**不會把你課成負數**：錢不夠就只課到餘額歸零，差額算未繳、不追討。`
+        : `只從**錢包**扣（背包與資產不會被動），但**錢不夠會欠稅、餘額變成負數**，要賺回來才會回正。`)
   });
   return emb.setFooter({ text: '用 /稅單 可以隨時查自己的明細' });
 }

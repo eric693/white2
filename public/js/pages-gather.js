@@ -61,6 +61,8 @@ App.page('gather', {
         </div>
         <div class="field"><label>伐木／採集／狩獵冷卻（秒）</label>
           <input name="other_cooldown" type="number" min="1" value="${c.other_cooldown || 300}"></div>
+        <div class="field">${H.toggle('require_tool', c.require_tool ?? 1, '禁止徒手採集（沒有可用工具就不能釣魚／挖礦／伐木／採集／狩獵）')}
+          <div class="hint">工具壞掉、還沒買、或<b>被抵押給物資貸款</b>時都算沒工具，要先修理／購買／贖回。關掉＝像以前一樣可以徒手（沒加成）。</div></div>
         <div class="form-row">
           <div class="field"><label>每日採集點數（0＝不用點數制）<br><span class="hint">✅ <b>目前主要的每日限制</b>：所有地圖共用一池，每張地圖各自設「門票」扣多少點</span></label><input name="daily_points" type="number" min="0" value="${c.daily_points || 0}"></div>
           <div class="field"><label>舊版每日上限（每種各自算，0＝不限）<br><span class="hint">只有「沒有點數制、也沒有地圖」時才生效</span></label><input name="daily_limit" type="number" min="0" value="${c.daily_limit || 0}"></div>
