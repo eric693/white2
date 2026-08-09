@@ -1,0 +1,667 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="璃白Yu光冒險區的玩家規則手冊：採集點數、商店、設施等級、牧場、魚缸、偷偷樂的完整數值與機率。">
+<meta property="og:title" content="冒險生活 · 玩家規則手冊">
+<meta property="og:description" content="採集點數、商店、設施等級、牧場、魚缸、偷偷樂的完整數值與機率。">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🌿</text></svg>">
+<title>冒險生活 · 玩家規則手冊</title>
+<style>
+  :root {
+    --ground: #EDF1E8;
+    --paper: #F7F9F4;
+    --edge: #D2DBCC;
+    --ink: #16241B;
+    --ink-soft: #4C5B50;
+    --ink-faint: #7A8A7E;
+    --gold: #96690F;
+    --gold-soft: #F0E3C4;
+    --thorn: #9C3F37;
+    --thorn-soft: #F4DedB;
+    --deep: #2C6455;
+    --deep-soft: #DCEAE3;
+    --shadow: 0 1px 0 rgba(22,36,27,.06);
+    --serif: "Songti TC", "Noto Serif TC", "Source Han Serif TC", "PMingLiU", Georgia, serif;
+    --sans: "PingFang TC", "Noto Sans TC", "Microsoft JhengHei", system-ui, sans-serif;
+    --mono: "SF Mono", ui-monospace, "Cascadia Mono", Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ground: #0E1411;
+      --paper: #151E18;
+      --edge: #2A3830;
+      --ink: #E2E9DF;
+      --ink-soft: #A9B8AC;
+      --ink-faint: #7C8C80;
+      --gold: #DCA940;
+      --gold-soft: #2E2716;
+      --thorn: #DE7A70;
+      --thorn-soft: #33201E;
+      --deep: #6FBBA4;
+      --deep-soft: #172C26;
+      --shadow: 0 1px 0 rgba(0,0,0,.3);
+    }
+  }
+  :root[data-theme="dark"] {
+    --ground: #0E1411; --paper: #151E18; --edge: #2A3830;
+    --ink: #E2E9DF; --ink-soft: #A9B8AC; --ink-faint: #7C8C80;
+    --gold: #DCA940; --gold-soft: #2E2716;
+    --thorn: #DE7A70; --thorn-soft: #33201E;
+    --deep: #6FBBA4; --deep-soft: #172C26;
+    --shadow: 0 1px 0 rgba(0,0,0,.3);
+  }
+  :root[data-theme="light"] {
+    --ground: #EDF1E8; --paper: #F7F9F4; --edge: #D2DBCC;
+    --ink: #16241B; --ink-soft: #4C5B50; --ink-faint: #7A8A7E;
+    --gold: #96690F; --gold-soft: #F0E3C4;
+    --thorn: #9C3F37; --thorn-soft: #F4DEDB;
+    --deep: #2C6455; --deep-soft: #DCEAE3;
+    --shadow: 0 1px 0 rgba(22,36,27,.06);
+  }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.75;
+    margin: 0;
+    padding: 0 20px 80px;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 780px; margin: 0 auto; }
+
+  /* ---- 開場 ---- */
+  header { padding: 56px 0 28px; border-bottom: 2px solid var(--ink); }
+  .eyebrow {
+    font-family: var(--mono); font-size: 12px; letter-spacing: .18em;
+    text-transform: uppercase; color: var(--gold); margin: 0 0 14px;
+  }
+  h1 {
+    font-family: var(--serif); font-weight: 700; font-size: clamp(34px, 6vw, 52px);
+    line-height: 1.15; margin: 0 0 14px; text-wrap: balance; letter-spacing: .01em;
+  }
+  .lede { font-size: 17px; color: var(--ink-soft); margin: 0; max-width: 60ch; }
+
+  /* ---- 目錄 ---- */
+  nav { margin: 22px 0 0; display: flex; flex-wrap: wrap; gap: 8px; }
+  nav a {
+    font-size: 13px; text-decoration: none; color: var(--ink-soft);
+    border: 1px solid var(--edge); background: var(--paper);
+    padding: 5px 11px; border-radius: 999px; transition: .15s;
+  }
+  nav a:hover, nav a:focus-visible { color: var(--ink); border-color: var(--ink-faint); }
+
+  /* ---- 區塊 ---- */
+  section { padding-top: 44px; }
+  h2 {
+    font-family: var(--serif); font-size: 25px; margin: 0 0 6px;
+    display: flex; align-items: baseline; gap: 10px; text-wrap: balance;
+  }
+  h2 .num {
+    font-family: var(--mono); font-size: 12px; color: var(--gold);
+    letter-spacing: .1em; flex: none;
+  }
+  h3 { font-size: 15px; margin: 26px 0 8px; letter-spacing: .02em; }
+  .sub { color: var(--ink-faint); font-size: 14px; margin: 0 0 18px; }
+  p { margin: 0 0 14px; }
+  ul { margin: 0 0 14px; padding-left: 1.25em; }
+  li { margin-bottom: 5px; }
+  strong { font-weight: 700; }
+  code {
+    font-family: var(--mono); font-size: .88em; background: var(--paper);
+    border: 1px solid var(--edge); border-radius: 5px; padding: 1px 5px;
+    white-space: nowrap;
+  }
+
+  /* ---- 表格 ---- */
+  .scroll { overflow-x: auto; margin: 0 0 16px; border: 1px solid var(--edge); border-radius: 10px; background: var(--paper); }
+  table { border-collapse: collapse; width: 100%; font-size: 14.5px; }
+  th, td { padding: 10px 14px; text-align: left; border-bottom: 1px solid var(--edge); white-space: nowrap; }
+  th {
+    font-family: var(--mono); font-size: 11.5px; letter-spacing: .09em;
+    text-transform: uppercase; color: var(--ink-faint); font-weight: 400;
+    background: color-mix(in srgb, var(--edge) 30%, transparent);
+  }
+  tbody tr:last-child td { border-bottom: none; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; font-family: var(--mono); }
+  td .n { color: var(--ink-soft); font-size: 13px; white-space: normal; }
+  td.wrap { white-space: normal; min-width: 15ch; }
+
+  /* ---- 提示框 ---- */
+  .note {
+    border-left: 3px solid var(--deep); background: var(--deep-soft);
+    padding: 14px 16px; border-radius: 0 8px 8px 0; margin: 0 0 16px; font-size: 15px;
+  }
+  .warn { border-left-color: var(--thorn); background: var(--thorn-soft); }
+  .note p:last-child, .note ul:last-child { margin-bottom: 0; }
+  .note .h { font-weight: 700; display: block; margin-bottom: 3px; }
+
+  /* ---- 步驟 ---- */
+  ol.steps { list-style: none; counter-reset: s; padding: 0; margin: 0 0 16px; display: grid; gap: 10px; }
+  ol.steps li {
+    counter-increment: s; background: var(--paper); border: 1px solid var(--edge);
+    border-radius: 10px; padding: 12px 16px 12px 46px; position: relative; margin: 0;
+  }
+  ol.steps li::before {
+    content: counter(s); position: absolute; left: 16px; top: 12px;
+    font-family: var(--mono); font-size: 12px; color: var(--gold);
+    border: 1px solid var(--gold); border-radius: 50%;
+    width: 20px; height: 20px; display: grid; place-items: center;
+  }
+
+  /* ---- 品項標籤 ---- */
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 16px; }
+  .chip {
+    font-size: 13px; background: var(--paper); border: 1px solid var(--edge);
+    border-radius: 6px; padding: 3px 9px; color: var(--ink-soft);
+  }
+  .chip.rare { border-color: var(--gold); color: var(--gold); }
+
+  hr { border: none; border-top: 1px solid var(--edge); margin: 44px 0 0; }
+  footer { padding-top: 22px; color: var(--ink-faint); font-size: 13px; }
+  a { color: var(--gold); }
+  :focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+</style>
+
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <p class="eyebrow">璃白Yu光 · 冒險區</p>
+  <h1>冒險生活 玩家規則手冊</h1>
+  <p class="lede">釣魚、挖礦、種田、養動物、養 SSR 魚、偷別人家的雞。這頁把所有數字寫清楚——冷卻多久、機率多少、什麼會疊加什麼不會，看完就不用問了。</p>
+  <nav>
+    <a href="#start">新手三步</a>
+    <a href="#gather">採集</a>
+    <a href="#money">錢與商店</a>
+    <a href="#draw">每日抽籤</a>
+    <a href="#facility">設施等級</a>
+    <a href="#ranch">牧場</a>
+    <a href="#farm">農地溫室</a>
+    <a href="#steal">偷偷樂</a>
+    <a href="#aquarium">魚缸</a>
+    <a href="#stock">股市</a>
+    <a href="#tax">稅金</a>
+    <a href="#more">其他玩法</a>
+    <a href="#cmd">指令速查</a>
+  </nav>
+</header>
+
+<section id="start">
+  <h2><span class="num">01</span>新手三步</h2>
+  <p class="sub">在冒險頻道點釘選的 <strong>冒險面板</strong>，所有功能都是按鈕，不用背指令。</p>
+  <ol class="steps">
+    <li><strong>先去採集賺錢。</strong>點 🎣釣魚 ⛏️挖礦 🪓伐木 🧺採集 🏹狩獵，拿到東西後點 💰賣出換星幣。新手工具是免費的，一開始就有。</li>
+    <li><strong>買地。</strong>星幣夠了就去 🏗️設施商店買農地／牧場，有地才能種東西、養動物。也可以用 🔨製作 拿材料換格子。</li>
+    <li><strong>開始經營。</strong>🌱種子商店 種作物、🛒畜牧商店 買動物，時間到用 🌻採收 / 🥛收成 收成，再賣掉。</li>
+  </ol>
+  <div class="note">
+    <span class="h">結果只有你自己看得到</span>
+    面板按鈕的回覆都是私密訊息，不會洗版，也不用擔心別人看到你有多少錢。
+  </div>
+</section>
+
+<section id="gather">
+  <h2><span class="num">02</span>採集</h2>
+  <p class="sub">五種採集共用一組規則：有冷卻、有每日次數、有稀有度。</p>
+
+  <h3>每日 15 點，地圖各有門票</h3>
+  <p>採集不算「次數」，算<strong>點數</strong>：每天一池 <strong>15 點</strong>，五種採集共用，台灣時間午夜重置。在哪張地圖採集，就扣那張圖的門票。門票越貴、次數越少，但稀有率越高。</p>
+  <div class="scroll"><table>
+    <thead><tr><th>地圖</th><th class="num">門票</th><th class="num">稀有率</th><th class="num">全用在這張圖</th></tr></thead>
+    <tbody>
+      <tr><td>🌾 新手草原</td><td class="num">1 點</td><td class="num">+0%</td><td class="num">15 次</td></tr>
+      <tr><td>🌲 幽暗森林</td><td class="num">2 點</td><td class="num">+20%</td><td class="num">7 次</td></tr>
+      <tr><td>🏝️ 珊瑚礁</td><td class="num">3 點</td><td class="num">+40%</td><td class="num">5 次</td></tr>
+      <tr><td>🏔️ 遠古秘境</td><td class="num">4 點</td><td class="num">+65%</td><td class="num">3 次</td></tr>
+      <tr><td>🌋 熔岩洞窟</td><td class="num">6 點</td><td class="num">+90%</td><td class="num">2 次</td></tr>
+    </tbody>
+  </table></div>
+  <p>點數可以混著花——例如秘境 3 次（12 點）＋草原 3 次（3 點）剛好用滿。用 🗺️地圖 隨時切換，切換不用錢也不扣點。</p>
+  <div class="note">
+    <span class="h">點數不夠時不會被擋死</span>
+    剩 2 點卻想去秘境（要 3 點）時，系統會提示你換去便宜的圖，零頭可以在草原用完。
+  </div>
+  <p>另外每次採集後有 <strong>10 秒冷卻</strong>，訊息會顯示倒數。</p>
+
+  <h3>稀有度</h3>
+  <div class="chips">
+    <span class="chip">N 普通</span>
+    <span class="chip">R 稀有</span>
+    <span class="chip">SR 史詩</span>
+    <span class="chip rare">SSR 傳說 · 全頻道報喜</span>
+  </div>
+  <p>每種採集現在都有 <strong>13～15 種</strong>掉落物，例如釣魚可以釣到水母、鰻魚、旗魚，最稀有的是皇帶魚與美人魚。抽到 SSR 時機器人會在頻道公開恭喜你。</p>
+
+  <h3>工具：加稀有率、減冷卻，會壞</h3>
+  <div class="scroll"><table>
+    <thead><tr><th>階級</th><th class="num">價格</th><th class="num">稀有率</th><th class="num">冷卻</th><th class="num">耐久</th><th class="num">修理費</th></tr></thead>
+    <tbody>
+      <tr><td>一階（第一把免費送）</td><td class="num">100</td><td class="num">+0%</td><td class="num">－0%</td><td class="num">40</td><td class="num">100</td></tr>
+      <tr><td>二階</td><td class="num">1,600</td><td class="num">+25%</td><td class="num">－10%</td><td class="num">60</td><td class="num">800</td></tr>
+      <tr><td>三階</td><td class="num">8,000</td><td class="num">+60%</td><td class="num">－25%</td><td class="num">120</td><td class="num">4,000</td></tr>
+    </tbody>
+  </table></div>
+  <ul>
+    <li><strong>一階工具每人第一把免費送</strong>，用壞後再要一把（或 <code>/修理</code>）要 100 星幣。壞掉沒修時會自動改用<strong>徒手</strong>（沒有加成）。</li>
+    <li>系統會<strong>自動使用你擁有的最高階</strong>，不用手動裝備。</li>
+    <li>每採集一次扣 1 點耐久，歸零就壞掉，用 <code>/修理</code> 花星幣修好（費用如上表）。</li>
+    <li>五種採集各有各的工具（釣竿／鎬／斧／籃／弓），要分開買。</li>
+    <li>高階工具也可以用 <code>/製作</code> 拿材料自己鍛造，比用星幣買省一些。</li>
+  </ul>
+</section>
+
+<section id="money">
+  <h2><span class="num">03</span>錢與商店</h2>
+  <p class="sub">貨幣是 🪙星幣，所有東西都用它買。</p>
+  <ul>
+    <li><strong>賣出</strong>：點 💰賣出 把背包裡的東西賣給 NPC。稀有度越高單價越高。</li>
+    <li><strong>買東西</strong>：四家商店都在面板的<strong>綠色那一排</strong>，點進去用下拉選單直接買，可以連續點。第五家「特殊兌換商店」要打 <code>/特殊商店</code>。</li>
+    <li><strong>看家底</strong>：📊查看狀態 一次顯示星幣、工具耐久、動物數、作物數。</li>
+  </ul>
+  <div class="scroll"><table>
+    <thead><tr><th>商店</th><th class="wrap">賣什麼</th></tr></thead>
+    <tbody>
+      <tr><td>🏪 一般商店</td><td class="wrap">採集工具（五類各 3 階）＋ 設施等級</td></tr>
+      <tr><td>🛒 畜牧商店</td><td class="wrap">13 種動物：10 種生產、3 種看門</td></tr>
+      <tr><td>🌱 種子商店</td><td class="wrap">20 種種子：農地 10、溫室 10</td></tr>
+      <tr><td>🏗️ 設施商店</td><td class="wrap">農地／溫室／牧場／孵化室的等級</td></tr>
+      <tr><td>🎁 特殊兌換商店</td><td class="wrap">管理員準備的特別獎勵（<code>/特殊商店</code>，人工發放）</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<section id="draw">
+  <h2><span class="num">04</span>每日抽籤</h2>
+  <p class="sub">🎲 一天一次，免費，午夜重置。</p>
+  <div class="scroll"><table>
+    <thead><tr><th>獎項</th><th class="wrap">內容</th><th class="num">機率</th></tr></thead>
+    <tbody>
+      <tr><td>🥉 銅獎</td><td class="wrap">10 星幣</td><td class="num">34%</td></tr>
+      <tr><td>🥈 銀獎</td><td class="wrap">25 星幣</td><td class="num">26%</td></tr>
+      <tr><td>🥇 金獎</td><td class="wrap">60 星幣</td><td class="num">14%</td></tr>
+      <tr><td>🍀 幸運符</td><td class="wrap">當日稀有率 +20%</td><td class="num">14%</td></tr>
+      <tr><td>🌟 幸運星</td><td class="wrap">當日稀有率 +40%</td><td class="num">8%</td></tr>
+      <tr><td>🎰 頭獎</td><td class="wrap">120 星幣 ＋ 稀有率 +60%</td><td class="num">4%</td></tr>
+    </tbody>
+  </table></div>
+  <p>幸運符只在<strong>當天有效</strong>，效果會和工具、地圖的稀有率<strong>相加</strong>。抽到幸運星那天，記得換去遠古秘境刷 SSR。</p>
+</section>
+
+<section id="facility">
+  <h2><span class="num">05</span>設施等級</h2>
+  <p class="sub">🏗️ 設施商店買的是「等級」，決定你有幾格地。</p>
+  <div class="note warn">
+    <span class="h">買高階會取代低階，不是疊加</span>
+    三階農地就是 8 格，不是 2＋4＋8。所以錢夠的話<strong>直接跳買三階最省</strong>，不用一階一階買上去。
+  </div>
+  <div class="scroll"><table>
+    <thead><tr><th>設施</th><th>一階</th><th>二階</th><th>三階</th></tr></thead>
+    <tbody>
+      <tr><td>🌾 農地</td><td class="wrap">4,000 · 2 格</td><td class="wrap">16,000 · 4 格<div class="n">成熟 －10%</div></td><td class="wrap">50,000 · 8 格<div class="n">成熟 －25%</div></td></tr>
+      <tr><td>🏡 溫室</td><td class="wrap">7,000 · 2 格</td><td class="wrap">24,000 · 4 格<div class="n">成熟 －10%</div></td><td class="wrap">65,000 · 8 格<div class="n">成熟 －25%</div></td></tr>
+      <tr><td>🐔 牧場</td><td class="wrap">5,000 · 2 格</td><td class="wrap">18,000 · 4 格<div class="n">產出 －10%<br>被偷 －10%</div></td><td class="wrap">55,000 · 8 格<div class="n">產出 －25%<br>被偷 －25%</div></td></tr>
+      <tr><td>🥚 孵化室</td><td class="wrap">3,500 · 1 格</td><td class="wrap">13,000 · 2 格<div class="n">孵化 －10%</div></td><td class="wrap">40,000 · 4 格<div class="n">孵化 －25%</div></td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>設施 vs. 製作，兩條路可以並行</h3>
+  <div class="scroll"><table>
+    <thead><tr><th></th><th>🏗️ 設施商店</th><th>🔨 製作</th></tr></thead>
+    <tbody>
+      <tr><td>成本</td><td>星幣</td><td>材料</td></tr>
+      <tr><td>給幾格</td><td class="wrap">2 / 4 / 8（取最高階）</td><td class="wrap">每做一次 +1 格</td></tr>
+      <tr><td>階級</td><td>有，1～3 階</td><td>沒有</td></tr>
+      <tr><td>加成</td><td class="wrap">加速、防竊</td><td>沒有</td></tr>
+      <tr><td>上限</td><td>8 格</td><td class="wrap">無上限，可以一直疊</td></tr>
+    </tbody>
+  </table></div>
+  <p><strong>總格數 ＝ 設施等級的格數 ＋ 製作次數。</strong>買了三階農地（8 格）再製作 3 次，就是 11 格。</p>
+</section>
+
+<section id="ranch">
+  <h2><span class="num">06</span>牧場</h2>
+  <p class="sub">🐔 養動物收蛋、奶、毛，賣給 NPC 換錢。</p>
+  <ul>
+    <li>生產動物每 <strong>30 分鐘</strong>產 1 個（買了高階牧場會更快）。</li>
+    <li>沒收成的產物<strong>最多累積 3 天份</strong>（上限＝該動物每日產量 × 3），滿了就停產——記得回來收。</li>
+    <li>成熟一個就能收一個，不用等整批。</li>
+    <li><strong>沒收成的東西才會被偷</strong>，收進背包就安全了。</li>
+    <li><strong>不想養了可以賣掉動物</strong>：<code>/牧場</code> 的下拉選單「💰賣掉動物」或 <code>/放生</code>，回收購買價的一半星幣，待收成的產物也一起進背包。</li>
+  </ul>
+
+  <h3>看門動物</h3>
+  <div class="scroll"><table>
+    <thead><tr><th>動物</th><th class="num">價格</th><th class="num">反擊機率</th><th class="wrap">小偷最多賠你</th></tr></thead>
+    <tbody>
+      <tr><td>🪿 看門鵝</td><td class="num">100</td><td class="num">25%</td><td class="num">15</td></tr>
+      <tr><td>🐈 看門貓</td><td class="num">150</td><td class="num">30%</td><td class="num">20</td></tr>
+      <tr><td>🐕 看門狗</td><td class="num">200</td><td class="num">40%</td><td class="num">30</td></tr>
+    </tbody>
+  </table></div>
+  <div class="note warn">
+    <span class="h">養多隻不會疊加</span>
+    反擊機率<strong>只算你身上最高的那一隻</strong>。4 隻鵝還是 25%，鵝＋貓＋狗也只算狗的 40%。想更硬就換更高階的看門動物，或去升級牧場等級（那是另一套，直接扣小偷的成功率）。
+  </div>
+  <p>看門動物<strong>不生產任何東西</strong>，還會佔格子，所以純防禦流會沒收入。反擊成功那次，小偷連動物都偷不走。</p>
+
+  <h3>孵化室</h3>
+  <p>🥚 把背包裡的蛋（動物生的、狩獵撿到的都行）放進孵化室，時間到領出來就是一隻新動物，可以省下買動物的錢。有些野生蛋有失敗率。</p>
+  <p>孵好的動物<strong>牧場有空位就會自動住進去</strong>。要是<strong>牧場已經滿了</strong>，孵好的動物會先留在孵化室，`/孵化室` 下面會出現 <strong>「💰 直接賣掉孵好的動物」</strong>選單——可以直接在孵化室賣掉換星幣（回收購買價一半），<strong>不用先賣別的動物、挪格子再買回來</strong>。</p>
+</section>
+
+<section id="farm">
+  <h2><span class="num">07</span>農地與溫室</h2>
+  <p class="sub">🌾 農地種作物、🏡 溫室種花卉，各 10 種種子。</p>
+  <ul>
+    <li>買種子時<strong>直接就種下去了</strong>，不用先買再種。</li>
+    <li>成熟時間 100 分鐘～8 小時不等，越久的單價越高。</li>
+    <li>成熟後點 🌻採收 一次全收。<strong>作物不會被偷。</strong></li>
+    <li>種子會自動種進對應的地：作物進農地、花卉進溫室。</li>
+  </ul>
+  <p>入門推薦馬鈴薯（100 分鐘）、紅蘿蔔（90 分鐘）；高價的有西瓜、蘭花、櫻花，溫室最頂級的是<strong>月光花</strong>（8 小時，單價 70）。</p>
+</section>
+
+<section id="steal">
+  <h2><span class="num">08</span>偷偷樂</h2>
+  <p class="sub">🕵️ 去別人牧場偷東西。這是本伺服器最刺激也最容易吵架的功能，規則寫清楚。</p>
+
+  <div class="scroll"><table>
+    <thead><tr><th>項目</th><th class="wrap">目前設定</th></tr></thead>
+    <tbody>
+      <tr><td>每人每天</td><td class="wrap">3 次</td></tr>
+      <tr><td>基礎成功率</td><td class="wrap">50%（會再被對方的牧場等級扣）</td></tr>
+      <tr><td>一次偷多少</td><td class="wrap"><strong>1 個產物</strong>，或改成牽走 <strong>1 隻動物</strong></td></tr>
+      <tr><td>偷到動物的機率</td><td class="wrap">50%（成功潛入且沒被看門動物咬到時）</td></tr>
+      <tr><td>看門動物</td><td class="wrap">也偷得走</td></tr>
+      <tr><td>通知</td><td class="wrap">公告發在小偷打指令的頻道，被偷的人另外收到私訊</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>一次偷竊的完整流程</h3>
+  <ol class="steps">
+    <li><strong>擲成功率。</strong>對方的牧場等級會直接扣這個機率（三階 －25%）。失敗就空手而回，一樣算一次。</li>
+    <li><strong>擲看門反擊。</strong>被咬到的話，小偷掉星幣賠給對方，<strong>而且那次連動物都偷不走</strong>。</li>
+    <li><strong>擲動物搶奪。</strong>成功就牽走 1 隻動物，<strong>而且不再拿產物</strong>。</li>
+    <li><strong>沒搶到動物</strong>，才從對方隨機一格拿 1 個產物。</li>
+  </ol>
+
+  <div class="note">
+    <span class="h">所以一次最多損失一樣東西</span>
+    不是被清空——要嘛掉 1 顆蛋，要嘛掉 1 隻動物，二選一。
+  </div>
+  <div class="note warn">
+    <span class="h">被看門動物逮到會照罰全額</span>
+    小偷被咬到時，罰款是<strong>全額扣、不看你有沒有錢</strong>——沒錢也會<strong>倒扣成負數（欠款）</strong>，得賺回來才回正。所以別故意把錢花光再去偷。
+  </div>
+
+  <h3>怎麼防？</h3>
+  <ul>
+    <li><strong>勤收成</strong>——收進背包的東西偷不走，這是最有效的防禦。</li>
+    <li><strong>升級牧場等級</strong>——三階大牧場讓小偷成功率 －25%，搶動物機率也 －25%。</li>
+    <li><strong>養一隻看門狗</strong>——40% 機率反咬，讓對方掉星幣賠你。記得只要一隻。</li>
+  </ul>
+  <p>兩套防禦可以同時生效：三階牧場＋看門狗＝小偷先被扣 25% 成功率，成功後還要面對 40% 反擊。但沒有任何組合能做到完全免疫，這是刻意的。</p>
+</section>
+
+<section id="aquarium">
+  <h2><span class="num">09</span>魚缸</h2>
+  <p class="sub">🐠 只養 SSR 魚。魚缸要自己買/製作、魚很貴、每天要餵飼料，但魚會自己生星幣，是後期的高收益玩法。</p>
+
+  <div class="note warn">
+    <span class="h">魚缸格子要自己賺（起始 0 格）</span>
+    魚缸<strong>跟農地一樣</strong>要靠自己取得，不再免費送（價格與農地相同）：
+    <br>・<strong>設施商店買</strong>：🐟小魚缸 4,000／2 格、🐠玻璃水族箱 16,000／4 格（被偷 -10%）、🐋大型水族館 50,000／8 格（被偷 -25%）
+    <br>・<strong>製作</strong>：`/製作` 的「🐠 蓋魚缸（+1 格）」＝ 松木×8＋碎石×6（免費，跟開闢農地一樣）
+    <br>兩邊格數相加。魚產的<strong>直接是星幣</strong>，不用進背包再賣。
+  </div>
+
+  <h3>怎麼玩</h3>
+  <ol class="steps">
+    <li><strong>先有魚缸。</strong>去 🏗️設施商店買，或用 🔨製作 蓋（見上）。沒魚缸不能養魚。</li>
+    <li><strong>放魚（兩種來源）。</strong>
+      <br>・<strong>買</strong>：🐠水族商店可<strong>一次多選好幾條</strong>一起養（或 <code>/養魚 魚名</code>）。
+      <br>・<strong>釣</strong>：釣魚釣到的 🐋鯨魚／🐉皇帶魚／🧜美人魚，用 <code>/魚缸</code> 的「🎣存釣獲魚」按鈕直接存進缸養（不用花錢買）。
+      <br>放魚都會<strong>附第一份飼料</strong>，馬上開始產星幣。</li>
+    <li><strong>每天餵。</strong><code>/餵魚</code> 一次餵完所有餓的魚。飼料是 🍤<strong>魚飼料</strong>物品：<strong>先吃你種／做／存的魚飼料，沒有才自動用星幣付</strong>。一份撐 <strong>24 小時</strong>，最多先囤到 <strong>48 小時</strong>後。</li>
+    <li><strong>領錢。</strong><code>/撈金</code> 把缸裡累積的星幣領進錢包。<strong>沒領的會被偷。</strong></li>
+  </ol>
+
+  <div class="note">
+    <span class="h">🍤 魚飼料哪裡來（三種）</span>
+    ① <strong>種植</strong>：🌾飼料草種子（田地種，約 2 小時收成 5 份）→ 自己種最省。
+    <br>② <strong>製作</strong>：<code>/製作</code> 的「製作魚飼料」＝ 🐟小魚×2＋🌿海草×3 → 魚飼料×5（免費）。
+    <br>③ <strong>用星幣</strong>：<code>/餵魚</code> 沒飼料時會自動用星幣付（等於花錢買飼料）。
+  </div>
+
+  <div class="note warn">
+    <span class="h">沒餵會餓死</span>
+    飼料吃完後開始餓，<strong>餓超過 48 小時魚就死了</strong>——魚消失、缸裡沒領的星幣也一起沒了，一毛都拿不回來。
+    另外<strong>餓著的時間不會產星幣</strong>，斷糧兩天等於白養兩天。
+  </div>
+
+  <h3>魚價與產出</h3>
+  <p>每天淨賺 ＝ 每日產出 －每日飼料費。全部都是<strong>約 50 天回本</strong>，貴的魚不會比較划算，只是格子有限時能塞更多產值。</p>
+  <div class="scroll"><table>
+    <thead><tr><th>魚</th><th class="num">售價</th><th class="num">每天產</th><th class="num">飼料/天</th><th class="num">每天淨賺</th></tr></thead>
+    <tbody>
+      <tr><td>🎏 錦鯉</td><td class="num">3,000</td><td class="num">100</td><td class="num">40</td><td class="num">60</td></tr>
+      <tr><td>🐠 神仙魚</td><td class="num">4,000</td><td class="num">130</td><td class="num">50</td><td class="num">80</td></tr>
+      <tr><td>🐡 河豚</td><td class="num">4,500</td><td class="num">145</td><td class="num">55</td><td class="num">90</td></tr>
+      <tr><td>🐙 章魚</td><td class="num">5,000</td><td class="num">160</td><td class="num">60</td><td class="num">100</td></tr>
+      <tr><td>🪼 水母</td><td class="num">6,000</td><td class="num">190</td><td class="num">70</td><td class="num">120</td></tr>
+      <tr><td>🐢 海龜</td><td class="num">8,000</td><td class="num">250</td><td class="num">90</td><td class="num">160</td></tr>
+      <tr><td>🐉 龍魚</td><td class="num">12,000</td><td class="num">360</td><td class="num">120</td><td class="num">240</td></tr>
+      <tr><td>🦈 鯊魚</td><td class="num">20,000</td><td class="num">580</td><td class="num">180</td><td class="num">400</td></tr>
+      <tr><td>🐋 鯨魚 <span class="tag">釣獲</span></td><td class="num">釣魚取得</td><td class="num">120</td><td class="num">45</td><td class="num">75</td></tr>
+      <tr><td>🐉 皇帶魚 <span class="tag">釣獲</span></td><td class="num">釣魚取得</td><td class="num">180</td><td class="num">65</td><td class="num">115</td></tr>
+      <tr><td>🧜 美人魚 <span class="tag">釣獲</span></td><td class="num">釣魚取得</td><td class="num">260</td><td class="num">95</td><td class="num">165</td></tr>
+    </tbody>
+  </table></div>
+  <p class="sub">標「釣獲」的魚<strong>不在水族商店賣</strong>，要自己釣魚釣到再用「🎣存釣獲魚」放進缸。</p>
+  <p>缸裡沒領的星幣<strong>最多累積 3 天份</strong>，滿了就停產——跟牧場一樣，記得回來 <code>/撈金</code>。</p>
+  <p><strong>不想養了</strong>可以 <code>/賣魚 格子</code>（或 <code>/魚缸</code> 的下拉選單），回收售價一半，缸裡沒領的星幣一起入帳。</p>
+
+  <h3>🕵️ 偷魚</h3>
+  <div class="scroll"><table>
+    <thead><tr><th>項目</th><th class="wrap">目前設定</th></tr></thead>
+    <tbody>
+      <tr><td>每人每天</td><td class="wrap">3 次（跟牧場的 /偷 分開算；成功或失敗都算一次）</td></tr>
+      <tr><td>成功率</td><td class="wrap">50%（對方買高階魚缸會再降低）</td></tr>
+      <tr><td>偷到多少</td><td class="wrap">對方<strong>未領取星幣的 50%</strong>（每一格都抽）</td></tr>
+      <tr><td>單次上限</td><td class="wrap"><strong>最多偷 300 星幣</strong>（魚貴時也不會一次被偷爆）</td></tr>
+      <tr><td>整條魚被撈走</td><td class="wrap">50%（小偷要有空魚缸才撈得走）</td></tr>
+      <tr><td><strong>偷失敗的下場</strong></td><td class="wrap">被抓 → <strong>罰 500 星幣，全額賠給對方</strong>（罰款可把你的星幣扣成負數，賴不掉）</td></tr>
+      <tr><td>通知</td><td class="wrap">公告發在小偷打指令的頻道，被偷的人另外收到私訊</td></tr>
+    </tbody>
+  </table></div>
+  <div class="note warn">
+    <span class="h">偷魚有風險，不是穩賺</span>
+    偷魚<strong>失敗（50%）會被當場抓到、罰 500 星幣賠給對方</strong>——偷不到還倒貼。想偷之前先算算划不划算。
+  </div>
+  <div class="note warn">
+    <span class="h">魚被撈走＝那格的星幣也沒了</span>
+    整條魚被偷時，牠缸裡沒領的星幣<strong>不會轉給小偷，是直接消失</strong>（跟牧場動物被牽走一樣）。
+    最好的防禦一樣是<strong>勤撈金</strong>——領進錢包就偷不走了。
+  </div>
+  <p>被撈走的魚<strong>不會附飼料</strong>，小偷接手後要馬上餵，不然一樣會餓死。</p>
+</section>
+
+<section id="stock">
+  <h2><span class="num">10</span>股市</h2>
+  <p class="sub">📈 用星幣買賣股票賺價差。價格每小時自己跳動，也會被財經新聞影響——高風險高報酬。</p>
+
+  <div class="note warn">
+    <span class="h">會賠錢，別All in</span>
+    股價<strong>會漲也會跌</strong>，買了不保證賺。買賣都收 <strong>2% 手續費</strong>，追高殺低很容易虧。閒錢投資就好。
+  </div>
+
+  <h3>怎麼玩</h3>
+  <ol class="steps">
+    <li><strong>看行情。</strong><code>/股市</code> 看所有股票現價與走勢，<code>/個股 代號</code> 看單支的 K 線和你的損益。</li>
+    <li><strong>買進。</strong><code>/買股 代號 股數</code>，用星幣買（收 2% 手續費）。</li>
+    <li><strong>賣出。</strong><code>/賣股 代號 股數</code>（或填「全部」）換回星幣（收 2% 手續費）。</li>
+    <li><strong>看排行。</strong><code>/持股</code> 看自己的股票，<code>/股神榜</code> 比誰賺最多。</li>
+  </ol>
+
+  <h3>掛牌股票（20+ 檔，皆以劇情角色／場景命名）</h3>
+  <p>股票分成三種價位層級，選股才有變化：</p>
+  <div class="scroll"><table>
+    <thead><tr><th>層級</th><th class="num">價位帶</th><th>範例</th></tr></thead>
+    <tbody>
+      <tr><td>🟢 小型股</td><td class="num">約 60〜600</td><td class="wrap">序盟、薇爾維菈國際酒店、密探墳語、墓海輓歌、幽遊地府、黎序城</td></tr>
+      <tr><td>⚪ 一般股</td><td class="num">約 1000</td><td class="wrap">霧城、安淵幫、璨辰會館、逆光Talk Bar、洛萊摩爾特醫療中心、各大學…等</td></tr>
+      <tr><td>🔵 龍頭股</td><td class="num">約 1500</td><td class="wrap">天璟百貨、千禧集團、VELVÉRIA全球、霍氏企業</td></tr>
+    </tbody>
+  </table></div>
+  <p class="sub">價位會一直變動，完整清單與最新現價請用 <code>/股市</code> 查看。</p>
+
+  <h3>規則</h3>
+  <ul>
+    <li><strong>每小時結算</strong>一根 K 線（漲跌＝趨勢＋均值回歸＋新聞衝擊＋隨機波動）。單根漲跌停 <strong>±12%</strong>。</li>
+    <li>手續費 <strong>2%</strong>；每筆最多 <strong>500 股</strong>、單支持股上限 <strong>500 股</strong>。</li>
+    <li>有 <strong>交易冷卻</strong>（約 5 秒），防止秒買秒賣當沖。</li>
+    <li>📰 <strong>財經新聞會影響股價</strong>（也會影響 <code>/賣出</code> 的物價）——留意管理員發的快報，利多搶進、利空快跑。</li>
+    <li>💀 <strong>股價可能跌破零變成負數</strong>（管理員把該股的價格下限設成 0 或負值時）。跌到 0 以下的股票<strong>禁止買進</strong>；手上還有的可以照常 <code>/賣股</code> 出清，只是拿不到星幣——但也<strong>不會倒扣</strong>你的錢包。</li>
+  </ul>
+</section>
+
+<section id="tax">
+  <h2><span class="num">11</span>稅金</h2>
+  <p class="sub">🧾 錢囤著不花、地占著不收、動物養一堆不管，都要繳稅。稅是<strong>定期自動結算</strong>的，時間到直接從錢包扣。</p>
+
+  <div class="note warn">
+    <span class="h">只扣錢包，不會沒收東西</span>
+    稅只從<strong>星幣餘額</strong>扣，不會動你的背包、作物、動物或魚。餘額不夠就扣到 0 為止，<strong>不會變成負數</strong>，差額只會記在稅單上。
+  </div>
+
+  <h3>三種稅</h3>
+  <div class="scroll"><table>
+    <thead><tr><th>稅目</th><th class="wrap">課什麼</th><th class="wrap">預設稅額</th></tr></thead>
+    <tbody>
+      <tr><td>💰 所得稅</td><td class="wrap">你目前的<strong>星幣餘額</strong>（累進）</td><td class="wrap">餘額 10 萬以下免稅；超過的部分分段課 5% / 10% / 20% / 35%</td></tr>
+      <tr><td>🌾 農地稅</td><td class="wrap">正在<strong>種著作物</strong>的格數（空地不課）</td><td class="wrap">農地 50／格、溫室 120／格，前 2 格免稅</td></tr>
+      <tr><td>🐄 養殖稅</td><td class="wrap">牧場動物數 ＋ 魚缸的魚數</td><td class="wrap">動物 80／隻、SSR 魚 200／條，前 1 個免稅</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>所得稅是「分段課」，不是整筆跳級</h3>
+  <p>跟現實的所得稅一樣，每一級<strong>只對落在那一段的錢</strong>課稅。例如餘額 300 萬：</p>
+  <div class="scroll"><table>
+    <thead><tr><th class="wrap">級距</th><th class="num">這段有多少</th><th class="num">稅率</th><th class="num">這段的稅</th></tr></thead>
+    <tbody>
+      <tr><td class="wrap">0 ～ 10 萬（免稅額）</td><td class="num">100,000</td><td class="num">0%</td><td class="num">0</td></tr>
+      <tr><td class="wrap">10 萬 ～ 50 萬</td><td class="num">400,000</td><td class="num">5%</td><td class="num">20,000</td></tr>
+      <tr><td class="wrap">50 萬 ～ 200 萬</td><td class="num">1,500,000</td><td class="num">10%</td><td class="num">150,000</td></tr>
+      <tr><td class="wrap">200 萬 ～ 300 萬</td><td class="num">1,000,000</td><td class="num">20%</td><td class="num">200,000</td></tr>
+      <tr><td class="wrap"><strong>合計</strong></td><td class="num">—</td><td class="num">—</td><td class="num"><strong>370,000</strong></td></tr>
+    </tbody>
+  </table></div>
+  <p>所以「多賺一塊就整筆被課更兇」不會發生，越有錢也只是後段抽得比較重。</p>
+
+  <h3>規則</h3>
+  <ul>
+    <li><strong>預設每週一 09:00</strong> 結算一次（台灣時間），結算後會在公告頻道公布總稅收與納稅大戶，並私訊你自己的稅單。</li>
+    <li><strong>單次上限</strong>：三種稅加起來<strong>最多只課走餘額的 50%</strong>，不會一次被抄家。</li>
+    <li>稅額太小（預設低於 1 星幣）就免徵，新手基本上課不到。</li>
+    <li><strong>農地稅只算種著的格子</strong>：成熟了放著不採收＝一直被課稅，收成完的空地不用繳。</li>
+    <li>用 <code>/稅單</code> 隨時查本期預估要繳多少、上期實際繳了多少，以及下次什麼時候結算。</li>
+  </ul>
+
+  <div class="note">
+    <span class="h">怎麼少繳一點</span>
+    把錢<strong>花掉或投資出去</strong>（買地、買動物、買股票、做道具）就不會被所得稅抽到；作物成熟就趕快採收；養不動的動物與魚早點賣掉。囤現金是最貴的。
+  </div>
+  <p class="sub">以上為預設數值，管理員可能會調整稅率與結算時間，實際以 <code>/稅單</code> 顯示為準。稅金系統可由管理員關閉，關閉期間完全不課稅。</p>
+</section>
+
+<section id="more">
+  <h2><span class="num">12</span>其他玩法</h2>
+  <p class="sub">賺到的星幣不是只能買地買動物。</p>
+
+  <h3>🎁 特殊兌換商店</h3>
+  <p>用 <code>/特殊商店</code> 看有什麼可以換，<code>/兌換 商品名稱</code> 換下去。這裡的獎勵<strong>由管理員人工處理</strong>——兌換後機器人會通知管理員，不是自動發放，所以請耐心等。目前有 3 間分店、12 樣獎勵。</p>
+
+  <h3>📜 任務與🏆懸賞</h3>
+  <p><code>/任務</code>（或面板 📜任務）看進度、按按鈕領獎。每日任務午夜重置、每週任務週一重置。<strong>🏆懸賞</strong>是限量任務：全服每天只有固定名額，<strong>先完成先領先贏</strong>，額滿當天就沒了。</p>
+  <div class="scroll"><table>
+    <thead><tr><th>任務</th><th>週期</th><th class="wrap">條件</th><th class="num">獎勵</th></tr></thead>
+    <tbody>
+      <tr><td>每日勤勞</td><td>每日</td><td class="wrap">任意採集 5 次</td><td class="num">40</td></tr>
+      <tr><td>巧手工匠</td><td>每日</td><td class="wrap">製作 1 次</td><td class="num">30</td></tr>
+      <tr><td>🏆 稀有獵手</td><td>每日·限 5 名</td><td class="wrap">抽到 1 個 SR 以上</td><td class="num">150</td></tr>
+      <tr><td>🏆 礦山大亨</td><td>每日·限 3 名</td><td class="wrap">挖礦 5 次</td><td class="num">100</td></tr>
+      <tr><td>🏆 神射手</td><td>每日·限 3 名</td><td class="wrap">狩獵 5 次</td><td class="num">100</td></tr>
+      <tr><td>🏆 大盤商</td><td>每日·限 5 名</td><td class="wrap">賣出累計 300</td><td class="num">100</td></tr>
+      <tr><td>五種採集達人</td><td>每週</td><td class="wrap">釣魚／挖礦／伐木／狩獵／採集 各 10 次</td><td class="num">各 120</td></tr>
+      <tr><td>大豐收</td><td>每週</td><td class="wrap">任意採集 40 次</td><td class="num">250</td></tr>
+      <tr><td>小商人</td><td>每週</td><td class="wrap">賣出累計 500</td><td class="num">150</td></tr>
+      <tr><td>幸運兒</td><td>每週</td><td class="wrap">抽到 3 個 R 以上</td><td class="num">120</td></tr>
+      <tr><td>尋寶獵人</td><td>每週</td><td class="wrap">抽到 3 個 SR 以上</td><td class="num">250</td></tr>
+      <tr><td>工匠之路</td><td>每週</td><td class="wrap">製作 10 次</td><td class="num">200</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3>🔄 交易（以物換物）</h3>
+  <p><code>/交易</code> 跟其他玩家換東西，提案與成交都會公開在頻道，對方按按鈕接受才會成立。<strong>只能換物品、不能轉星幣</strong>——星幣轉帳目前是關閉的，避免小號刷幣和「先轉我 500 我給你 SSR」這類詐騙。</p>
+
+  <h3>📖 圖鑑</h3>
+  <p><code>/圖鑑</code> 看自己收錄了哪些東西。每種掉落物第一次拿到時會標記「🆕 圖鑑新收錄」，全部湊齊是隱藏成就。</p>
+
+  <div class="note">
+    <span class="h">🔨 製作可以做什麼</span>
+    目前有 15 個配方：升級版工具、回復藥水、以及農地／溫室／牧場／孵化室的「+1 格」。點面板的 🔨製作 會顯示<strong>你的材料夠不夠</strong>（✅／❌），選單點一下就做一次；要一次做多份請打 <code>/製作 配方名稱 次數</code>。
+  </div>
+</section>
+
+<section id="cmd">
+  <h2><span class="num">13</span>指令速查</h2>
+  <p class="sub">面板按鈕能做九成的事。以下是需要打字或按鈕沒有的功能。</p>
+  <div class="scroll"><table>
+    <thead><tr><th>指令</th><th class="wrap">用途</th></tr></thead>
+    <tbody>
+      <tr><td><code>/幫助</code></td><td class="wrap">完整說明總表</td></tr>
+      <tr><td><code>/偷 對象</code></td><td class="wrap">偷別人的牧場</td></tr>
+      <tr><td><code>/魚缸 玩家</code></td><td class="wrap">看自己或別人的魚缸（踩點用）</td></tr>
+      <tr><td><code>/養魚 魚名</code></td><td class="wrap">直接打魚名購買（不用開商店選單）</td></tr>
+      <tr><td><code>/餵魚</code></td><td class="wrap">一次餵完所有餓著的魚（沒餵 48 小時會死）</td></tr>
+      <tr><td><code>/撈金</code></td><td class="wrap">領走魚缸累積的星幣</td></tr>
+      <tr><td><code>/賣魚 格子</code></td><td class="wrap">賣掉一條魚，回收一半＋缸裡星幣</td></tr>
+      <tr><td><code>/偷魚 對象</code></td><td class="wrap">偷別人魚缸沒領的星幣</td></tr>
+      <tr><td><code>/股市</code></td><td class="wrap">看所有股票現價與走勢</td></tr>
+      <tr><td><code>/個股 代號</code></td><td class="wrap">看單支股票 K 線與你的損益</td></tr>
+      <tr><td><code>/買股 代號 股數</code></td><td class="wrap">用星幣買股（收 2% 手續費）</td></tr>
+      <tr><td><code>/賣股 代號 股數</code></td><td class="wrap">賣股換回星幣，可填「全部」</td></tr>
+      <tr><td><code>/稅單</code></td><td class="wrap">查本期要繳的稅（所得稅／農地稅／養殖稅）與上期實繳</td></tr>
+      <tr><td><code>/持股</code> · <code>/股神榜</code></td><td class="wrap">看自己的持股／看誰賺最多</td></tr>
+      <tr><td><code>/修理 道具</code></td><td class="wrap">修好耐久歸零的工具</td></tr>
+      <tr><td><code>/製作 配方 次數</code></td><td class="wrap">一次做多份（面板選單固定做 1 次）</td></tr>
+      <tr><td><code>/圖鑑</code></td><td class="wrap">看自己收錄了哪些東西</td></tr>
+      <tr><td><code>/任務</code></td><td class="wrap">每日／每週任務與獎勵</td></tr>
+      <tr><td><code>/交易</code></td><td class="wrap">跟其他玩家以物換物</td></tr>
+      <tr><td><code>/牧場 玩家</code></td><td class="wrap">看別人的牧場（踩點用）</td></tr>
+      <tr><td><code>/放生 格子</code></td><td class="wrap">賣掉動物（回收一半星幣＋產物進背包）；牧場也有「💰賣掉動物」選單</td></tr>
+      <tr><td><code>/錢包</code></td><td class="wrap">查自己的星幣餘額與累積收入</td></tr>
+      <tr><td><code>/富豪榜</code></td><td class="wrap">全伺服器星幣排行</td></tr>
+      <tr><td><code>/轉帳 對象 金額</code></td><td class="wrap">把星幣轉給其他玩家（目前未開放，需管理員開啟）</td></tr>
+      <tr><td><code>/種植 種子</code></td><td class="wrap">直接打種子名種下（不用開商店選單）</td></tr>
+      <tr><td><code>/飼養 動物</code></td><td class="wrap">直接打動物名購買（不用開商店選單）</td></tr>
+      <tr><td><code>/賣出 物品 數量</code></td><td class="wrap">可填物品名、稀有度（N/R/SR/SSR）或「全部」</td></tr>
+      <tr><td><code>/地圖</code></td><td class="wrap">切換採集地圖（不用錢也不扣點）</td></tr>
+      <tr><td><code>/抽籤</code></td><td class="wrap">每日抽籤，可能抽到幸運符</td></tr>
+    </tbody>
+  </table></div>
+</section>
+
+<hr>
+<footer>數值以遊戲內顯示為準；管理員調整設定後這頁可能會更新。有 bug 或覺得哪裡不平衡，直接跟管理員說。</footer>
+
+</div>
+
+</body>
+</html>

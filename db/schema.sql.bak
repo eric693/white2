@@ -1,0 +1,610 @@
+-- White2 Discord 機器人資料庫結構（SQLite / better-sqlite3）
+
+-- ===== 後台管理員帳號 =====
+CREATE TABLE IF NOT EXISTS admin_users (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  username      TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  name          TEXT NOT NULL DEFAULT '管理員',
+  role          TEXT NOT NULL DEFAULT 'admin',   -- admin | staff
+  permissions   TEXT NOT NULL DEFAULT '',        -- staff 逗號分隔模組 key
+  active        INTEGER NOT NULL DEFAULT 1,
+  created_at    TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
+-- ===== 系統設定（key-value）=====
+CREATE TABLE IF NOT EXISTS settings (
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL DEFAULT ''
+);
+
+-- ===== 稽核記錄（11.4）=====
+CREATE TABLE IF NOT EXISTS audit_log (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  actor      TEXT NOT NULL DEFAULT '',
+  action     TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  module     TEXT NOT NULL DEFAULT '',   -- 功能名稱
+  detail     TEXT NOT NULL DEFAULT ''    -- 異動內容（修改前後）
+);
+
+-- ===== 上傳的圖片與檔案（媒體庫）=====
+CREATE TABLE IF NOT EXISTS uploads (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  filename    TEXT NOT NULL,                 -- 實體檔名
+  original    TEXT NOT NULL DEFAULT '',      -- 原始檔名
+  url         TEXT NOT NULL,                 -- /uploads/xxx
+  mime        TEXT NOT NULL DEFAULT '',
+  size        INTEGER NOT NULL DEFAULT 0,
+  kind        TEXT NOT NULL DEFAULT 'file',  -- image | video | file
+  uploader    TEXT NOT NULL DEFAULT '',
+  created_at  TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
+-- ===== 系統錯誤紀錄（11.5）=====
+CREATE TABLE IF NOT EXISTS error_logs (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  message    TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
+-- ===== 功能權限（12.1～12.5）=====
+CREATE TABLE IF NOT EXISTS feature_perms (
+  feature         TEXT PRIMARY KEY,           -- music | giveaways | polls | wheels | birthday ...
+  role_ids        TEXT NOT NULL DEFAULT '',   -- 12.1 可使用的身分組（空=全體）
+  channel_ids     TEXT NOT NULL DEFAULT '',   -- 12.4 僅限這些頻道（空=不限）
+  except_user_ids TEXT NOT NULL DEFAULT '',   -- 12.5 例外使用者（不受限制）
+  except_role_ids TEXT NOT NULL DEFAULT '',   -- 12.5 例外身分組
+  enabled         INTEGER NOT NULL DEFAULT 1  -- 關閉=此功能全伺服器停用
+);
+
+-- ===== 關鍵字自動回覆 =====
+-- keyword 欄位可放多個關鍵字（換行或逗號分隔），符合任一即觸發（4.4）
+CREATE TABLE IF NOT EXISTS keywords (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  keyword       TEXT NOT NULL,
+  match_type    TEXT NOT NULL DEFAULT 'contains', -- contains | exact | starts
+  reply_text    TEXT NOT NULL DEFAULT '',
+  image_url     TEXT NOT NULL DEFAULT '',
+  link_url      TEXT NOT NULL DEFAULT '',
+  use_embed     INTEGER NOT NULL DEFAULT 1,
+  btn_label     TEXT NOT NULL DEFAULT '',
+  btn_url       TEXT NOT NULL DEFAULT '',
+  channels      TEXT NOT NULL DEFAULT '',         -- 限定觸發頻道（逗號分隔，空=全部）4.5
+  reply_channel TEXT NOT NULL DEFAULT '',         -- 指定回覆到某頻道（空=原頻道）
+  cooldown      INTEGER NOT NULL DEFAULT 0,        -- 冷卻秒數 4.6
+  buttons       TEXT NOT NULL DEFAULT '[]',        -- 4.3 多個連結按鈕
+  enabled       INTEGER NOT NULL DEFAULT 1,
+  created_at    TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
+-- 關鍵字觸發紀錄（4.9）
+CREATE TABLE IF NOT EXISTS keyword_logs (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  keyword_id INTEGER NOT NULL,
+  matched    TEXT NOT NULL DEFAULT '',
+  user_id    TEXT NOT NULL DEFAULT '',
+  username   TEXT NOT NULL DEFAULT '',
+  channel_id TEXT NOT NULL DEFAULT '',
+  message    TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
+-- ===== 關鍵字標記管理員 =====
+CREATE TABLE IF NOT EXISTS keyword_mentions (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  keyword      TEXT NOT NULL,
+  match_type   TEXT NOT NULL DEFAULT 'contains',
+  mention_ids  TEXT NOT NULL DEFAULT '',        -- 使用者/身分組 ID，逗號分隔
+  mention_type TEXT NOT NULL DEFAULT 'user',    -- user | role
+  note         TEXT NOT NULL DEFAULT '',
+  enabled      INTEGER NOT NULL DEFAULT 1,
+  created_at   TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
+-- ===== 關鍵字通知與警告規則（5.1～5.8、5.15）=====
+-- keyword 欄位可放多個關鍵字（換行或逗號分隔），符合任一即觸發（5.7）
+CREATE TABLE IF NOT EXISTS alert_rules (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  name            TEXT NOT NULL DEFAULT '',        -- 規則名稱（後台辨識用）
+  keyword         TEXT NOT NULL,
+  match_type      TEXT NOT NULL DEFAULT 'contains',-- contains | exact | starts
+  channels        TEXT NOT NULL DEFAULT '',        -- 限定監控頻道（逗號分隔，空=全伺服器）
+  notify_channel  TEXT NOT NULL DEFAULT '',        -- 5.4 通知發送到的管理頻道
+  notify_user_ids TEXT NOT NULL DEFAULT '',        -- 5.3 通知的管理員（逗號分隔）
+  notify_role_ids TEXT NOT NULL DEFAULT '',        -- 5.3 通知的管理員身分組
+  notify_dm       INTEGER NOT NULL DEFAULT 0,      -- 5.6 是否私訊上列管理員
+  warn            INTEGER NOT NULL DEFAULT 0,      -- 5.8 觸發後是否給警告
+  warn_reason     TEXT NOT NULL DEFAULT '',        -- 警告原因（空則用規則名稱）
+  notify_member   INTEGER NOT NULL DEFAULT 1,      -- 5.9 是否通知玩家本人
+  cooldown        INTEGER NOT NULL DEFAULT 0,      -- 5.15 同一玩家冷卻秒數
+  enabled         INTEGER NOT NULL DEFAULT 1,
+  created_at      TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
+-- 觸發紀錄（5.17）
+CREATE TABLE IF NOT EXISTS alert_logs (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  rule_id    INTEGER NOT NULL,
+  rule_name  TEXT NOT NULL DEFAULT '',
+  matched    TEXT NOT NULL DEFAULT '',
+  user_id    TEXT NOT NULL DEFAULT '',
+  username   TEXT NOT NULL DEFAULT '',
+  channel_id TEXT NOT NULL DEFAULT '',
+  message    TEXT NOT NULL DEFAULT '',
+  warned     INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+-- 冷卻判斷（5.16）靠此索引查同規則同玩家的上次觸發
+CREATE INDEX IF NOT EXISTS idx_alert_logs_rule_user ON alert_logs(rule_id, user_id, created_at);
+
+-- ===== 警告紀錄（5.10、5.14）=====
+-- 以 Discord ID 為主，玩家改名/退出/重進皆不刪除
+CREATE TABLE IF NOT EXISTS warnings (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id    TEXT NOT NULL,
+  username   TEXT NOT NULL DEFAULT '',
+  reason     TEXT NOT NULL DEFAULT '',
+  rule_id    INTEGER NOT NULL DEFAULT 0,
+  source     TEXT NOT NULL DEFAULT 'auto',      -- auto | manual
+  operator   TEXT NOT NULL DEFAULT '',          -- 手動新增時的管理員
+  content    TEXT NOT NULL DEFAULT '',          -- 觸發當下的完整訊息
+  channel_id TEXT NOT NULL DEFAULT '',
+  active     INTEGER NOT NULL DEFAULT 1,        -- 0=已被管理員撤銷（不計入累計）
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_warn_user ON warnings(user_id, active, created_at);
+
+-- ===== 禁言紀錄（5.11～5.13、5.17）=====
+CREATE TABLE IF NOT EXISTS mutes (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id     TEXT NOT NULL,
+  username    TEXT NOT NULL DEFAULT '',
+  reason      TEXT NOT NULL DEFAULT '',
+  minutes     INTEGER NOT NULL DEFAULT 0,
+  warn_count  INTEGER NOT NULL DEFAULT 0,       -- 觸發禁言時的當日累計次數
+  start_at    TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  end_at      TEXT NOT NULL DEFAULT '',
+  released_at TEXT NOT NULL DEFAULT '',
+  released_by TEXT NOT NULL DEFAULT '',         -- 空=時間到自動解除
+  active      INTEGER NOT NULL DEFAULT 1,
+  created_at  TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_mute_user ON mutes(user_id, active);
+
+-- ===== 警告與禁言全域設定（5.11）=====
+CREATE TABLE IF NOT EXISTS warn_config (
+  id             INTEGER PRIMARY KEY CHECK (id = 1),
+  threshold      INTEGER NOT NULL DEFAULT 3,     -- 當日累計幾次警告自動禁言
+  mute_minutes   INTEGER NOT NULL DEFAULT 60,    -- 禁言時間（分鐘）
+  notify_channel TEXT NOT NULL DEFAULT '',       -- 5.12 禁言通知的管理頻道
+  dm_member      INTEGER NOT NULL DEFAULT 1      -- 5.12 是否私訊通知被禁言者
+);
+INSERT OR IGNORE INTO warn_config (id) VALUES (1);
+
+-- ===== 加入 / 退出通知 =====
+CREATE TABLE IF NOT EXISTS welcome_config (
+  id            INTEGER PRIMARY KEY CHECK (id = 1),
+  join_enabled  INTEGER NOT NULL DEFAULT 0,
+  join_channel  TEXT NOT NULL DEFAULT '',
+  join_message  TEXT NOT NULL DEFAULT '歡迎 {user} 加入 {server}！',
+  join_image    TEXT NOT NULL DEFAULT '',
+  leave_enabled INTEGER NOT NULL DEFAULT 0,
+  leave_channel TEXT NOT NULL DEFAULT '',
+  leave_message TEXT NOT NULL DEFAULT '{username} 離開了伺服器。',
+  -- 6.4 歡迎內容擴充
+  join_title     TEXT NOT NULL DEFAULT '',
+  join_thumb     TEXT NOT NULL DEFAULT '',      -- Banner / 縮圖
+  join_btn_label TEXT NOT NULL DEFAULT '',
+  join_btn_url   TEXT NOT NULL DEFAULT '',
+  join_use_embed INTEGER NOT NULL DEFAULT 1,
+  -- 6.6 / 6.7 管理員通知
+  admin_channel  TEXT NOT NULL DEFAULT '',
+  admin_join     INTEGER NOT NULL DEFAULT 0,
+  admin_leave    INTEGER NOT NULL DEFAULT 0,
+  join_buttons   TEXT NOT NULL DEFAULT '[]'  -- 6.4 多個連結按鈕
+);
+INSERT OR IGNORE INTO welcome_config (id) VALUES (1);
+
+-- ===== 成員加入 / 離開紀錄（6.6～6.9）=====
+CREATE TABLE IF NOT EXISTS member_events (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id      TEXT NOT NULL,
+  username     TEXT NOT NULL DEFAULT '',
+  event        TEXT NOT NULL,                  -- join | leave
+  roles        TEXT NOT NULL DEFAULT '',       -- 離開前擁有的身分組名稱
+  account_at   TEXT NOT NULL DEFAULT '',       -- 帳號建立日期
+  joined_at    TEXT NOT NULL DEFAULT '',       -- 該次加入時間
+  stay_days    INTEGER NOT NULL DEFAULT 0,     -- 離開時的停留天數
+  join_count   INTEGER NOT NULL DEFAULT 1,     -- 累計第幾次加入
+  created_at   TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_member_events_user ON member_events(user_id, created_at);
+
+-- ===== 生日驗證設定 =====
+CREATE TABLE IF NOT EXISTS verify_config (
+  id             INTEGER PRIMARY KEY CHECK (id = 1),
+  enabled        INTEGER NOT NULL DEFAULT 0,
+  min_age        INTEGER NOT NULL DEFAULT 18,
+  verify_channel TEXT NOT NULL DEFAULT '',   -- 放驗證按鈕的頻道
+  pass_role      TEXT NOT NULL DEFAULT '',   -- 通過後給的身分組
+  kick_underage  INTEGER NOT NULL DEFAULT 1, -- 未滿年齡是否踢除
+  prompt_text    TEXT NOT NULL DEFAULT '歡迎加入！請先完成年齡驗證，點下方按鈕填寫您的生日。'
+);
+INSERT OR IGNORE INTO verify_config (id) VALUES (1);
+
+-- ===== 生日慶生設定 =====
+CREATE TABLE IF NOT EXISTS birthday_config (
+  id             INTEGER PRIMARY KEY CHECK (id = 1),
+  enabled        INTEGER NOT NULL DEFAULT 0,
+  channel        TEXT NOT NULL DEFAULT '',
+  message        TEXT NOT NULL DEFAULT '🎂 今天是 {user} 的生日，大家一起祝他生日快樂！',
+  birthday_role  TEXT NOT NULL DEFAULT '',   -- 當天暫時給的身分組（可空）
+  reward_text    TEXT NOT NULL DEFAULT '',   -- 附帶優惠/獎勵文字
+  -- 10.5 公告設定
+  send_time      TEXT NOT NULL DEFAULT '09:00',
+  mention_star   INTEGER NOT NULL DEFAULT 1, -- 是否標記壽星
+  -- 10.2 生日資料填寫提醒
+  remind_enabled INTEGER NOT NULL DEFAULT 0,
+  remind_mode    TEXT NOT NULL DEFAULT 'channel', -- channel | dm | both
+  remind_channel TEXT NOT NULL DEFAULT '',
+  remind_days    INTEGER NOT NULL DEFAULT 3,      -- 每隔幾天提醒一次
+  remind_text    TEXT NOT NULL DEFAULT '🎂 你還沒有填寫生日資料喔！點下方按鈕填寫，生日當天會有專屬祝福。',
+  remind_role    TEXT NOT NULL DEFAULT ''        -- 只提醒此身分組（空=全部成員）
+);
+INSERT OR IGNORE INTO birthday_config (id) VALUES (1);
+
+-- 10.6 生日祝福發送紀錄（同一年度只發一次）
+CREATE TABLE IF NOT EXISTS birthday_sends (
+  user_id  TEXT NOT NULL,
+  year     INTEGER NOT NULL,
+  sent_at  TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  PRIMARY KEY (user_id, year)
+);
+
+-- 10.7 生日資料異動紀錄
+CREATE TABLE IF NOT EXISTS birthday_history (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id    TEXT NOT NULL,
+  username   TEXT NOT NULL DEFAULT '',
+  action     TEXT NOT NULL DEFAULT 'set',   -- set | update | delete
+  old_value  TEXT NOT NULL DEFAULT '',
+  new_value  TEXT NOT NULL DEFAULT '',
+  operator   TEXT NOT NULL DEFAULT '',      -- 玩家自填為空
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
+-- ===== 玩家生日 =====
+CREATE TABLE IF NOT EXISTS birthdays (
+  user_id     TEXT PRIMARY KEY,
+  username    TEXT NOT NULL DEFAULT '',
+  birth_y     INTEGER NOT NULL,
+  birth_m     INTEGER NOT NULL,
+  birth_d     INTEGER NOT NULL,
+  verified_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
+-- ===== 公告 =====
+CREATE TABLE IF NOT EXISTS announcements (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  title        TEXT NOT NULL DEFAULT '',
+  content      TEXT NOT NULL DEFAULT '',
+  image_url    TEXT NOT NULL DEFAULT '',
+  link_url     TEXT NOT NULL DEFAULT '',
+  channel_id   TEXT NOT NULL DEFAULT '',
+  scheduled_at TEXT NOT NULL DEFAULT '',      -- 空=立即；否則 ISO 時間
+  status       TEXT NOT NULL DEFAULT 'draft', -- draft | scheduled | sent | repeating | stopped
+  sent_at      TEXT NOT NULL DEFAULT '',
+  created_at   TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  -- 7.5 多頻道（逗號分隔；相容舊的 channel_id）
+  channels     TEXT NOT NULL DEFAULT '',
+  -- 7.2 內容擴充
+  video_url    TEXT NOT NULL DEFAULT '',
+  btn_label    TEXT NOT NULL DEFAULT '',
+  btn_url      TEXT NOT NULL DEFAULT '',
+  use_embed    INTEGER NOT NULL DEFAULT 1,
+  -- 7.6 標記設定
+  mention_everyone INTEGER NOT NULL DEFAULT 0,
+  mention_here     INTEGER NOT NULL DEFAULT 0,
+  mention_role_ids TEXT NOT NULL DEFAULT '',
+  -- 7.4 循環公告
+  repeat_freq  TEXT NOT NULL DEFAULT 'none',  -- none | daily | weekly | monthly | custom
+  repeat_time  TEXT NOT NULL DEFAULT '09:00', -- HH:MM
+  repeat_dow   INTEGER NOT NULL DEFAULT 1,    -- weekly：0=日..6=六
+  repeat_dom   INTEGER NOT NULL DEFAULT 1,    -- monthly：日
+  repeat_days  INTEGER NOT NULL DEFAULT 1,    -- custom：每 N 天
+  last_run     TEXT NOT NULL DEFAULT '',
+  creator      TEXT NOT NULL DEFAULT '',
+  buttons      TEXT NOT NULL DEFAULT '[]'   -- 7.2 多個連結按鈕 [{emoji,label,url}]
+);
+
+-- 7.9 公告模板
+CREATE TABLE IF NOT EXISTS announcement_templates (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  name       TEXT NOT NULL,
+  payload    TEXT NOT NULL DEFAULT '{}',      -- JSON：公告各欄位
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
+-- 7.10 公告發送紀錄
+CREATE TABLE IF NOT EXISTS announcement_logs (
+  id       INTEGER PRIMARY KEY AUTOINCREMENT,
+  ann_id   INTEGER NOT NULL,
+  title    TEXT NOT NULL DEFAULT '',
+  channels TEXT NOT NULL DEFAULT '',
+  status   TEXT NOT NULL DEFAULT 'ok',        -- ok | fail
+  error    TEXT NOT NULL DEFAULT '',
+  creator  TEXT NOT NULL DEFAULT '',
+  sent_at  TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
+-- ===== 投票 =====
+CREATE TABLE IF NOT EXISTS polls (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  question      TEXT NOT NULL,
+  description   TEXT NOT NULL DEFAULT '',
+  options       TEXT NOT NULL DEFAULT '[]',     -- JSON 陣列
+  multi         INTEGER NOT NULL DEFAULT 0,     -- 複選
+  anonymous     INTEGER NOT NULL DEFAULT 0,
+  allowed_roles TEXT NOT NULL DEFAULT '',       -- 限定身分組（逗號分隔，空=全體）
+  allow_change  INTEGER NOT NULL DEFAULT 1,     -- 允許截止前修改投票
+  hide_results  INTEGER NOT NULL DEFAULT 0,     -- 結束後才公開結果
+  channel_id    TEXT NOT NULL DEFAULT '',
+  message_id    TEXT NOT NULL DEFAULT '',
+  start_at      TEXT NOT NULL DEFAULT '',
+  deadline      TEXT NOT NULL DEFAULT '',
+  started       INTEGER NOT NULL DEFAULT 1,
+  closed        INTEGER NOT NULL DEFAULT 0,
+  creator       TEXT NOT NULL DEFAULT '',
+  created_at    TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE TABLE IF NOT EXISTS poll_votes (
+  poll_id      INTEGER NOT NULL,
+  user_id      TEXT NOT NULL,
+  option_index INTEGER NOT NULL,
+  PRIMARY KEY (poll_id, user_id, option_index)
+);
+
+-- ===== 抽獎 =====
+CREATE TABLE IF NOT EXISTS giveaways (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  title          TEXT NOT NULL DEFAULT '',
+  description    TEXT NOT NULL DEFAULT '',
+  prize          TEXT NOT NULL,
+  winners        INTEGER NOT NULL DEFAULT 1,
+  guaranteed_ids TEXT NOT NULL DEFAULT '',   -- 保證中獎者 ID，逗號分隔
+  channel_id     TEXT NOT NULL DEFAULT '',
+  message_id     TEXT NOT NULL DEFAULT '',
+  start_at       TEXT NOT NULL DEFAULT '',   -- 開始時間（空=立即）
+  deadline       TEXT NOT NULL DEFAULT '',   -- 結束時間（分鐘精度）
+  end_unix       INTEGER NOT NULL DEFAULT 0, -- 秒級截止（/giveaway 持續時間，優先於 deadline）
+  started        INTEGER NOT NULL DEFAULT 1,
+  ended          INTEGER NOT NULL DEFAULT 0,
+  winner_ids     TEXT NOT NULL DEFAULT '[]',
+  creator        TEXT NOT NULL DEFAULT '',
+  created_at     TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE TABLE IF NOT EXISTS giveaway_entries (
+  giveaway_id INTEGER NOT NULL,
+  user_id     TEXT NOT NULL,
+  username    TEXT NOT NULL DEFAULT '',
+  PRIMARY KEY (giveaway_id, user_id)
+);
+
+-- ===== 功能黑名單（11.3）=====
+CREATE TABLE IF NOT EXISTS blacklist (
+  user_id    TEXT PRIMARY KEY,
+  username   TEXT NOT NULL DEFAULT '',
+  reason     TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  feature    TEXT NOT NULL DEFAULT 'all',  -- all | giveaways | polls | wheels | music ...
+  expires_at TEXT NOT NULL DEFAULT '',     -- 空=永久
+  active     INTEGER NOT NULL DEFAULT 1,
+  operator   TEXT NOT NULL DEFAULT ''
+);
+
+-- ===== 抽獎中獎紀錄（跨場次，供 12 小時限制與歷史查詢）=====
+CREATE TABLE IF NOT EXISTS win_records (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  giveaway_id INTEGER NOT NULL,
+  user_id     TEXT NOT NULL,
+  username    TEXT NOT NULL DEFAULT '',
+  prize       TEXT NOT NULL DEFAULT '',
+  won_at      INTEGER NOT NULL DEFAULT 0,   -- unix 秒
+  revoked     INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_win_user ON win_records(user_id, revoked, won_at);
+
+-- ===== 角色推薦轉盤（8.1～8.16）=====
+CREATE TABLE IF NOT EXISTS role_wheels (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  name        TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  enabled     INTEGER NOT NULL DEFAULT 1,
+  created_at  TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  image_url   TEXT NOT NULL DEFAULT '',
+  tags        TEXT NOT NULL DEFAULT '',      -- 8.4 轉盤標籤（逗號分隔）
+  listed      INTEGER NOT NULL DEFAULT 1,    -- 8.16 上架 / 下架
+  daily_limit INTEGER NOT NULL DEFAULT 0,    -- 8.9 每人每日抽取次數，0=不限
+  no_repeat   INTEGER NOT NULL DEFAULT 1,    -- 8.10 同轉盤不重複抽到同角色
+  exclude_chatted INTEGER NOT NULL DEFAULT 0,-- 8.15 已聊過的角色不再推薦
+  start_at    TEXT NOT NULL DEFAULT '',      -- 8.12 期間限定轉盤
+  end_at      TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS wheel_roles (
+  id        INTEGER PRIMARY KEY AUTOINCREMENT,
+  wheel_id  INTEGER NOT NULL,
+  name      TEXT NOT NULL,
+  image_url TEXT NOT NULL DEFAULT '',
+  intro     TEXT NOT NULL DEFAULT '',
+  chat_link TEXT NOT NULL DEFAULT '',
+  sort      INTEGER NOT NULL DEFAULT 0,
+  author    TEXT NOT NULL DEFAULT '',        -- 8.2 作者
+  links     TEXT NOT NULL DEFAULT '[]',      -- 8.2 多個連結 [{emoji,label,url}]
+  tags      TEXT NOT NULL DEFAULT '',        -- 8.3 分類標籤（逗號分隔）
+  weight    INTEGER NOT NULL DEFAULT 1,      -- 8.11 推薦權重
+  enabled   INTEGER NOT NULL DEFAULT 1,
+  start_at  TEXT NOT NULL DEFAULT '',        -- 8.12 活動限定角色
+  end_at    TEXT NOT NULL DEFAULT '',
+  draw_count  INTEGER NOT NULL DEFAULT 0,    -- 8.13 統計
+  fav_count   INTEGER NOT NULL DEFAULT 0,
+  click_count INTEGER NOT NULL DEFAULT 0
+);
+
+-- 8.3 分類標籤主檔（管理員可自行增刪）
+CREATE TABLE IF NOT EXISTS wheel_tags (
+  id   INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE
+);
+
+-- 8.8 / 8.10 抽取紀錄
+CREATE TABLE IF NOT EXISTS wheel_draws (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  wheel_id   INTEGER NOT NULL,
+  role_id    INTEGER NOT NULL,
+  user_id    TEXT NOT NULL,
+  username   TEXT NOT NULL DEFAULT '',
+  round      INTEGER NOT NULL DEFAULT 1,     -- 第幾輪（抽完重置後 +1）
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_draws_user ON wheel_draws(user_id, wheel_id, round);
+
+-- 8.7 角色收藏
+CREATE TABLE IF NOT EXISTS wheel_favorites (
+  user_id    TEXT NOT NULL,
+  role_id    INTEGER NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  PRIMARY KEY (user_id, role_id)
+);
+
+-- 8.15 已體驗（點過聊天室連結）
+CREATE TABLE IF NOT EXISTS wheel_chats (
+  user_id    TEXT NOT NULL,
+  role_id    INTEGER NOT NULL,
+  wheel_id   INTEGER NOT NULL,
+  round      INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  PRIMARY KEY (user_id, role_id)
+);
+
+-- 每位玩家在各轉盤的目前輪次（8.10 / 8.15 重置用）
+CREATE TABLE IF NOT EXISTS wheel_rounds (
+  user_id  TEXT NOT NULL,
+  wheel_id INTEGER NOT NULL,
+  round    INTEGER NOT NULL DEFAULT 1,
+  PRIMARY KEY (user_id, wheel_id)
+);
+
+-- ===== 音樂系統設定（9.2、9.15～9.18、9.21）=====
+CREATE TABLE IF NOT EXISTS music_config (
+  id              INTEGER PRIMARY KEY CHECK (id = 1),
+  panel_channel   TEXT NOT NULL DEFAULT '',    -- 9.17 固定控制面板所在文字頻道
+  panel_message   TEXT NOT NULL DEFAULT '',    -- 面板訊息 ID（全伺服器只保留一則）
+  voice_channel   TEXT NOT NULL DEFAULT '',    -- 9.18 常駐語音頻道
+  stay_24_7       INTEGER NOT NULL DEFAULT 0,  -- 9.18 是否常駐不離開
+  default_volume  INTEGER NOT NULL DEFAULT 50, -- 9.15
+  max_volume      INTEGER NOT NULL DEFAULT 100,
+  allow_duplicate INTEGER NOT NULL DEFAULT 1,  -- 9.16 是否允許清單內重複歌曲
+  vote_skip       INTEGER NOT NULL DEFAULT 0,  -- 9.7 一般玩家投票跳過
+  log_channel     TEXT NOT NULL DEFAULT '',    -- 9.19 播放失敗訊息頻道（空=點歌頻道）
+  dj_role_ids     TEXT NOT NULL DEFAULT '',    -- 9.21 可控制播放的身分組
+  request_role_ids TEXT NOT NULL DEFAULT '',   -- 9.21 可點歌的身分組（空=全體）
+  admin_role_ids  TEXT NOT NULL DEFAULT ''     -- 9.2 可讓機器人加入/退出語音的身分組
+);
+INSERT OR IGNORE INTO music_config (id) VALUES (1);
+
+-- 9.20 音樂使用紀錄
+CREATE TABLE IF NOT EXISTS music_logs (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id    TEXT NOT NULL DEFAULT '',
+  username   TEXT NOT NULL DEFAULT '',
+  action     TEXT NOT NULL DEFAULT 'play',  -- play | skip | stop | fail ...
+  title      TEXT NOT NULL DEFAULT '',
+  url        TEXT NOT NULL DEFAULT '',
+  channel_id TEXT NOT NULL DEFAULT '',
+  status     TEXT NOT NULL DEFAULT 'ok',    -- ok | fail
+  error      TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
+-- ===== 提醒 =====
+CREATE TABLE IF NOT EXISTS reminders (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  title       TEXT NOT NULL DEFAULT '',
+  message     TEXT NOT NULL DEFAULT '',
+  channel_id  TEXT NOT NULL DEFAULT '',
+  mention_ids TEXT NOT NULL DEFAULT '',        -- 逗號分隔
+  freq        TEXT NOT NULL DEFAULT 'once',     -- once | daily | weekly | monthly
+  at_time     TEXT NOT NULL DEFAULT '09:00',    -- HH:MM（once 用 run_at）
+  at_dow      INTEGER NOT NULL DEFAULT 1,        -- weekly：0=日..6=六
+  at_dom      INTEGER NOT NULL DEFAULT 1,        -- monthly：日
+  run_at      TEXT NOT NULL DEFAULT '',          -- once：指定時間
+  enabled     INTEGER NOT NULL DEFAULT 1,
+  last_run    TEXT NOT NULL DEFAULT '',
+  -- 3.4 對象擴充
+  mention_role_ids TEXT NOT NULL DEFAULT '',      -- 身分組 ID，逗號分隔
+  mention_everyone INTEGER NOT NULL DEFAULT 0,
+  do_mention       INTEGER NOT NULL DEFAULT 1,    -- 是否實際標記(ping)
+  -- 3.5 內容擴充
+  image_url   TEXT NOT NULL DEFAULT '',
+  link_url    TEXT NOT NULL DEFAULT '',
+  btn_label   TEXT NOT NULL DEFAULT '',
+  btn_url     TEXT NOT NULL DEFAULT '',
+  creator     TEXT NOT NULL DEFAULT '',
+  created_at  TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
+-- 提醒發送紀錄（3.8 / 3.9）
+CREATE TABLE IF NOT EXISTS reminder_logs (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  reminder_id INTEGER NOT NULL,
+  status      TEXT NOT NULL DEFAULT 'ok',   -- ok | fail
+  error       TEXT NOT NULL DEFAULT '',
+  sent_at     TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
+-- ===== 論壇整理（索引目錄 + 後台查詢）=====
+CREATE TABLE IF NOT EXISTS forum_config (
+  id            INTEGER PRIMARY KEY CHECK (id = 1),
+  forum_ids     TEXT NOT NULL DEFAULT '',      -- 要整理的論壇頻道（逗號分隔，空=全部論壇）
+  index_channel TEXT NOT NULL DEFAULT '',      -- 目錄發布頻道
+  index_message TEXT NOT NULL DEFAULT '',      -- 目錄訊息 ID（單則，自動更新）
+  group_by      TEXT NOT NULL DEFAULT 'author',-- author | tag | none
+  sort_by       TEXT NOT NULL DEFAULT 'messages', -- messages | recent | created
+  per_page      INTEGER NOT NULL DEFAULT 15,
+  show_archived INTEGER NOT NULL DEFAULT 1,
+  auto_update   INTEGER NOT NULL DEFAULT 1,    -- 有新貼文/新留言就自動更新目錄
+  title         TEXT NOT NULL DEFAULT '📋 論壇整理',
+  synced_at     TEXT NOT NULL DEFAULT ''
+);
+INSERT OR IGNORE INTO forum_config (id) VALUES (1);
+
+CREATE TABLE IF NOT EXISTS forum_posts (
+  thread_id     TEXT PRIMARY KEY,
+  forum_id      TEXT NOT NULL DEFAULT '',
+  forum_name    TEXT NOT NULL DEFAULT '',
+  title         TEXT NOT NULL DEFAULT '',
+  author_id     TEXT NOT NULL DEFAULT '',
+  author_name   TEXT NOT NULL DEFAULT '',
+  message_count INTEGER NOT NULL DEFAULT 0,
+  tags          TEXT NOT NULL DEFAULT '',
+  archived      INTEGER NOT NULL DEFAULT 0,
+  pinned        INTEGER NOT NULL DEFAULT 0,
+  created_at    TEXT NOT NULL DEFAULT '',
+  last_active   TEXT NOT NULL DEFAULT '',
+  url           TEXT NOT NULL DEFAULT '',
+  synced_at     TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_forum_author ON forum_posts(author_id);
+CREATE INDEX IF NOT EXISTS idx_forum_forum ON forum_posts(forum_id, message_count);
+
+-- ===== 表情身分組（公告按表情自動給身分組）=====
+CREATE TABLE IF NOT EXISTS reaction_role_maps (
+  message_id TEXT NOT NULL,
+  channel_id TEXT NOT NULL DEFAULT '',
+  emoji      TEXT NOT NULL,
+  role_id    TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  PRIMARY KEY (message_id, emoji)
+);

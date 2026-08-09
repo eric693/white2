@@ -1,0 +1,1346 @@
+-- White2 Discord 機器人資料庫結構（SQLite / better-sqlite3）
+
+-- ===== 後台管理員帳號 =====
+CREATE TABLE IF NOT EXISTS admin_users (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  username      TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  name          TEXT NOT NULL DEFAULT '管理員',
+  role          TEXT NOT NULL DEFAULT 'admin',   -- admin | staff
+  permissions   TEXT NOT NULL DEFAULT '',        -- staff 逗號分隔模組 key
+  active        INTEGER NOT NULL DEFAULT 1,
+  created_at    TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
+-- ===== 系統設定（key-value）=====
+CREATE TABLE IF NOT EXISTS settings (
+  key   TEXT PRIMARY KEY,
+  value TEXT NOT NULL DEFAULT ''
+);
+
+-- ===== 稽核記錄（11.4）=====
+CREATE TABLE IF NOT EXISTS audit_log (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  actor      TEXT NOT NULL DEFAULT '',
+  action     TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  module     TEXT NOT NULL DEFAULT '',   -- 功能名稱
+  detail     TEXT NOT NULL DEFAULT ''    -- 異動內容（修改前後）
+);
+
+-- ===== 上傳的圖片與檔案（媒體庫）=====
+CREATE TABLE IF NOT EXISTS uploads (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  filename    TEXT NOT NULL,                 -- 實體檔名
+  original    TEXT NOT NULL DEFAULT '',      -- 原始檔名
+  url         TEXT NOT NULL,                 -- /uploads/xxx
+  mime        TEXT NOT NULL DEFAULT '',
+  size        INTEGER NOT NULL DEFAULT 0,
+  kind        TEXT NOT NULL DEFAULT 'file',  -- image | video | file
+  uploader    TEXT NOT NULL DEFAULT '',
+  created_at  TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
+-- ===== 系統錯誤紀錄（11.5）=====
+CREATE TABLE IF NOT EXISTS error_logs (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  message    TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
+-- ===== 功能權限（12.1～12.5）=====
+CREATE TABLE IF NOT EXISTS feature_perms (
+  feature         TEXT PRIMARY KEY,           -- music | giveaways | polls | wheels | birthday ...
+  role_ids        TEXT NOT NULL DEFAULT '',   -- 12.1 可使用的身分組（空=全體）
+  channel_ids     TEXT NOT NULL DEFAULT '',   -- 12.4 僅限這些頻道（空=不限）
+  except_user_ids TEXT NOT NULL DEFAULT '',   -- 12.5 例外使用者（不受限制）
+  except_role_ids TEXT NOT NULL DEFAULT '',   -- 12.5 例外身分組
+  enabled         INTEGER NOT NULL DEFAULT 1  -- 關閉=此功能全伺服器停用
+);
+
+-- ===== 關鍵字自動回覆 =====
+-- keyword 欄位可放多個關鍵字（換行或逗號分隔），符合任一即觸發（4.4）
+CREATE TABLE IF NOT EXISTS keywords (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  keyword       TEXT NOT NULL,
+  match_type    TEXT NOT NULL DEFAULT 'contains', -- contains | exact | starts
+  reply_text    TEXT NOT NULL DEFAULT '',
+  image_url     TEXT NOT NULL DEFAULT '',
+  link_url      TEXT NOT NULL DEFAULT '',
+  use_embed     INTEGER NOT NULL DEFAULT 1,
+  btn_label     TEXT NOT NULL DEFAULT '',
+  btn_url       TEXT NOT NULL DEFAULT '',
+  channels      TEXT NOT NULL DEFAULT '',         -- 限定觸發頻道（逗號分隔，空=全部）4.5
+  reply_channel TEXT NOT NULL DEFAULT '',         -- 指定回覆到某頻道（空=原頻道）
+  cooldown      INTEGER NOT NULL DEFAULT 0,        -- 冷卻秒數 4.6
+  buttons       TEXT NOT NULL DEFAULT '[]',        -- 4.3 多個連結按鈕
+  enabled       INTEGER NOT NULL DEFAULT 1,
+  created_at    TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
+-- 關鍵字觸發紀錄（4.9）
+CREATE TABLE IF NOT EXISTS keyword_logs (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  keyword_id INTEGER NOT NULL,
+  matched    TEXT NOT NULL DEFAULT '',
+  user_id    TEXT NOT NULL DEFAULT '',
+  username   TEXT NOT NULL DEFAULT '',
+  channel_id TEXT NOT NULL DEFAULT '',
+  message    TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
+-- ===== 關鍵字標記管理員 =====
+CREATE TABLE IF NOT EXISTS keyword_mentions (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  keyword      TEXT NOT NULL,
+  match_type   TEXT NOT NULL DEFAULT 'contains',
+  mention_ids  TEXT NOT NULL DEFAULT '',        -- 使用者/身分組 ID，逗號分隔
+  mention_type TEXT NOT NULL DEFAULT 'user',    -- user | role
+  note         TEXT NOT NULL DEFAULT '',
+  enabled      INTEGER NOT NULL DEFAULT 1,
+  created_at   TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
+-- ===== 關鍵字通知與警告規則（5.1～5.8、5.15）=====
+-- keyword 欄位可放多個關鍵字（換行或逗號分隔），符合任一即觸發（5.7）
+CREATE TABLE IF NOT EXISTS alert_rules (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  name            TEXT NOT NULL DEFAULT '',        -- 規則名稱（後台辨識用）
+  keyword         TEXT NOT NULL,
+  match_type      TEXT NOT NULL DEFAULT 'contains',-- contains | exact | starts
+  channels        TEXT NOT NULL DEFAULT '',        -- 限定監控頻道（逗號分隔，空=全伺服器）
+  notify_channel  TEXT NOT NULL DEFAULT '',        -- 5.4 通知發送到的管理頻道
+  notify_user_ids TEXT NOT NULL DEFAULT '',        -- 5.3 通知的管理員（逗號分隔）
+  notify_role_ids TEXT NOT NULL DEFAULT '',        -- 5.3 通知的管理員身分組
+  notify_dm       INTEGER NOT NULL DEFAULT 0,      -- 5.6 是否私訊上列管理員
+  warn            INTEGER NOT NULL DEFAULT 0,      -- 5.8 觸發後是否給警告
+  warn_reason     TEXT NOT NULL DEFAULT '',        -- 警告原因（空則用規則名稱）
+  notify_member   INTEGER NOT NULL DEFAULT 1,      -- 5.9 是否通知玩家本人
+  cooldown        INTEGER NOT NULL DEFAULT 0,      -- 5.15 同一玩家冷卻秒數
+  enabled         INTEGER NOT NULL DEFAULT 1,
+  created_at      TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
+-- 觸發紀錄（5.17）
+CREATE TABLE IF NOT EXISTS alert_logs (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  rule_id    INTEGER NOT NULL,
+  rule_name  TEXT NOT NULL DEFAULT '',
+  matched    TEXT NOT NULL DEFAULT '',
+  user_id    TEXT NOT NULL DEFAULT '',
+  username   TEXT NOT NULL DEFAULT '',
+  channel_id TEXT NOT NULL DEFAULT '',
+  message    TEXT NOT NULL DEFAULT '',
+  warned     INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+-- 冷卻判斷（5.16）靠此索引查同規則同玩家的上次觸發
+CREATE INDEX IF NOT EXISTS idx_alert_logs_rule_user ON alert_logs(rule_id, user_id, created_at);
+
+-- ===== 警告紀錄（5.10、5.14）=====
+-- 以 Discord ID 為主，玩家改名/退出/重進皆不刪除
+CREATE TABLE IF NOT EXISTS warnings (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id    TEXT NOT NULL,
+  username   TEXT NOT NULL DEFAULT '',
+  reason     TEXT NOT NULL DEFAULT '',
+  rule_id    INTEGER NOT NULL DEFAULT 0,
+  source     TEXT NOT NULL DEFAULT 'auto',      -- auto | manual
+  operator   TEXT NOT NULL DEFAULT '',          -- 手動新增時的管理員
+  content    TEXT NOT NULL DEFAULT '',          -- 觸發當下的完整訊息
+  channel_id TEXT NOT NULL DEFAULT '',
+  active     INTEGER NOT NULL DEFAULT 1,        -- 0=已被管理員撤銷（不計入累計）
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_warn_user ON warnings(user_id, active, created_at);
+
+-- ===== 禁言紀錄（5.11～5.13、5.17）=====
+CREATE TABLE IF NOT EXISTS mutes (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id     TEXT NOT NULL,
+  username    TEXT NOT NULL DEFAULT '',
+  reason      TEXT NOT NULL DEFAULT '',
+  minutes     INTEGER NOT NULL DEFAULT 0,
+  warn_count  INTEGER NOT NULL DEFAULT 0,       -- 觸發禁言時的當日累計次數
+  start_at    TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  end_at      TEXT NOT NULL DEFAULT '',
+  released_at TEXT NOT NULL DEFAULT '',
+  released_by TEXT NOT NULL DEFAULT '',         -- 空=時間到自動解除
+  active      INTEGER NOT NULL DEFAULT 1,
+  created_at  TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_mute_user ON mutes(user_id, active);
+
+-- ===== 警告與禁言全域設定（5.11）=====
+CREATE TABLE IF NOT EXISTS warn_config (
+  id             INTEGER PRIMARY KEY CHECK (id = 1),
+  threshold      INTEGER NOT NULL DEFAULT 3,     -- 當日累計幾次警告自動禁言
+  mute_minutes   INTEGER NOT NULL DEFAULT 60,    -- 禁言時間（分鐘）
+  notify_channel TEXT NOT NULL DEFAULT '',       -- 5.12 禁言通知的管理頻道
+  dm_member      INTEGER NOT NULL DEFAULT 1      -- 5.12 是否私訊通知被禁言者
+);
+-- （已移除單例預設列：多伺服器改由 ensureGuild 建立各台設定）
+-- ===== 加入 / 退出通知 =====
+CREATE TABLE IF NOT EXISTS welcome_config (
+  id            INTEGER PRIMARY KEY CHECK (id = 1),
+  join_enabled  INTEGER NOT NULL DEFAULT 0,
+  join_channel  TEXT NOT NULL DEFAULT '',
+  join_message  TEXT NOT NULL DEFAULT '歡迎 {user} 加入 {server}！',
+  join_image    TEXT NOT NULL DEFAULT '',
+  leave_enabled INTEGER NOT NULL DEFAULT 0,
+  leave_channel TEXT NOT NULL DEFAULT '',
+  leave_message TEXT NOT NULL DEFAULT '{username} 離開了伺服器。',
+  -- 6.4 歡迎內容擴充
+  join_title     TEXT NOT NULL DEFAULT '',
+  join_thumb     TEXT NOT NULL DEFAULT '',      -- Banner / 縮圖
+  join_btn_label TEXT NOT NULL DEFAULT '',
+  join_btn_url   TEXT NOT NULL DEFAULT '',
+  join_use_embed INTEGER NOT NULL DEFAULT 1,
+  -- 6.6 / 6.7 管理員通知
+  admin_channel  TEXT NOT NULL DEFAULT '',
+  admin_join     INTEGER NOT NULL DEFAULT 0,
+  admin_leave    INTEGER NOT NULL DEFAULT 0,
+  join_buttons   TEXT NOT NULL DEFAULT '[]'  -- 6.4 多個連結按鈕
+);
+-- （已移除單例預設列：多伺服器改由 ensureGuild 建立各台設定）
+-- ===== 成員加入 / 離開紀錄（6.6～6.9）=====
+CREATE TABLE IF NOT EXISTS member_events (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id      TEXT NOT NULL,
+  username     TEXT NOT NULL DEFAULT '',
+  event        TEXT NOT NULL,                  -- join | leave
+  roles        TEXT NOT NULL DEFAULT '',       -- 離開前擁有的身分組名稱
+  account_at   TEXT NOT NULL DEFAULT '',       -- 帳號建立日期
+  joined_at    TEXT NOT NULL DEFAULT '',       -- 該次加入時間
+  stay_days    INTEGER NOT NULL DEFAULT 0,     -- 離開時的停留天數
+  join_count   INTEGER NOT NULL DEFAULT 1,     -- 累計第幾次加入
+  created_at   TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_member_events_user ON member_events(user_id, created_at);
+
+-- ===== 生日驗證設定 =====
+CREATE TABLE IF NOT EXISTS verify_config (
+  id             INTEGER PRIMARY KEY CHECK (id = 1),
+  enabled        INTEGER NOT NULL DEFAULT 0,
+  min_age        INTEGER NOT NULL DEFAULT 18,
+  verify_channel TEXT NOT NULL DEFAULT '',   -- 放驗證按鈕的頻道
+  pass_role      TEXT NOT NULL DEFAULT '',   -- 通過後給的身分組
+  kick_underage  INTEGER NOT NULL DEFAULT 1, -- 未滿年齡是否踢除
+  prompt_text    TEXT NOT NULL DEFAULT '歡迎加入！請先完成年齡驗證，點下方按鈕填寫您的生日。'
+);
+-- （已移除單例預設列：多伺服器改由 ensureGuild 建立各台設定）
+-- ===== 生日慶生設定 =====
+CREATE TABLE IF NOT EXISTS birthday_config (
+  id             INTEGER PRIMARY KEY CHECK (id = 1),
+  enabled        INTEGER NOT NULL DEFAULT 0,
+  channel        TEXT NOT NULL DEFAULT '',
+  message        TEXT NOT NULL DEFAULT '🎂 今天是 {user} 的生日，大家一起祝他生日快樂！',
+  birthday_role  TEXT NOT NULL DEFAULT '',   -- 當天暫時給的身分組（可空）
+  reward_text    TEXT NOT NULL DEFAULT '',   -- 附帶優惠/獎勵文字
+  -- 10.5 公告設定
+  send_time      TEXT NOT NULL DEFAULT '09:00',
+  mention_star   INTEGER NOT NULL DEFAULT 1, -- 是否標記壽星
+  -- 10.2 生日資料填寫提醒
+  remind_enabled INTEGER NOT NULL DEFAULT 0,
+  remind_mode    TEXT NOT NULL DEFAULT 'channel', -- channel | dm | both
+  remind_channel TEXT NOT NULL DEFAULT '',
+  remind_days    INTEGER NOT NULL DEFAULT 3,      -- 每隔幾天提醒一次
+  remind_text    TEXT NOT NULL DEFAULT '🎂 你還沒有填寫生日資料喔！點下方按鈕填寫，生日當天會有專屬祝福。',
+  remind_role    TEXT NOT NULL DEFAULT ''        -- 只提醒此身分組（空=全部成員）
+);
+-- （已移除單例預設列：多伺服器改由 ensureGuild 建立各台設定）
+-- 10.6 生日祝福發送紀錄（同一年度只發一次）
+CREATE TABLE IF NOT EXISTS birthday_sends (
+  user_id  TEXT NOT NULL,
+  year     INTEGER NOT NULL,
+  sent_at  TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  PRIMARY KEY (user_id, year)
+);
+
+-- 10.7 生日資料異動紀錄
+CREATE TABLE IF NOT EXISTS birthday_history (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id    TEXT NOT NULL,
+  username   TEXT NOT NULL DEFAULT '',
+  action     TEXT NOT NULL DEFAULT 'set',   -- set | update | delete
+  old_value  TEXT NOT NULL DEFAULT '',
+  new_value  TEXT NOT NULL DEFAULT '',
+  operator   TEXT NOT NULL DEFAULT '',      -- 玩家自填為空
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
+-- ===== 玩家生日 =====
+CREATE TABLE IF NOT EXISTS birthdays (
+  user_id     TEXT PRIMARY KEY,
+  username    TEXT NOT NULL DEFAULT '',
+  birth_y     INTEGER NOT NULL,
+  birth_m     INTEGER NOT NULL,
+  birth_d     INTEGER NOT NULL,
+  verified_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
+-- ===== 公告 =====
+CREATE TABLE IF NOT EXISTS announcements (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  title        TEXT NOT NULL DEFAULT '',
+  content      TEXT NOT NULL DEFAULT '',
+  image_url    TEXT NOT NULL DEFAULT '',
+  link_url     TEXT NOT NULL DEFAULT '',
+  channel_id   TEXT NOT NULL DEFAULT '',
+  scheduled_at TEXT NOT NULL DEFAULT '',      -- 空=立即；否則 ISO 時間
+  status       TEXT NOT NULL DEFAULT 'draft', -- draft | scheduled | sent | repeating | stopped
+  sent_at      TEXT NOT NULL DEFAULT '',
+  created_at   TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  -- 7.5 多頻道（逗號分隔；相容舊的 channel_id）
+  channels     TEXT NOT NULL DEFAULT '',
+  -- 7.2 內容擴充
+  video_url    TEXT NOT NULL DEFAULT '',
+  btn_label    TEXT NOT NULL DEFAULT '',
+  btn_url      TEXT NOT NULL DEFAULT '',
+  use_embed    INTEGER NOT NULL DEFAULT 1,
+  -- 7.6 標記設定
+  mention_everyone INTEGER NOT NULL DEFAULT 0,
+  mention_here     INTEGER NOT NULL DEFAULT 0,
+  mention_role_ids TEXT NOT NULL DEFAULT '',
+  -- 7.4 循環公告
+  repeat_freq  TEXT NOT NULL DEFAULT 'none',  -- none | daily | weekly | monthly | custom
+  repeat_time  TEXT NOT NULL DEFAULT '09:00', -- HH:MM
+  repeat_dow   INTEGER NOT NULL DEFAULT 1,    -- weekly：0=日..6=六
+  repeat_dom   INTEGER NOT NULL DEFAULT 1,    -- monthly：日
+  repeat_days  INTEGER NOT NULL DEFAULT 1,    -- custom：每 N 天
+  last_run     TEXT NOT NULL DEFAULT '',
+  creator      TEXT NOT NULL DEFAULT '',
+  buttons      TEXT NOT NULL DEFAULT '[]'   -- 7.2 多個連結按鈕 [{emoji,label,url}]
+);
+
+-- 7.9 公告模板
+CREATE TABLE IF NOT EXISTS announcement_templates (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  name       TEXT NOT NULL,
+  payload    TEXT NOT NULL DEFAULT '{}',      -- JSON：公告各欄位
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
+-- 7.10 公告發送紀錄
+CREATE TABLE IF NOT EXISTS announcement_logs (
+  id       INTEGER PRIMARY KEY AUTOINCREMENT,
+  ann_id   INTEGER NOT NULL,
+  title    TEXT NOT NULL DEFAULT '',
+  channels TEXT NOT NULL DEFAULT '',
+  status   TEXT NOT NULL DEFAULT 'ok',        -- ok | fail
+  error    TEXT NOT NULL DEFAULT '',
+  creator  TEXT NOT NULL DEFAULT '',
+  sent_at  TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
+-- ===== 投票 =====
+CREATE TABLE IF NOT EXISTS polls (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  question      TEXT NOT NULL,
+  description   TEXT NOT NULL DEFAULT '',
+  options       TEXT NOT NULL DEFAULT '[]',     -- JSON 陣列
+  multi         INTEGER NOT NULL DEFAULT 0,     -- 複選
+  anonymous     INTEGER NOT NULL DEFAULT 0,
+  allowed_roles TEXT NOT NULL DEFAULT '',       -- 限定身分組（逗號分隔，空=全體）
+  allow_change  INTEGER NOT NULL DEFAULT 1,     -- 允許截止前修改投票
+  hide_results  INTEGER NOT NULL DEFAULT 0,     -- 結束後才公開結果
+  channel_id    TEXT NOT NULL DEFAULT '',
+  message_id    TEXT NOT NULL DEFAULT '',
+  start_at      TEXT NOT NULL DEFAULT '',
+  deadline      TEXT NOT NULL DEFAULT '',
+  started       INTEGER NOT NULL DEFAULT 1,
+  closed        INTEGER NOT NULL DEFAULT 0,
+  creator       TEXT NOT NULL DEFAULT '',
+  created_at    TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE TABLE IF NOT EXISTS poll_votes (
+  poll_id      INTEGER NOT NULL,
+  user_id      TEXT NOT NULL,
+  option_index INTEGER NOT NULL,
+  PRIMARY KEY (poll_id, user_id, option_index)
+);
+
+-- ===== 抽獎 =====
+CREATE TABLE IF NOT EXISTS giveaways (
+  id             INTEGER PRIMARY KEY AUTOINCREMENT,
+  title          TEXT NOT NULL DEFAULT '',
+  description    TEXT NOT NULL DEFAULT '',
+  prize          TEXT NOT NULL,
+  winners        INTEGER NOT NULL DEFAULT 1,
+  guaranteed_ids TEXT NOT NULL DEFAULT '',   -- 保證中獎者 ID，逗號分隔
+  channel_id     TEXT NOT NULL DEFAULT '',
+  message_id     TEXT NOT NULL DEFAULT '',
+  start_at       TEXT NOT NULL DEFAULT '',   -- 開始時間（空=立即）
+  deadline       TEXT NOT NULL DEFAULT '',   -- 結束時間（分鐘精度）
+  end_unix       INTEGER NOT NULL DEFAULT 0, -- 秒級截止（/giveaway 持續時間，優先於 deadline）
+  started        INTEGER NOT NULL DEFAULT 1,
+  ended          INTEGER NOT NULL DEFAULT 0,
+  winner_ids     TEXT NOT NULL DEFAULT '[]',
+  creator        TEXT NOT NULL DEFAULT '',
+  created_at     TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE TABLE IF NOT EXISTS giveaway_entries (
+  giveaway_id INTEGER NOT NULL,
+  user_id     TEXT NOT NULL,
+  username    TEXT NOT NULL DEFAULT '',
+  PRIMARY KEY (giveaway_id, user_id)
+);
+
+-- ===== 功能黑名單（11.3）=====
+CREATE TABLE IF NOT EXISTS blacklist (
+  user_id    TEXT PRIMARY KEY,
+  username   TEXT NOT NULL DEFAULT '',
+  reason     TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  feature    TEXT NOT NULL DEFAULT 'all',  -- all | giveaways | polls | wheels | music ...
+  expires_at TEXT NOT NULL DEFAULT '',     -- 空=永久
+  active     INTEGER NOT NULL DEFAULT 1,
+  operator   TEXT NOT NULL DEFAULT ''
+);
+
+-- ===== 抽獎中獎紀錄（跨場次，供 12 小時限制與歷史查詢）=====
+CREATE TABLE IF NOT EXISTS win_records (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  giveaway_id INTEGER NOT NULL,
+  user_id     TEXT NOT NULL,
+  username    TEXT NOT NULL DEFAULT '',
+  prize       TEXT NOT NULL DEFAULT '',
+  won_at      INTEGER NOT NULL DEFAULT 0,   -- unix 秒
+  revoked     INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_win_user ON win_records(user_id, revoked, won_at);
+
+-- ===== 角色推薦轉盤（8.1～8.16）=====
+CREATE TABLE IF NOT EXISTS role_wheels (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  name        TEXT NOT NULL,
+  description TEXT NOT NULL DEFAULT '',
+  enabled     INTEGER NOT NULL DEFAULT 1,
+  created_at  TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  image_url   TEXT NOT NULL DEFAULT '',
+  tags        TEXT NOT NULL DEFAULT '',      -- 8.4 轉盤標籤（逗號分隔）
+  listed      INTEGER NOT NULL DEFAULT 1,    -- 8.16 上架 / 下架
+  daily_limit INTEGER NOT NULL DEFAULT 0,    -- 8.9 每人每日抽取次數，0=不限
+  no_repeat   INTEGER NOT NULL DEFAULT 1,    -- 8.10 同轉盤不重複抽到同角色
+  exclude_chatted INTEGER NOT NULL DEFAULT 0,-- 8.15 已聊過的角色不再推薦
+  start_at    TEXT NOT NULL DEFAULT '',      -- 8.12 期間限定轉盤
+  end_at      TEXT NOT NULL DEFAULT ''
+);
+
+CREATE TABLE IF NOT EXISTS wheel_roles (
+  id        INTEGER PRIMARY KEY AUTOINCREMENT,
+  wheel_id  INTEGER NOT NULL,
+  name      TEXT NOT NULL,
+  image_url TEXT NOT NULL DEFAULT '',
+  intro     TEXT NOT NULL DEFAULT '',
+  chat_link TEXT NOT NULL DEFAULT '',
+  sort      INTEGER NOT NULL DEFAULT 0,
+  author    TEXT NOT NULL DEFAULT '',        -- 8.2 作者
+  links     TEXT NOT NULL DEFAULT '[]',      -- 8.2 多個連結 [{emoji,label,url}]
+  tags      TEXT NOT NULL DEFAULT '',        -- 8.3 分類標籤（逗號分隔）
+  weight    INTEGER NOT NULL DEFAULT 1,      -- 8.11 推薦權重
+  enabled   INTEGER NOT NULL DEFAULT 1,
+  start_at  TEXT NOT NULL DEFAULT '',        -- 8.12 活動限定角色
+  end_at    TEXT NOT NULL DEFAULT '',
+  draw_count  INTEGER NOT NULL DEFAULT 0,    -- 8.13 統計
+  fav_count   INTEGER NOT NULL DEFAULT 0,
+  click_count INTEGER NOT NULL DEFAULT 0
+);
+
+-- 8.3 分類標籤主檔（管理員可自行增刪）
+CREATE TABLE IF NOT EXISTS wheel_tags (
+  id   INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL UNIQUE
+);
+
+-- 8.8 / 8.10 抽取紀錄
+CREATE TABLE IF NOT EXISTS wheel_draws (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  wheel_id   INTEGER NOT NULL,
+  role_id    INTEGER NOT NULL,
+  user_id    TEXT NOT NULL,
+  username   TEXT NOT NULL DEFAULT '',
+  round      INTEGER NOT NULL DEFAULT 1,     -- 第幾輪（抽完重置後 +1）
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_draws_user ON wheel_draws(user_id, wheel_id, round);
+
+-- 8.7 角色收藏
+CREATE TABLE IF NOT EXISTS wheel_favorites (
+  user_id    TEXT NOT NULL,
+  role_id    INTEGER NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  PRIMARY KEY (user_id, role_id)
+);
+
+-- 8.15 已體驗（點過聊天室連結）
+CREATE TABLE IF NOT EXISTS wheel_chats (
+  user_id    TEXT NOT NULL,
+  role_id    INTEGER NOT NULL,
+  wheel_id   INTEGER NOT NULL,
+  round      INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  PRIMARY KEY (user_id, role_id)
+);
+
+-- 每位玩家在各轉盤的目前輪次（8.10 / 8.15 重置用）
+CREATE TABLE IF NOT EXISTS wheel_rounds (
+  user_id  TEXT NOT NULL,
+  wheel_id INTEGER NOT NULL,
+  round    INTEGER NOT NULL DEFAULT 1,
+  PRIMARY KEY (user_id, wheel_id)
+);
+
+-- ===== 音樂系統設定（9.2、9.15～9.18、9.21）=====
+CREATE TABLE IF NOT EXISTS music_config (
+  id              INTEGER PRIMARY KEY CHECK (id = 1),
+  panel_channel   TEXT NOT NULL DEFAULT '',    -- 9.17 固定控制面板所在文字頻道
+  panel_message   TEXT NOT NULL DEFAULT '',    -- 面板訊息 ID（全伺服器只保留一則）
+  voice_channel   TEXT NOT NULL DEFAULT '',    -- 9.18 常駐語音頻道
+  stay_24_7       INTEGER NOT NULL DEFAULT 0,  -- 9.18 是否常駐不離開
+  default_volume  INTEGER NOT NULL DEFAULT 50, -- 9.15
+  max_volume      INTEGER NOT NULL DEFAULT 100,
+  allow_duplicate INTEGER NOT NULL DEFAULT 1,  -- 9.16 是否允許清單內重複歌曲
+  vote_skip       INTEGER NOT NULL DEFAULT 0,  -- 9.7 一般玩家投票跳過
+  log_channel     TEXT NOT NULL DEFAULT '',    -- 9.19 播放失敗訊息頻道（空=點歌頻道）
+  dj_role_ids     TEXT NOT NULL DEFAULT '',    -- 9.21 可控制播放的身分組
+  request_role_ids TEXT NOT NULL DEFAULT '',   -- 9.21 可點歌的身分組（空=全體）
+  admin_role_ids  TEXT NOT NULL DEFAULT ''     -- 9.2 可讓機器人加入/退出語音的身分組
+);
+-- （已移除單例預設列：多伺服器改由 ensureGuild 建立各台設定）
+-- 9.20 音樂使用紀錄
+CREATE TABLE IF NOT EXISTS music_logs (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id    TEXT NOT NULL DEFAULT '',
+  username   TEXT NOT NULL DEFAULT '',
+  action     TEXT NOT NULL DEFAULT 'play',  -- play | skip | stop | fail ...
+  title      TEXT NOT NULL DEFAULT '',
+  url        TEXT NOT NULL DEFAULT '',
+  channel_id TEXT NOT NULL DEFAULT '',
+  status     TEXT NOT NULL DEFAULT 'ok',    -- ok | fail
+  error      TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
+-- ===== 提醒 =====
+CREATE TABLE IF NOT EXISTS reminders (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  title       TEXT NOT NULL DEFAULT '',
+  message     TEXT NOT NULL DEFAULT '',
+  channel_id  TEXT NOT NULL DEFAULT '',
+  mention_ids TEXT NOT NULL DEFAULT '',        -- 逗號分隔
+  freq        TEXT NOT NULL DEFAULT 'once',     -- once | daily | weekly | monthly
+  at_time     TEXT NOT NULL DEFAULT '09:00',    -- HH:MM（once 用 run_at）
+  at_dow      INTEGER NOT NULL DEFAULT 1,        -- weekly：0=日..6=六
+  at_dom      INTEGER NOT NULL DEFAULT 1,        -- monthly：日
+  run_at      TEXT NOT NULL DEFAULT '',          -- once：指定時間
+  enabled     INTEGER NOT NULL DEFAULT 1,
+  last_run    TEXT NOT NULL DEFAULT '',
+  -- 3.4 對象擴充
+  mention_role_ids TEXT NOT NULL DEFAULT '',      -- 身分組 ID，逗號分隔
+  mention_everyone INTEGER NOT NULL DEFAULT 0,
+  do_mention       INTEGER NOT NULL DEFAULT 1,    -- 是否實際標記(ping)
+  -- 3.5 內容擴充
+  image_url   TEXT NOT NULL DEFAULT '',
+  link_url    TEXT NOT NULL DEFAULT '',
+  btn_label   TEXT NOT NULL DEFAULT '',
+  btn_url     TEXT NOT NULL DEFAULT '',
+  creator     TEXT NOT NULL DEFAULT '',
+  created_at  TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
+-- 提醒發送紀錄（3.8 / 3.9）
+CREATE TABLE IF NOT EXISTS reminder_logs (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  reminder_id INTEGER NOT NULL,
+  status      TEXT NOT NULL DEFAULT 'ok',   -- ok | fail
+  error       TEXT NOT NULL DEFAULT '',
+  sent_at     TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
+-- ===== 論壇整理（索引目錄 + 後台查詢）=====
+CREATE TABLE IF NOT EXISTS forum_config (
+  id            INTEGER PRIMARY KEY CHECK (id = 1),
+  forum_ids     TEXT NOT NULL DEFAULT '',      -- 要整理的論壇頻道（逗號分隔，空=全部論壇）
+  index_channel TEXT NOT NULL DEFAULT '',      -- 目錄發布頻道
+  index_message TEXT NOT NULL DEFAULT '',      -- 目錄訊息 ID（單則，自動更新）
+  group_by      TEXT NOT NULL DEFAULT 'author',-- author | tag | none
+  sort_by       TEXT NOT NULL DEFAULT 'messages', -- messages | recent | created
+  per_page      INTEGER NOT NULL DEFAULT 15,
+  show_archived INTEGER NOT NULL DEFAULT 1,
+  auto_update   INTEGER NOT NULL DEFAULT 1,    -- 有新貼文/新留言就自動更新目錄
+  title         TEXT NOT NULL DEFAULT '📋 論壇整理',
+  synced_at     TEXT NOT NULL DEFAULT ''
+);
+-- （已移除單例預設列：多伺服器改由 ensureGuild 建立各台設定）
+CREATE TABLE IF NOT EXISTS forum_posts (
+  thread_id     TEXT PRIMARY KEY,
+  forum_id      TEXT NOT NULL DEFAULT '',
+  forum_name    TEXT NOT NULL DEFAULT '',
+  title         TEXT NOT NULL DEFAULT '',
+  author_id     TEXT NOT NULL DEFAULT '',
+  author_name   TEXT NOT NULL DEFAULT '',
+  message_count INTEGER NOT NULL DEFAULT 0,
+  tags          TEXT NOT NULL DEFAULT '',
+  archived      INTEGER NOT NULL DEFAULT 0,
+  pinned        INTEGER NOT NULL DEFAULT 0,
+  created_at    TEXT NOT NULL DEFAULT '',
+  last_active   TEXT NOT NULL DEFAULT '',
+  url           TEXT NOT NULL DEFAULT '',
+  synced_at     TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_forum_author ON forum_posts(author_id);
+CREATE INDEX IF NOT EXISTS idx_forum_forum ON forum_posts(forum_id, message_count);
+
+-- ===== 表情身分組（公告按表情自動給身分組）=====
+CREATE TABLE IF NOT EXISTS reaction_role_maps (
+  message_id TEXT NOT NULL,
+  channel_id TEXT NOT NULL DEFAULT '',
+  emoji      TEXT NOT NULL,
+  role_id    TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  PRIMARY KEY (message_id, emoji)
+);
+
+-- ===== 釣魚 / 挖礦掛機系統 =====
+-- 一個指令 + 冷卻 → 隨機掉落（N/R/SR/SSR）→ 賣出換貨幣 → 買更好的竿子/鎬子提升稀有率。
+-- 貨幣獨立成 econ_wallets，之後其他功能（商店、抽獎）也能共用。
+CREATE TABLE IF NOT EXISTS gather_config (
+  guild_id       TEXT PRIMARY KEY DEFAULT '',
+  enabled        INTEGER NOT NULL DEFAULT 1,
+  channels       TEXT NOT NULL DEFAULT '',        -- 限定可用頻道（逗號分隔，空＝全部）
+  currency_name  TEXT NOT NULL DEFAULT '星幣',
+  currency_emoji TEXT NOT NULL DEFAULT '🪙',
+  fish_cooldown  INTEGER NOT NULL DEFAULT 300,    -- 秒
+  mine_cooldown  INTEGER NOT NULL DEFAULT 300,
+  daily_limit    INTEGER NOT NULL DEFAULT 0,      -- 每人每日次數上限（0＝不限）
+  start_coins    INTEGER NOT NULL DEFAULT 0,      -- 新玩家初始貨幣
+  announce_rare  TEXT NOT NULL DEFAULT 'SSR',     -- 抽到這個稀有度以上時公開廣播（空＝不廣播）
+  seeded         INTEGER NOT NULL DEFAULT 0       -- 是否已灌過預設物品/道具
+);
+
+-- 可掉落的物品（圖鑑內容）
+CREATE TABLE IF NOT EXISTS gather_items (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id    TEXT NOT NULL DEFAULT '',
+  kind        TEXT NOT NULL DEFAULT 'fish',       -- fish＝釣魚 / mine＝挖礦
+  name        TEXT NOT NULL DEFAULT '',
+  emoji       TEXT NOT NULL DEFAULT '',
+  image_url   TEXT NOT NULL DEFAULT '',
+  rarity      TEXT NOT NULL DEFAULT 'N',          -- N / R / SR / SSR
+  weight      INTEGER NOT NULL DEFAULT 100,       -- 抽中權重（同稀有度內的相對機率）
+  price       INTEGER NOT NULL DEFAULT 10,        -- 賣出單價
+  description TEXT NOT NULL DEFAULT '',
+  enabled     INTEGER NOT NULL DEFAULT 1
+);
+CREATE INDEX IF NOT EXISTS idx_gitems ON gather_items(guild_id, kind, enabled);
+
+-- 可購買的竿子 / 鎬子
+CREATE TABLE IF NOT EXISTS gather_tools (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id     TEXT NOT NULL DEFAULT '',
+  kind         TEXT NOT NULL DEFAULT 'fish',
+  name         TEXT NOT NULL DEFAULT '',
+  emoji        TEXT NOT NULL DEFAULT '',
+  tier         INTEGER NOT NULL DEFAULT 1,        -- 階級，玩家只吃自己擁有的最高階
+  price        INTEGER NOT NULL DEFAULT 100,
+  luck         INTEGER NOT NULL DEFAULT 0,        -- 稀有加成 %（拉高 R/SR/SSR 權重）
+  cooldown_cut INTEGER NOT NULL DEFAULT 0,        -- 冷卻縮短 %
+  durability   INTEGER NOT NULL DEFAULT 0,        -- 最大耐久（使用次數，0＝不會壞）
+  repair_cost  INTEGER NOT NULL DEFAULT 0,        -- 修理費（0＝售價一半）
+  description  TEXT NOT NULL DEFAULT '',
+  enabled      INTEGER NOT NULL DEFAULT 1
+);
+CREATE INDEX IF NOT EXISTS idx_gtools ON gather_tools(guild_id, kind, enabled);
+
+-- 玩家錢包（獨立成經濟系統，之後其他功能可共用）
+CREATE TABLE IF NOT EXISTS econ_wallets (
+  guild_id     TEXT NOT NULL DEFAULT '',
+  user_id      TEXT NOT NULL,
+  username     TEXT NOT NULL DEFAULT '',
+  coins        INTEGER NOT NULL DEFAULT 0,
+  total_earned INTEGER NOT NULL DEFAULT 0,
+  updated_at   TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  PRIMARY KEY (guild_id, user_id)
+);
+
+-- 背包 ＋ 圖鑑（count＝目前持有，total_caught＝史上累計，賣掉也不歸零）
+CREATE TABLE IF NOT EXISTS gather_inventory (
+  guild_id     TEXT NOT NULL DEFAULT '',
+  user_id      TEXT NOT NULL,
+  item_id      INTEGER NOT NULL,
+  count        INTEGER NOT NULL DEFAULT 0,
+  total_caught INTEGER NOT NULL DEFAULT 0,
+  first_at     TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  PRIMARY KEY (guild_id, user_id, item_id)
+);
+
+-- 玩家已購買的道具
+CREATE TABLE IF NOT EXISTS gather_user_tools (
+  guild_id  TEXT NOT NULL DEFAULT '',
+  user_id   TEXT NOT NULL,
+  tool_id   INTEGER NOT NULL,
+  uses_left INTEGER NOT NULL DEFAULT 0,   -- 目前剩餘耐久（durability>0 時有意義）
+  bought_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  PRIMARY KEY (guild_id, user_id, tool_id)
+);
+
+-- 冷卻與每日次數
+CREATE TABLE IF NOT EXISTS gather_cooldowns (
+  guild_id  TEXT NOT NULL DEFAULT '',
+  user_id   TEXT NOT NULL,
+  kind      TEXT NOT NULL,
+  next_at   INTEGER NOT NULL DEFAULT 0,           -- unix 毫秒
+  day       TEXT NOT NULL DEFAULT '',             -- 台北時區的 YYYY-MM-DD
+  day_count INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (guild_id, user_id, kind)
+);
+
+-- ===== 製作 / 鍛造：消耗材料產出新物品 =====
+CREATE TABLE IF NOT EXISTS gather_recipes (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id     TEXT NOT NULL DEFAULT '',
+  kind         TEXT NOT NULL DEFAULT 'craft',   -- craft＝製作 / forge＝鍛造
+  name         TEXT NOT NULL DEFAULT '',
+  emoji        TEXT NOT NULL DEFAULT '',
+  result_type  TEXT NOT NULL DEFAULT 'item',    -- item＝產出掉落物 / tool＝產出道具
+  result_id    INTEGER NOT NULL DEFAULT 0,
+  result_count INTEGER NOT NULL DEFAULT 1,
+  materials    TEXT NOT NULL DEFAULT '[]',      -- [{item_id, count}]
+  cost         INTEGER NOT NULL DEFAULT 0,      -- 額外消耗的貨幣
+  success_rate INTEGER NOT NULL DEFAULT 100,    -- 成功率 %
+  fail_keep    INTEGER NOT NULL DEFAULT 0,      -- 失敗時是否保留材料
+  description  TEXT NOT NULL DEFAULT '',
+  enabled      INTEGER NOT NULL DEFAULT 1
+);
+CREATE INDEX IF NOT EXISTS idx_grecipes ON gather_recipes(guild_id, kind, enabled);
+
+-- ===== 任務系統 =====
+CREATE TABLE IF NOT EXISTS quests (
+  id                INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id          TEXT NOT NULL DEFAULT '',
+  name              TEXT NOT NULL DEFAULT '',
+  description       TEXT NOT NULL DEFAULT '',
+  period            TEXT NOT NULL DEFAULT 'daily',   -- daily / weekly / once
+  goal_type         TEXT NOT NULL DEFAULT 'gather',  -- gather＝採集次數 / rarity＝抽到稀有度 / item＝取得指定物品 / sell＝賣出金額 / craft＝製作次數
+  goal_kind         TEXT NOT NULL DEFAULT '',        -- 限定種類（空＝不限）
+  goal_item         INTEGER NOT NULL DEFAULT 0,
+  goal_rarity       TEXT NOT NULL DEFAULT '',
+  goal_count        INTEGER NOT NULL DEFAULT 10,
+  reward_coins      INTEGER NOT NULL DEFAULT 0,
+  reward_item       INTEGER NOT NULL DEFAULT 0,
+  reward_item_count INTEGER NOT NULL DEFAULT 1,
+  reward_role       TEXT NOT NULL DEFAULT '',
+  daily_slots       INTEGER NOT NULL DEFAULT 0,       -- 懸賞名額：>0＝每天全服限這麼多人領（先搶先贏），0＝不限
+  enabled           INTEGER NOT NULL DEFAULT 1
+);
+CREATE INDEX IF NOT EXISTS idx_quests ON quests(guild_id, enabled);
+
+CREATE TABLE IF NOT EXISTS quest_progress (
+  guild_id   TEXT NOT NULL DEFAULT '',
+  user_id    TEXT NOT NULL,
+  quest_id   INTEGER NOT NULL,
+  period_key TEXT NOT NULL DEFAULT '',   -- 每日＝日期／每週＝年-週／一次性＝once
+  progress   INTEGER NOT NULL DEFAULT 0,
+  claimed    INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  PRIMARY KEY (guild_id, user_id, quest_id, period_key)
+);
+
+-- ===== 星幣轉帳紀錄（可稽核）=====
+CREATE TABLE IF NOT EXISTS econ_transfers (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id   TEXT NOT NULL DEFAULT '',
+  from_id    TEXT NOT NULL DEFAULT '',
+  from_name  TEXT NOT NULL DEFAULT '',
+  to_id      TEXT NOT NULL DEFAULT '',
+  to_name    TEXT NOT NULL DEFAULT '',
+  amount     INTEGER NOT NULL DEFAULT 0,
+  fee        INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_transfers ON econ_transfers(guild_id, created_at);
+
+-- ===== 遊戲指令的權限與顯示範圍（逐指令設定）=====
+-- roles 空＝全體可用；private=1 代表結果只有本人看得到（Discord 的 ephemeral）。
+CREATE TABLE IF NOT EXISTS gather_cmd_perms (
+  guild_id TEXT NOT NULL DEFAULT '',
+  cmd      TEXT NOT NULL,
+  enabled  INTEGER NOT NULL DEFAULT 1,
+  roles    TEXT NOT NULL DEFAULT '',
+  private  INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (guild_id, cmd)
+);
+
+-- ===== 地圖：採集地點。高級地圖每日次數少但幸運（稀有率）高，共用掉落池 =====
+CREATE TABLE IF NOT EXISTS gather_maps (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id    TEXT NOT NULL DEFAULT '',
+  name        TEXT NOT NULL DEFAULT '',
+  emoji       TEXT NOT NULL DEFAULT '',
+  daily_limit INTEGER NOT NULL DEFAULT 10,   -- 舊制：使用此地圖時每天可採集的總次數（點數制啟用後不看這個）
+  cost        INTEGER NOT NULL DEFAULT 1,    -- 門票：在這張圖採集一次要扣幾點
+  luck_bonus  INTEGER NOT NULL DEFAULT 0,    -- 額外幸運 %（提升 R 以上掉落率）
+  is_default  INTEGER NOT NULL DEFAULT 0,    -- 新玩家的預設地圖
+  sort        INTEGER NOT NULL DEFAULT 0,
+  description TEXT NOT NULL DEFAULT '',
+  enabled     INTEGER NOT NULL DEFAULT 1
+);
+CREATE INDEX IF NOT EXISTS idx_gmaps ON gather_maps(guild_id, enabled);
+
+-- 每日採集點數的使用量（點數制用；一人一天一筆）
+CREATE TABLE IF NOT EXISTS gather_points (
+  guild_id TEXT NOT NULL DEFAULT '',
+  user_id  TEXT NOT NULL,
+  day      TEXT NOT NULL DEFAULT '',
+  used     INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (guild_id, user_id, day)
+);
+
+-- 玩家目前選擇的地圖
+CREATE TABLE IF NOT EXISTS gather_user_map (
+  guild_id TEXT NOT NULL DEFAULT '',
+  user_id  TEXT NOT NULL,
+  map_id   INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (guild_id, user_id)
+);
+
+-- ===== 玩家物易物：以物換物，提案與成交都公開公告在頻道 =====
+CREATE TABLE IF NOT EXISTS trades (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id     TEXT NOT NULL DEFAULT '',
+  from_id      TEXT NOT NULL DEFAULT '',
+  from_name    TEXT NOT NULL DEFAULT '',
+  to_id        TEXT NOT NULL DEFAULT '',
+  to_name      TEXT NOT NULL DEFAULT '',
+  give_item_id INTEGER NOT NULL DEFAULT 0,
+  give_count   INTEGER NOT NULL DEFAULT 1,
+  want_item_id INTEGER NOT NULL DEFAULT 0,
+  want_count   INTEGER NOT NULL DEFAULT 1,
+  status       TEXT NOT NULL DEFAULT 'pending',   -- pending / done / declined / cancelled / failed
+  channel_id   TEXT NOT NULL DEFAULT '',
+  message_id   TEXT NOT NULL DEFAULT '',
+  expire_at    INTEGER NOT NULL DEFAULT 0,        -- unix 毫秒
+  created_at   TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_trades ON trades(guild_id, status);
+
+-- ===== 每日抽籤：一天一次，可抽到星幣或「幸運符」（提升稀有掉落率一段時間）=====
+CREATE TABLE IF NOT EXISTS lottery_draws (
+  guild_id TEXT NOT NULL DEFAULT '',
+  user_id  TEXT NOT NULL,
+  day      TEXT NOT NULL DEFAULT '',      -- 台北 YYYY-MM-DD，一天一次
+  PRIMARY KEY (guild_id, user_id, day)
+);
+
+-- 每日抽籤的獎池：後台可自訂獎項、權重與內容（沒資料時機器人會灌一份預設獎池）
+CREATE TABLE IF NOT EXISTS lottery_prizes (
+  id       INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id TEXT NOT NULL DEFAULT '',
+  name     TEXT NOT NULL DEFAULT '',       -- 獎項名稱，例如「銅獎」
+  emoji    TEXT NOT NULL DEFAULT '',
+  type     TEXT NOT NULL DEFAULT 'coin',   -- coin＝純星幣／luck＝純幸運符／jackpot＝星幣＋幸運符
+  amount   INTEGER NOT NULL DEFAULT 0,     -- 給多少星幣（type=luck 時忽略）
+  pct      INTEGER NOT NULL DEFAULT 0,     -- 當日稀有率 +%（type=coin 時忽略）
+  weight   INTEGER NOT NULL DEFAULT 10,    -- 抽中權重（相對值）
+  sort     INTEGER NOT NULL DEFAULT 0,
+  enabled  INTEGER NOT NULL DEFAULT 1
+);
+CREATE INDEX IF NOT EXISTS idx_lotprizes ON lottery_prizes(guild_id, enabled);
+
+-- 幸運加成（抽籤中的幸運符）：expire_at 前，採集稀有率額外 +pct%
+CREATE TABLE IF NOT EXISTS luck_buffs (
+  guild_id  TEXT NOT NULL DEFAULT '',
+  user_id   TEXT NOT NULL,
+  pct       INTEGER NOT NULL DEFAULT 0,
+  expire_at INTEGER NOT NULL DEFAULT 0,   -- unix 毫秒
+  PRIMARY KEY (guild_id, user_id)
+);
+
+-- ===== 經營系統（牧場：養動物、每日產蛋/擠奶）=====
+-- 動物產出的「蛋/奶/毛」直接寫進 gather_items（kind='farm'），
+-- 這樣既能出現在 /背包，也能用現成的 /賣出 賣給 NPC，不必另寫一套。
+CREATE TABLE IF NOT EXISTS ranch_config (
+  guild_id          TEXT PRIMARY KEY DEFAULT '',
+  enabled           INTEGER NOT NULL DEFAULT 1,
+  max_slots         INTEGER NOT NULL DEFAULT 6,     -- 每人最多養幾隻
+  max_accrue_days   INTEGER NOT NULL DEFAULT 7,     -- 未收成最多累積幾天的產量（防無限囤積）
+  steal_enabled     INTEGER NOT NULL DEFAULT 1,
+  steal_daily_limit INTEGER NOT NULL DEFAULT 3,     -- 每人每日可偷次數
+  steal_success_pct INTEGER NOT NULL DEFAULT 50,    -- 偷取成功機率 %
+  steal_take_pct    INTEGER NOT NULL DEFAULT 50,    -- 成功時偷走對方未收成產量的 %（僅 steal_mode='pct' 時使用）
+  steal_mode        TEXT NOT NULL DEFAULT 'one',    -- one＝一次只偷 1 個產物或 1 隻動物／pct＝每格各偷 take_pct%
+  steal_guard       INTEGER NOT NULL DEFAULT 0,     -- 1＝看門狗/貓也可以被偷走
+  hatch_slots       INTEGER NOT NULL DEFAULT 3,     -- 孵化室格數
+  seeded            INTEGER NOT NULL DEFAULT 0
+);
+
+-- 可購買的動物（畜牧商店內容）
+CREATE TABLE IF NOT EXISTS ranch_animals (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id        TEXT NOT NULL DEFAULT '',
+  name            TEXT NOT NULL DEFAULT '',
+  emoji           TEXT NOT NULL DEFAULT '',
+  price           INTEGER NOT NULL DEFAULT 500,     -- 購買價（金幣）
+  product_item_id INTEGER NOT NULL DEFAULT 0,       -- 對應 gather_items 的產物（蛋/奶…）
+  produce_per_day INTEGER NOT NULL DEFAULT 1,       -- 每天生產數量（未設間隔時用來平均換算）
+  produce_interval_minutes INTEGER NOT NULL DEFAULT 0,  -- 每產 1 單位要幾分鐘（0＝由每日產量換算）
+  sort            INTEGER NOT NULL DEFAULT 0,
+  description     TEXT NOT NULL DEFAULT '',
+  guard_pct       INTEGER NOT NULL DEFAULT 0,        -- 看門反擊機率 %（>0＝看門動物，不產蛋奶）
+  guard_penalty   INTEGER NOT NULL DEFAULT 0,        -- 反擊時小偷最多掉幾星幣
+  enabled         INTEGER NOT NULL DEFAULT 1
+);
+CREATE INDEX IF NOT EXISTS idx_ranimals ON ranch_animals(guild_id, enabled);
+
+-- 玩家擁有的動物（一格一隻，pending＝尚未收成、可被偷的產量）
+CREATE TABLE IF NOT EXISTS ranch_slots (
+  guild_id         TEXT NOT NULL DEFAULT '',
+  user_id          TEXT NOT NULL,
+  slot             INTEGER NOT NULL,                -- 0..max_slots-1
+  animal_id        INTEGER NOT NULL,
+  pending          INTEGER NOT NULL DEFAULT 0,      -- 未收成產量（可被偷）
+  last_produce_day TEXT NOT NULL DEFAULT '',        -- 舊：台北日期（保留相容）
+  last_produce_ms  INTEGER NOT NULL DEFAULT 0,      -- 每單位計時：上次結算的 unix 毫秒
+  bought_at        TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  PRIMARY KEY (guild_id, user_id, slot)
+);
+CREATE INDEX IF NOT EXISTS idx_rslots ON ranch_slots(guild_id, user_id);
+
+-- 玩家用「製作」開出來的額外牧場/孵化室格數（總格數＝設定的初始格 + 這裡的解鎖數）
+CREATE TABLE IF NOT EXISTS ranch_unlocks (
+  guild_id TEXT NOT NULL DEFAULT '',
+  user_id  TEXT NOT NULL,
+  ranch    INTEGER NOT NULL DEFAULT 0,
+  hatch    INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (guild_id, user_id)
+);
+
+-- 偷竊公告路由：依「被偷者的身分組」把公告發到對應頻道（身分組 ↔ 頻道 一組一組對）
+CREATE TABLE IF NOT EXISTS ranch_steal_routes (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id   TEXT NOT NULL DEFAULT '',
+  role_id    TEXT NOT NULL DEFAULT '',
+  channel_id TEXT NOT NULL DEFAULT '',
+  sort       INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_stealroutes ON ranch_steal_routes(guild_id);
+
+-- 每人每日偷取次數
+CREATE TABLE IF NOT EXISTS ranch_steal (
+  guild_id TEXT NOT NULL DEFAULT '',
+  user_id  TEXT NOT NULL,
+  day      TEXT NOT NULL DEFAULT '',
+  count    INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (guild_id, user_id, day)
+);
+
+-- ===== 孵化室：蛋（gather_items）→ 時間到 → 孵成牧場動物 =====
+-- egg_item_id 是任何一個 gather_items（採集撿到的蛋、或動物生的蛋都行）。
+CREATE TABLE IF NOT EXISTS ranch_hatch_defs (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id      TEXT NOT NULL DEFAULT '',
+  egg_item_id   INTEGER NOT NULL,                 -- 要放進孵化室的蛋
+  animal_id     INTEGER NOT NULL,                 -- 孵出來的動物
+  hatch_minutes INTEGER NOT NULL DEFAULT 240,     -- 孵化需要幾分鐘
+  fail_pct      INTEGER NOT NULL DEFAULT 0,       -- 孵化失敗機率 %（失敗那顆蛋就沒了）
+  sort          INTEGER NOT NULL DEFAULT 0,
+  enabled       INTEGER NOT NULL DEFAULT 1
+);
+CREATE INDEX IF NOT EXISTS idx_rhatch ON ranch_hatch_defs(guild_id, enabled);
+
+-- ===== 特殊兌換商店：花星幣換虛擬獎勵（捏圖等），兌換後貼到對應頻道並標記管理員 =====
+CREATE TABLE IF NOT EXISTS special_config (
+  guild_id    TEXT PRIMARY KEY DEFAULT '',
+  enabled     INTEGER NOT NULL DEFAULT 1,
+  admin_roles TEXT NOT NULL DEFAULT '',    -- 兌換時要 @ 的管理員身分組（逗號分隔 role_id）
+  admin_users TEXT NOT NULL DEFAULT '',    -- 兌換時要 @ 的管理員（逗號分隔 user_id）
+  log_channel TEXT NOT NULL DEFAULT '',    -- 商品沒設頻道時的預設公告頻道
+  channel_scoped INTEGER NOT NULL DEFAULT 0 -- 1＝在有綁分店的頻道只顯示該分店（其他頻道仍看全部）
+);
+
+CREATE TABLE IF NOT EXISTS special_items (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id    TEXT NOT NULL DEFAULT '',
+  name        TEXT NOT NULL DEFAULT '',
+  emoji       TEXT NOT NULL DEFAULT '',
+  price       INTEGER NOT NULL DEFAULT 1000,
+  channel_id  TEXT NOT NULL DEFAULT '',    -- 兌換後公告要貼的頻道（對應身分組的頻道）
+  role_id     TEXT NOT NULL DEFAULT '',    -- 對應身分組（顯示/標記用，可空）
+  image_url   TEXT NOT NULL DEFAULT '',
+  description TEXT NOT NULL DEFAULT '',
+  stock       INTEGER NOT NULL DEFAULT -1, -- 庫存，-1＝無限
+  sort        INTEGER NOT NULL DEFAULT 0,
+  enabled     INTEGER NOT NULL DEFAULT 1
+);
+CREATE INDEX IF NOT EXISTS idx_special ON special_items(guild_id, enabled);
+
+-- 兌換紀錄（可稽核，避免私下交易疑慮）
+CREATE TABLE IF NOT EXISTS special_redeems (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id   TEXT NOT NULL DEFAULT '',
+  user_id    TEXT NOT NULL DEFAULT '',
+  username   TEXT NOT NULL DEFAULT '',
+  item_id    INTEGER NOT NULL DEFAULT 0,
+  item_name  TEXT NOT NULL DEFAULT '',
+  price      INTEGER NOT NULL DEFAULT 0,        -- 單價（總價＝price×qty）
+  qty        INTEGER NOT NULL DEFAULT 1,        -- 兌換份數
+  status     TEXT NOT NULL DEFAULT 'pending',   -- pending / done
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_sredeems ON special_redeems(guild_id, created_at);
+
+-- ===== 種植系統：農地種作物 / 溫室種花卉 =====
+CREATE TABLE IF NOT EXISTS crop_config (
+  guild_id         TEXT PRIMARY KEY DEFAULT '',
+  enabled          INTEGER NOT NULL DEFAULT 1,
+  field_slots      INTEGER NOT NULL DEFAULT 0,   -- 初始農地格（其餘靠 /製作 開）
+  greenhouse_slots INTEGER NOT NULL DEFAULT 0,   -- 初始溫室格（其餘靠 /製作 開）
+  seeded           INTEGER NOT NULL DEFAULT 0
+);
+
+-- ===== 設施商店：農地／溫室／牧場／孵化室，用星幣買「等級」換總格數 =====
+-- 跟工具一樣分階級：買高階會取代低階（總格數以最高階為準，不是累加）。
+CREATE TABLE IF NOT EXISTS facility_defs (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id    TEXT NOT NULL DEFAULT '',
+  type        TEXT NOT NULL DEFAULT 'field',   -- field/greenhouse/ranch/hatch
+  tier        INTEGER NOT NULL DEFAULT 1,      -- 階級，同型別內遞增
+  name        TEXT NOT NULL DEFAULT '',
+  emoji       TEXT NOT NULL DEFAULT '',
+  price       INTEGER NOT NULL DEFAULT 0,
+  slots       INTEGER NOT NULL DEFAULT 1,      -- 這一階提供的「總格數」
+  speed_pct   INTEGER NOT NULL DEFAULT 0,      -- 產出／成熟／孵化時間縮短 %
+  resist_pct  INTEGER NOT NULL DEFAULT 0,      -- 牧場專用：被偷成功率降低 %
+  description TEXT NOT NULL DEFAULT '',
+  sort        INTEGER NOT NULL DEFAULT 0,
+  enabled     INTEGER NOT NULL DEFAULT 1
+);
+CREATE INDEX IF NOT EXISTS idx_facdefs ON facility_defs(guild_id, type, tier);
+
+-- 玩家目前擁有的設施階級（一種設施一筆，買更高階就覆蓋）
+CREATE TABLE IF NOT EXISTS facility_owned (
+  guild_id  TEXT NOT NULL DEFAULT '',
+  user_id   TEXT NOT NULL,
+  type      TEXT NOT NULL DEFAULT 'field',
+  tier      INTEGER NOT NULL DEFAULT 0,
+  slots     INTEGER NOT NULL DEFAULT 0,
+  speed_pct  INTEGER NOT NULL DEFAULT 0,
+  resist_pct INTEGER NOT NULL DEFAULT 0,
+  bought_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  PRIMARY KEY (guild_id, user_id, type)
+);
+
+-- 可購買的種子（含成熟後的產物）
+CREATE TABLE IF NOT EXISTS crop_seeds (
+  id              INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id        TEXT NOT NULL DEFAULT '',
+  name            TEXT NOT NULL DEFAULT '',      -- 種子名稱（例如 番茄種子）
+  emoji           TEXT NOT NULL DEFAULT '',
+  plot_type       TEXT NOT NULL DEFAULT 'field', -- field＝農地 / greenhouse＝溫室
+  seed_price      INTEGER NOT NULL DEFAULT 20,   -- 購買種子價
+  grow_minutes    INTEGER NOT NULL DEFAULT 180,  -- 成熟需要幾分鐘
+  product_item_id INTEGER NOT NULL DEFAULT 0,    -- 成熟收成的作物（gather_items kind='farm'）
+  yield_count     INTEGER NOT NULL DEFAULT 1,    -- 一次收成幾個
+  sort            INTEGER NOT NULL DEFAULT 0,
+  description     TEXT NOT NULL DEFAULT '',
+  enabled         INTEGER NOT NULL DEFAULT 1
+);
+CREATE INDEX IF NOT EXISTS idx_cropseeds ON crop_seeds(guild_id, enabled);
+
+-- 玩家用「製作」開出來的額外農地/溫室格數（總格數＝設定的初始格 + 這裡的解鎖數）
+CREATE TABLE IF NOT EXISTS crop_unlocks (
+  guild_id   TEXT NOT NULL DEFAULT '',
+  user_id    TEXT NOT NULL,
+  field      INTEGER NOT NULL DEFAULT 0,
+  greenhouse INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (guild_id, user_id)
+);
+
+-- 玩家種下的作物（一格一株，ready_at 到了可收成）
+CREATE TABLE IF NOT EXISTS crop_plots (
+  guild_id   TEXT NOT NULL DEFAULT '',
+  user_id    TEXT NOT NULL,
+  plot_type  TEXT NOT NULL DEFAULT 'field',
+  slot       INTEGER NOT NULL,
+  seed_id    INTEGER NOT NULL,
+  ready_at   INTEGER NOT NULL DEFAULT 0,        -- unix 毫秒
+  planted_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  PRIMARY KEY (guild_id, user_id, plot_type, slot)
+);
+CREATE INDEX IF NOT EXISTS idx_cropplots ON crop_plots(guild_id, user_id);
+
+-- ===== 多間特殊商店：每間可發布面板到自己的頻道 =====
+CREATE TABLE IF NOT EXISTS special_shops (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id    TEXT NOT NULL DEFAULT '',
+  name        TEXT NOT NULL DEFAULT '',
+  emoji       TEXT NOT NULL DEFAULT '',
+  description TEXT NOT NULL DEFAULT '',
+  channel_id  TEXT NOT NULL DEFAULT '',   -- 發布商店面板的頻道
+  message_id  TEXT NOT NULL DEFAULT '',   -- 已發布面板的訊息 id
+  sort        INTEGER NOT NULL DEFAULT 0,
+  enabled     INTEGER NOT NULL DEFAULT 1
+);
+CREATE INDEX IF NOT EXISTS idx_sshops ON special_shops(guild_id, enabled);
+
+-- 玩家的孵化室（一格一顆蛋，ready_at 到了就可孵成動物進牧場）
+CREATE TABLE IF NOT EXISTS ranch_incubator (
+  guild_id    TEXT NOT NULL DEFAULT '',
+  user_id     TEXT NOT NULL,
+  slot        INTEGER NOT NULL,                   -- 0..hatch_slots-1
+  egg_item_id INTEGER NOT NULL,
+  animal_id   INTEGER NOT NULL,
+  ready_at    INTEGER NOT NULL DEFAULT 0,         -- unix 毫秒
+  started_at  TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  PRIMARY KEY (guild_id, user_id, slot)
+);
+CREATE INDEX IF NOT EXISTS idx_rincu ON ranch_incubator(guild_id, user_id);
+
+-- ===================================================================
+-- 財經新聞快報 ＋ 星幣股市
+-- 兩個子系統共用一組「新聞」：一則新聞可以同時推動物價與股價。
+-- 預設兩個都關閉（enabled / stock_enabled 皆為 0），後台開啟才會運作。
+-- ===================================================================
+
+-- 總設定（一台伺服器一筆）
+CREATE TABLE IF NOT EXISTS market_config (
+  guild_id          TEXT PRIMARY KEY,
+  enabled           INTEGER NOT NULL DEFAULT 0,   -- 新聞快報／物價浮動（預設關）
+  stock_enabled     INTEGER NOT NULL DEFAULT 0,   -- 星幣股市（預設關）
+  channels          TEXT    NOT NULL DEFAULT '',  -- 允許下股市指令的頻道（空＝不限）
+  news_channel      TEXT    NOT NULL DEFAULT '',  -- 快報發布頻道
+  tick_minutes      INTEGER NOT NULL DEFAULT 60,  -- 股價幾分鐘結算一次
+  fee_pct           INTEGER NOT NULL DEFAULT 2,   -- 買賣手續費 %（銷毀）
+  limit_pct         INTEGER NOT NULL DEFAULT 20,  -- 單次結算漲跌停 %
+  min_trade         INTEGER NOT NULL DEFAULT 1,
+  max_trade         INTEGER NOT NULL DEFAULT 100,
+  max_shares        INTEGER NOT NULL DEFAULT 500, -- 每人持股上限：所有股票加總的股數（0＝不限）
+  trade_cooldown_s  INTEGER NOT NULL DEFAULT 30,
+  daily_trade_limit INTEGER NOT NULL DEFAULT 0,   -- 0＝不限
+  mult_floor_pct    INTEGER NOT NULL DEFAULT 40,  -- 物價倍率下限 %
+  mult_ceil_pct     INTEGER NOT NULL DEFAULT 250, -- 物價倍率上限 %
+  burned_total      INTEGER NOT NULL DEFAULT 0,   -- 累計銷毀星幣（回收 KPI）
+  last_tick_ms      INTEGER NOT NULL DEFAULT 0,
+  seeded            INTEGER NOT NULL DEFAULT 0
+);
+
+-- 行情倍率：新聞的物價效果落在這裡，到期自動失效（不需要清理排程）
+CREATE TABLE IF NOT EXISTS market_modifiers (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id   TEXT NOT NULL DEFAULT '',
+  news_id    INTEGER NOT NULL DEFAULT 0,
+  scope      TEXT NOT NULL DEFAULT 'all',   -- all | item | kind | crop | ranch
+  scope_key  TEXT NOT NULL DEFAULT '',      -- item→item_id；kind→fish/mine/wood/forage/hunt
+  mult_pct   INTEGER NOT NULL DEFAULT 100,  -- 130＝賣價 ×1.3
+  start_ts   INTEGER NOT NULL DEFAULT 0,
+  end_ts     INTEGER NOT NULL DEFAULT 0,
+  label      TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS idx_mmod ON market_modifiers(guild_id, end_ts);
+
+-- 新聞快報（管理員發布；可同時帶物價效果與股價衝擊）
+CREATE TABLE IF NOT EXISTS market_news (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id    TEXT NOT NULL DEFAULT '',
+  headline    TEXT NOT NULL,
+  body        TEXT NOT NULL DEFAULT '',
+  image_url   TEXT NOT NULL DEFAULT '',
+  duration_h  INTEGER NOT NULL DEFAULT 6,          -- 物價效果持續幾小時
+  effects     TEXT NOT NULL DEFAULT '[]',          -- JSON：[{scope,scope_key,mult_pct}]
+  stock_fx    TEXT NOT NULL DEFAULT '[]',          -- JSON：[{symbol_id,impact_pct,vol_mult}]
+  effect_ts   INTEGER NOT NULL DEFAULT 0,          -- 生效時間（unix ms，0＝立即）
+  applied     INTEGER NOT NULL DEFAULT 0,          -- 1＝倍率已建立
+  stock_done  INTEGER NOT NULL DEFAULT 0,          -- 1＝股價衝擊已在某個 tick 套用過
+  announced   INTEGER NOT NULL DEFAULT 0,          -- 1＝已發到 Discord
+  created_by  TEXT NOT NULL DEFAULT '',
+  created_at  TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_mnews ON market_news(guild_id, applied, announced);
+
+-- 股票
+CREATE TABLE IF NOT EXISTS stock_symbols (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id    TEXT NOT NULL DEFAULT '',
+  code        TEXT NOT NULL,
+  name        TEXT NOT NULL,
+  emoji       TEXT NOT NULL DEFAULT '',
+  price       INTEGER NOT NULL DEFAULT 100,
+  anchor      INTEGER NOT NULL DEFAULT 100,        -- 均值回歸的錨
+  vol_pct     INTEGER NOT NULL DEFAULT 8,          -- 每 tick 波動率 %
+  drift_pct   INTEGER NOT NULL DEFAULT 0,          -- 長期趨勢 %／tick
+  revert_pct  INTEGER NOT NULL DEFAULT 10,         -- 回歸強度 %
+  floor_price INTEGER NOT NULL DEFAULT 10,
+  ceil_price  INTEGER NOT NULL DEFAULT 100000,
+  description TEXT NOT NULL DEFAULT '',
+  sort        INTEGER NOT NULL DEFAULT 0,
+  enabled     INTEGER NOT NULL DEFAULT 1
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_scode ON stock_symbols(guild_id, code);
+
+-- K 線（一根＝一個 tick）
+CREATE TABLE IF NOT EXISTS stock_prices (
+  id        INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id  TEXT NOT NULL DEFAULT '',
+  symbol_id INTEGER NOT NULL,
+  ts        INTEGER NOT NULL,
+  open      INTEGER NOT NULL,
+  high      INTEGER NOT NULL,
+  low       INTEGER NOT NULL,
+  close     INTEGER NOT NULL,
+  volume    INTEGER NOT NULL DEFAULT 0,
+  news_id   INTEGER NOT NULL DEFAULT 0
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_spx ON stock_prices(guild_id, symbol_id, ts);
+
+-- 持股
+CREATE TABLE IF NOT EXISTS stock_holdings (
+  guild_id  TEXT NOT NULL DEFAULT '',
+  user_id   TEXT NOT NULL,
+  symbol_id INTEGER NOT NULL,
+  shares    INTEGER NOT NULL DEFAULT 0,
+  cost_sum  INTEGER NOT NULL DEFAULT 0,            -- 累計成本（含手續費）
+  realized  INTEGER NOT NULL DEFAULT 0,            -- 已實現損益
+  PRIMARY KEY (guild_id, user_id, symbol_id)
+);
+
+-- 成交紀錄
+CREATE TABLE IF NOT EXISTS stock_trades (
+  id        INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id  TEXT NOT NULL DEFAULT '',
+  user_id   TEXT NOT NULL,
+  username  TEXT NOT NULL DEFAULT '',
+  symbol_id INTEGER NOT NULL,
+  side      TEXT NOT NULL,
+  shares    INTEGER NOT NULL,
+  price     INTEGER NOT NULL,
+  fee       INTEGER NOT NULL DEFAULT 0,
+  pnl       INTEGER NOT NULL DEFAULT 0,
+  ts        INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_str ON stock_trades(guild_id, user_id, ts);
+
+-- 交易冷卻／每日次數
+CREATE TABLE IF NOT EXISTS stock_user_state (
+  guild_id      TEXT NOT NULL DEFAULT '',
+  user_id       TEXT NOT NULL,
+  last_trade_ms INTEGER NOT NULL DEFAULT 0,
+  day_key       TEXT NOT NULL DEFAULT '',
+  day_trades    INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (guild_id, user_id)
+);
+
+-- ===== 魚缸：只養 SSR 觀賞魚，每天要花星幣買飼料，魚會慢慢產星幣 =====
+-- 跟牧場的差別：產出直接是星幣（不是背包物品）、魚很貴、沒餵會餓死、金幣可以被偷。
+CREATE TABLE IF NOT EXISTS aquarium_config (
+  guild_id          TEXT PRIMARY KEY DEFAULT '',
+  enabled           INTEGER NOT NULL DEFAULT 1,
+  max_slots         INTEGER NOT NULL DEFAULT 8,    -- 每人的魚缸格數（人人都有，不用買）
+  feed_hours        INTEGER NOT NULL DEFAULT 24,   -- 餵一次可以撐幾小時
+  stock_hours       INTEGER NOT NULL DEFAULT 48,   -- 最多可以先餵到幾小時後（防一次餵一年）
+  starve_hours      INTEGER NOT NULL DEFAULT 48,   -- 餓超過幾小時就死掉
+  max_accrue_days   INTEGER NOT NULL DEFAULT 3,    -- 未領取的星幣最多累積幾天份
+  steal_enabled     INTEGER NOT NULL DEFAULT 1,
+  steal_daily_limit INTEGER NOT NULL DEFAULT 2,    -- 每人每日可偷魚缸幾次
+  steal_success_pct INTEGER NOT NULL DEFAULT 40,
+  steal_take_pct    INTEGER NOT NULL DEFAULT 20,   -- 成功時偷走對方未領取星幣的 %
+  steal_fish_pct    INTEGER NOT NULL DEFAULT 3,    -- 偷成功時，再有多少 % 機率整條魚被撈走
+  seeded            INTEGER NOT NULL DEFAULT 0
+);
+
+-- 可購買的 SSR 魚（水族商店內容）
+CREATE TABLE IF NOT EXISTS aquarium_fish (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id     TEXT NOT NULL DEFAULT '',
+  name         TEXT NOT NULL DEFAULT '',
+  emoji        TEXT NOT NULL DEFAULT '',
+  price        INTEGER NOT NULL DEFAULT 3000,   -- 購買價（很貴，SSR 才養得起）
+  coin_per_day INTEGER NOT NULL DEFAULT 100,    -- 每天產出的星幣（餵飽才會產）
+  feed_cost    INTEGER NOT NULL DEFAULT 40,     -- 餵一次的飼料費（星幣）
+  sort         INTEGER NOT NULL DEFAULT 0,
+  description  TEXT NOT NULL DEFAULT '',
+  catch_item_id INTEGER NOT NULL DEFAULT 0,      -- >0＝這種魚是「釣到才能存進缸」的（對應 gather_items 的 id），不在水族商店賣
+  enabled      INTEGER NOT NULL DEFAULT 1
+);
+CREATE INDEX IF NOT EXISTS idx_aqfish ON aquarium_fish(guild_id, enabled);
+
+-- 玩家的魚缸（一格一條魚）
+CREATE TABLE IF NOT EXISTS aquarium_slots (
+  guild_id        TEXT NOT NULL DEFAULT '',
+  user_id         TEXT NOT NULL,
+  slot            INTEGER NOT NULL,             -- 0..max_slots-1
+  fish_id         INTEGER NOT NULL,
+  pending         INTEGER NOT NULL DEFAULT 0,   -- 尚未領取的星幣（可被偷）
+  last_produce_ms INTEGER NOT NULL DEFAULT 0,   -- 上次結算時間
+  fed_until_ms    INTEGER NOT NULL DEFAULT 0,   -- 飼料吃到什麼時候（過了就開始餓）
+  bought_at       TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  PRIMARY KEY (guild_id, user_id, slot)
+);
+CREATE INDEX IF NOT EXISTS idx_aqslots ON aquarium_slots(guild_id, user_id);
+
+-- 每人每日偷魚缸次數
+CREATE TABLE IF NOT EXISTS aquarium_steal (
+  guild_id TEXT NOT NULL DEFAULT '',
+  user_id  TEXT NOT NULL,
+  day      TEXT NOT NULL DEFAULT '',
+  count    INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (guild_id, user_id, day)
+);
+
+-- 用 /製作 蓋出來的魚缸格數（跟設施商店買的相加）
+CREATE TABLE IF NOT EXISTS aquarium_unlocks (
+  guild_id TEXT NOT NULL DEFAULT '',
+  user_id  TEXT NOT NULL,
+  aquarium INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (guild_id, user_id)
+);
+
+-- ===== 稅金系統：每週結算的農地稅／養殖稅／所得稅 =====
+-- 目的是把囤積的貨幣抽回去，壓制通膨；每一項都能單獨開關與調整。
+CREATE TABLE IF NOT EXISTS tax_config (
+  guild_id       TEXT PRIMARY KEY DEFAULT '',
+  enabled        INTEGER NOT NULL DEFAULT 0,
+  period         TEXT NOT NULL DEFAULT 'week',   -- week / day / month
+  dow            INTEGER NOT NULL DEFAULT 1,     -- 每週幾課（0=日…6=六），period=week 用
+  dom            INTEGER NOT NULL DEFAULT 1,     -- 每月幾號課，period=month 用
+  run_time       TEXT NOT NULL DEFAULT '09:00',  -- 台北時間
+  channel        TEXT NOT NULL DEFAULT '',       -- 公告頻道（空＝不公告）
+  dm_bill        INTEGER NOT NULL DEFAULT 1,     -- 是否私訊個人稅單
+  min_total      INTEGER NOT NULL DEFAULT 1,     -- 稅額低於此值就免徵（省得洗版）
+  -- 所得稅（對「目前餘額」累進課徵）
+  income_enabled INTEGER NOT NULL DEFAULT 1,
+  income_free    INTEGER NOT NULL DEFAULT 100000,  -- 免稅額：餘額低於此不課
+  income_brackets TEXT NOT NULL DEFAULT '',        -- JSON [{"over":100000,"pct":5},…]：超過 over 的部分課 pct%
+  income_max_pct INTEGER NOT NULL DEFAULT 50,      -- 單次稅額上限（占餘額 %），避免一次被抄家
+  -- 農地稅（依「已種著的格數」課，空地不課）
+  land_enabled   INTEGER NOT NULL DEFAULT 1,
+  land_field     INTEGER NOT NULL DEFAULT 50,      -- 每格農地
+  land_greenhouse INTEGER NOT NULL DEFAULT 120,    -- 每格溫室
+  land_free      INTEGER NOT NULL DEFAULT 2,       -- 前幾格免稅
+  -- 養殖稅（牧場動物＋魚缸的魚）
+  breed_enabled  INTEGER NOT NULL DEFAULT 1,
+  breed_animal   INTEGER NOT NULL DEFAULT 80,      -- 每隻牧場動物
+  breed_fish     INTEGER NOT NULL DEFAULT 200,     -- 每條 SSR 魚
+  breed_free     INTEGER NOT NULL DEFAULT 1,       -- 前幾隻/條免稅
+  last_period    TEXT NOT NULL DEFAULT ''          -- 上次結算的期間代碼，避免同一期重複課
+);
+
+-- 每期每人的稅單（也是後台稅收報表的來源）
+CREATE TABLE IF NOT EXISTS tax_records (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id   TEXT NOT NULL DEFAULT '',
+  period     TEXT NOT NULL DEFAULT '',        -- 期間代碼，例如 2026-08-10
+  user_id    TEXT NOT NULL,
+  username   TEXT NOT NULL DEFAULT '',
+  balance    INTEGER NOT NULL DEFAULT 0,      -- 課稅當下的餘額
+  income_tax INTEGER NOT NULL DEFAULT 0,
+  land_tax   INTEGER NOT NULL DEFAULT 0,
+  breed_tax  INTEGER NOT NULL DEFAULT 0,
+  total      INTEGER NOT NULL DEFAULT 0,      -- 應繳
+  paid       INTEGER NOT NULL DEFAULT 0,      -- 實繳（餘額不足時會小於應繳）
+  detail     TEXT NOT NULL DEFAULT '',        -- 課稅明細（格數/隻數）
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_tax_records ON tax_records(guild_id, period);
+CREATE INDEX IF NOT EXISTS idx_tax_records_user ON tax_records(guild_id, user_id);

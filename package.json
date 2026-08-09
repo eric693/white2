@@ -1,0 +1,28 @@
+{
+  "name": "white2",
+  "version": "1.0.0",
+  "description": "Discord 多功能機器人 + 網頁後台（音樂、抽獎、投票、提醒、關鍵字、生日、公告、角色轉盤）",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "dev": "node --watch src/server.js",
+    "seed": "node scripts/seed.js",
+    "register": "node scripts/register-commands.js"
+  },
+  "dependencies": {
+    "@discordjs/opus": "^0.10.0",
+    "@discordjs/voice": "^0.19.2",
+    "@napi-rs/canvas": "^1.0.2",
+    "bcryptjs": "^2.4.3",
+    "better-sqlite3": "^11.10.0",
+    "discord.js": "^14.16.3",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.2",
+    "ffmpeg-static": "^5.2.0",
+    "jsonwebtoken": "^9.0.2",
+    "libsodium-wrappers": "^0.7.15",
+    "multer": "^1.4.5-lts.2",
+    "node-cron": "^3.0.3",
+    "play-dl": "^1.9.7"
+  }
+}
