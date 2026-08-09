@@ -119,9 +119,9 @@ function borrow(gid, userId, username, amount) {
   const w = db.prepare('SELECT * FROM econ_wallets WHERE guild_id=? AND user_id=?').get(gid, userId);
   if (!w) return { ok: false, msg: '你還沒有錢包（先玩一下再來借吧）。' };
   if (c.debtor_only && w.coins >= 0) return { ok: false, msg: '目前只有**餘額是負數（欠稅／負債）**的人才能貸款。' };
-  const open = openLoans(gid, userId);
-  if (open.length >= Math.max(1, c.max_open || 1)) {
-    return { ok: false, msg: `你已經有 ${open.length} 筆未還清的貸款（同時上限 ${Math.max(1, c.max_open || 1)} 筆），先用 \`/還款\` 還掉再借。` };
+  const openAsset = db.prepare("SELECT COUNT(*) n FROM loans WHERE guild_id=? AND user_id=? AND status='open' AND loan_type='asset'").get(gid, userId).n;
+  if (openAsset >= Math.max(1, c.max_open || 1)) {
+    return { ok: false, msg: `你已經有 ${openAsset} 筆未還清的物資貸款（同時上限 ${Math.max(1, c.max_open || 1)} 筆），先用 \`/還款\` 還掉再借。` };
   }
   let amt = Math.floor(Number(amount) || 0);
   if (amt <= 0) return { ok: false, msg: '借款金額要大於 0。' };
@@ -169,6 +169,36 @@ function borrow(gid, userId, username, amount) {
 
   const loan = db.prepare('SELECT * FROM loans WHERE id=?').get(loanId);
   return { ok: true, loan, picked: q.picked, coins: db.prepare('SELECT coins FROM econ_wallets WHERE guild_id=? AND user_id=?').get(gid, userId).coins };
+}
+
+// ---- 信用貸款（免抵押）----
+// 不押任何資產，靠信用借小額；到期沒還就直接把應還金額從錢包扣掉（餘額可負），賴不掉。
+function borrowCredit(gid, userId, username, amount) {
+  const c = cfg(gid);
+  if (!c.credit_enabled) return { ok: false, msg: '這個伺服器目前沒有開放信用貸款。' };
+  const w = db.prepare('SELECT * FROM econ_wallets WHERE guild_id=? AND user_id=?').get(gid, userId);
+  if (!w) return { ok: false, msg: '你還沒有錢包（先玩一下再來借吧）。' };
+  const openC = db.prepare("SELECT COUNT(*) n FROM loans WHERE guild_id=? AND user_id=? AND status='open' AND loan_type='credit'").get(gid, userId).n;
+  if (openC >= Math.max(1, c.credit_max_open || 1)) {
+    return { ok: false, msg: `你已經有 ${openC} 筆未還清的信用貸款（同時上限 ${Math.max(1, c.credit_max_open || 1)} 筆），先用 \`/還款\` 還掉再借。` };
+  }
+  const amt = Math.floor(Number(amount) || 0);
+  if (amt <= 0) return { ok: false, msg: '借款金額要大於 0。' };
+  const max = Math.max(1, c.credit_max || 50000);
+  if (amt > max) return { ok: false, msg: `信用貸款單筆上限是 ${money(gid, max)}。` };
+  const interest = Math.ceil(amt * Math.max(0, c.credit_interest_pct || 0) / 100);
+  const dueMs = Date.now() + Math.max(1, c.credit_term_days || 7) * 86400000;
+  const loanId = db.transaction(() => {
+    const info = db.prepare(
+      `INSERT INTO loans (guild_id,user_id,username,principal,interest,owed,collateral_value,status,due_ms,loan_type)
+       VALUES (?,?,?,?,?,?,0,'open',?,'credit')`
+    ).run(gid, userId, username || '', amt, interest, amt + interest, dueMs);
+    // 借到的錢不算收入，不會被多課所得稅（跟物資貸款一致）
+    db.prepare("UPDATE econ_wallets SET coins = coins + ?, updated_at = datetime('now','localtime') WHERE guild_id=? AND user_id=?").run(amt, gid, userId);
+    return info.lastInsertRowid;
+  })();
+  const loan = db.prepare('SELECT * FROM loans WHERE id=?').get(loanId);
+  return { ok: true, loan, coins: db.prepare('SELECT coins FROM econ_wallets WHERE guild_id=? AND user_id=?').get(gid, userId).coins };
 }
 
 // ---- 贖回抵押品（還清時）----
@@ -233,14 +263,18 @@ function repay(gid, userId, amount) {
 // ---- 到期沒還 → 沒收抵押品 ----
 function defaultLoan(gid, loan) {
   db.transaction(() => {
+    // 信用貸款沒有抵押品 → 直接把應還金額從錢包扣掉（餘額可負），賴不掉
+    if (loan.loan_type === 'credit') {
+      db.prepare("UPDATE econ_wallets SET coins = coins - ?, updated_at=datetime('now','localtime') WHERE guild_id=? AND user_id=?").run(loan.owed, gid, loan.user_id);
+    }
     db.prepare("UPDATE loans SET status='defaulted', closed_at=datetime('now','localtime') WHERE id=?").run(loan.id);
-    db.prepare('DELETE FROM loan_collaterals WHERE loan_id=?').run(loan.id);   // 抵押品沒收（本來就已經不在玩家身上）
+    db.prepare('DELETE FROM loan_collaterals WHERE loan_id=?').run(loan.id);   // 物資貸款：抵押品沒收（本來就已經不在玩家身上）
   })();
 }
 
 async function sweepOverdue(client, gid) {
   const c = cfg(gid);
-  if (!c.enabled) return [];
+  if (!c.enabled && !c.credit_enabled) return [];
   const due = db.prepare("SELECT * FROM loans WHERE guild_id=? AND status='open' AND due_ms>0 AND due_ms<=?").all(gid, Date.now());
   const out = [];
   for (const loan of due) {
@@ -248,11 +282,16 @@ async function sweepOverdue(client, gid) {
     defaultLoan(gid, loan);
     out.push({ loan, items });
     const u = await client.users.fetch(loan.user_id).catch(() => null);
-    const emb = new EmbedBuilder().setColor(brandColor())
-      .setTitle('⚠️ 貸款到期未還，抵押品已被沒收')
-      .setDescription(`借款 ${money(gid, loan.principal)}（含利息應還 ${money(gid, loan.principal + loan.interest)}），到期仍欠 ${money(gid, loan.owed)}。`)
-      .addFields({ name: '被沒收的抵押品', value: items.map(x => `・${x.detail} — 估值 ${money(gid, x.value)}`).join('\n').slice(0, 1024) || '—' })
-      .setFooter({ text: '債務已一併結清，之後可以重新貸款' });
+    const emb = loan.loan_type === 'credit'
+      ? new EmbedBuilder().setColor(brandColor())
+        .setTitle('⚠️ 信用貸款到期未還，已直接扣款')
+        .setDescription(`信用借款 ${money(gid, loan.principal)}（應還 ${money(gid, loan.owed)}）到期未還，已直接從你的餘額扣掉 **${money(gid, loan.owed)}**（餘額可能因此變負數）。`)
+        .setFooter({ text: '信用貸款沒有抵押品、賴不掉——把餘額賺回正數就好' })
+      : new EmbedBuilder().setColor(brandColor())
+        .setTitle('⚠️ 貸款到期未還，抵押品已被沒收')
+        .setDescription(`借款 ${money(gid, loan.principal)}（含利息應還 ${money(gid, loan.principal + loan.interest)}），到期仍欠 ${money(gid, loan.owed)}。`)
+        .addFields({ name: '被沒收的抵押品', value: items.map(x => `・${x.detail} — 估值 ${money(gid, x.value)}`).join('\n').slice(0, 1024) || '—' })
+        .setFooter({ text: '債務已一併結清，之後可以重新貸款' });
     if (u) await u.send({ embeds: [emb] }).catch(() => {});
     if (c.channel) {
       const ch = await client.channels.fetch(c.channel).catch(() => null);
@@ -315,7 +354,14 @@ function infoEmbed(gid, userId) {
       value: past.map(p => `${p.status === 'repaid' ? '✅ 已還清' : '❌ 違約沒收'}　${p.n} 筆`).join('　')
     });
   }
-  return emb.setFooter({ text: '用 /貸款 金額 借錢　·　/還款 還錢（不填金額＝全部還清）' });
+  if (c.credit_enabled) {
+    emb.addFields({
+      name: '🪪 也可以「信用貸款」（免抵押）',
+      value: `不用押任何東西，直接借 —— 單筆最多 **${money(gid, c.credit_max || 50000)}**、利息 ${c.credit_interest_pct || 0}%、期限 ${Math.max(1, c.credit_term_days || 7)} 天。\n`
+        + `⚠️ 沒有抵押品、賴不掉：**到期沒還會直接從你的餘額扣款**（可能變負數）。\n用 \`/信用貸款 金額\` 借。`
+    });
+  }
+  return emb.setFooter({ text: '用 /貸款 金額（物資）或 /信用貸款 金額（免抵押）借錢　·　/還款 還錢' });
 }
 
 async function announceBorrow(client, gid, userId, r) {
@@ -359,6 +405,27 @@ function init(client) {
         return announceBorrow(client, gid, i.user.id, r).catch(() => {});
       }
 
+      if (i.commandName === '信用貸款') {
+        const amount = i.options.getInteger('金額');
+        if (amount == null) return await i.reply({ embeds: [infoEmbed(gid, i.user.id)], flags: MessageFlags.Ephemeral });
+        const r = borrowCredit(gid, i.user.id, i.user.username, amount);
+        if (!r.ok) return await i.reply({ content: `❌ ${r.msg}`, flags: MessageFlags.Ephemeral });
+        const emb = new EmbedBuilder().setColor(brandColor())
+          .setTitle('🪪 信用貸款成功')
+          .setDescription(`免抵押借到 **${money(gid, r.loan.principal)}**（利息 ${money(gid, r.loan.interest)}，應還 **${money(gid, r.loan.owed)}**）\n`
+            + `目前餘額 ${money(gid, r.coins)}\n到期：<t:${Math.floor(r.loan.due_ms / 1000)}:f>（<t:${Math.floor(r.loan.due_ms / 1000)}:R>）`)
+          .setFooter({ text: '到期沒還會直接從餘額扣款（可能變負數）；用 /還款 還錢' });
+        await i.reply({ embeds: [emb], flags: MessageFlags.Ephemeral });
+        const cc = cfg(gid);
+        if (cc.channel) {
+          const ch = await client.channels.fetch(cc.channel).catch(() => null);
+          if (ch) await ch.send({ embeds: [new EmbedBuilder().setColor(brandColor()).setTitle('🪪 有人辦了信用貸款')
+            .setDescription(`<@${i.user.id}> 免抵押借了 **${money(gid, r.loan.principal)}**（應還 ${money(gid, r.loan.owed)}）`)
+            .setFooter({ text: '到期沒還會直接扣款' })] }).catch(() => {});
+        }
+        return;
+      }
+
       if (i.commandName === '還款') {
         const amount = i.options.getInteger('金額');
         const r = repay(gid, i.user.id, amount == null ? null : amount);
@@ -395,4 +462,4 @@ function init(client) {
   console.log('  ↳ 物資貸款已載入（/貸款、/還款；抵押工具／作物／魚，到期沒收）');
 }
 
-module.exports = { init, cfg, assets, freeAssets, pick, borrow, repay, giveBack, sweepOverdue, infoEmbed, openLoans, collateralsOf, KINDS, KIND_LABEL };
+module.exports = { init, cfg, assets, freeAssets, pick, borrow, borrowCredit, repay, giveBack, sweepOverdue, infoEmbed, openLoans, collateralsOf, KINDS, KIND_LABEL };

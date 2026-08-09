@@ -178,6 +178,8 @@ const builders = [
 
   new SlashCommandBuilder().setName('貸款').setDescription('用工具／作物／魚缸的魚當抵押品借星幣（不填金額＝查額度）')
     .addIntegerOption(o => o.setName('金額').setDescription('要借多少星幣（不填＝只查可借額度與現有貸款）').setMinValue(1)),
+  new SlashCommandBuilder().setName('信用貸款').setDescription('免抵押借星幣（單筆上限較低，到期沒還直接從餘額扣款）')
+    .addIntegerOption(o => o.setName('金額').setDescription('要借多少星幣（不填＝查額度與說明）').setMinValue(1)),
   new SlashCommandBuilder().setName('還款').setDescription('償還物資貸款（全部還清就贖回抵押品）')
     .addIntegerOption(o => o.setName('金額').setDescription('要還多少（不填＝全部還清）').setMinValue(1)),
 

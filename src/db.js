@@ -166,6 +166,18 @@ try {
   db.prepare("UPDATE loan_config SET collateral_order='tool,crop,fish' WHERE collateral_order LIKE '%bag%' OR collateral_order LIKE '%animal%' OR collateral_order LIKE '%stock%'").run();
 } catch {}
 
+// 信用貸款（免抵押）：靠信用借小額，到期沒還就直接扣錢包（餘額可負），不押任何資產
+ensureColumns('loan_config', {
+  credit_enabled:      'INTEGER NOT NULL DEFAULT 1',
+  credit_max:          'INTEGER NOT NULL DEFAULT 50000',   // 單筆信用貸款上限
+  credit_interest_pct: 'INTEGER NOT NULL DEFAULT 10',      // 免抵押風險高，利息比物資貸款高
+  credit_term_days:    'INTEGER NOT NULL DEFAULT 7',
+  credit_max_open:     'INTEGER NOT NULL DEFAULT 1'        // 同時最多幾筆未還清的信用貸款
+});
+ensureColumns('loans', {
+  loan_type: "TEXT NOT NULL DEFAULT 'asset'"   // 'asset'＝物資抵押、'credit'＝信用貸款
+});
+
 ensureColumns('gather_config', {
   // 禁止徒手採集：工具壞掉／被抵押走就不能採（1＝禁止，0＝像以前一樣可以徒手）
   require_tool: 'INTEGER NOT NULL DEFAULT 1',
