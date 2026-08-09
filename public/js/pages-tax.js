@@ -38,6 +38,11 @@ App.page('tax', {
           <div class="field"><label>稅額低於多少就免徵</label><input name="min_total" type="number" min="0" value="${c.min_total ?? 1}">
             <div class="hint">避免對只有幾十塊的新手洗版。</div></div>
         </div>
+        <div class="field"><label>免稅名單：玩家 ID（一行一個，或用逗號分隔）</label>
+          <textarea name="exempt_users" rows="3" placeholder="1408375041954943030">${UI.esc(c.exempt_users || '')}</textarea>
+          <div class="hint">名單內的人完全不課稅、也不會出現在納稅大戶排行。管理員／活動帳號放這裡。</div></div>
+        <div class="field"><label>免稅身分組（一行一個 role_id，或用逗號分隔）</label>
+          <textarea name="exempt_roles" rows="2" placeholder="身分組 ID">${UI.esc(c.exempt_roles || '')}</textarea></div>
 
         <hr style="border:none;border-top:1px solid var(--border);margin:16px 0">
         <h3>💰 所得稅（對「目前餘額」累進課徵）</h3>
@@ -48,12 +53,15 @@ App.page('tax', {
           <div class="field"><label>單次稅額上限（占餘額 %）</label><input name="income_max_pct" type="number" min="0" max="100" value="${c.income_max_pct ?? 50}">
             <div class="hint">三稅合計不會超過餘額的這個比例，避免一次被抄家。</div></div>
         </div>
+        <div class="field">${H.toggle('income_flat', c.income_flat ?? 1, '整筆跳級（餘額落在哪一級，就用那一級的 % 課整個餘額）')}
+          <div class="hint">關閉＝分段累進（像真實所得稅，只對超過的那一段課）。</div></div>
         <div class="table-wrap"><table class="list" id="bktable">
           <thead><tr><th>超過這個金額的部分</th><th>課 %</th><th style="width:80px"></th></tr></thead>
           <tbody>${(c.brackets || []).map(bracketRow).join('')}</tbody>
         </table></div>
         <button class="btn small secondary" id="addbk" style="margin-top:8px">＋ 新增級距</button>
-        <div class="hint" style="margin-top:6px">跟真的所得稅一樣是<b>分段課</b>：例如「超過 50 萬課 10%」只對第 50 萬以上的那一段課，不是整筆跳級。</div>
+        <div class="hint" style="margin-top:6px"><b>整筆跳級</b>（預設）：餘額 60 萬、級距「超過 50 萬課 10%」→ 直接課 60 萬的 10% ＝ 6 萬。<br>
+          <b>分段累進</b>（關掉開關）：只對第 50 萬以上的 10 萬課 10% ＝ 1 萬。</div>
 
         <hr style="border:none;border-top:1px solid var(--border);margin:16px 0">
         <h3>🌾 農地稅（依「種著作物的格數」課，空地不課）</h3>
@@ -72,6 +80,41 @@ App.page('tax', {
           <div class="field"><label>每隻牧場動物</label><input name="breed_animal" type="number" min="0" value="${c.breed_animal ?? 80}"></div>
           <div class="field"><label>每條 SSR 魚</label><input name="breed_fish" type="number" min="0" value="${c.breed_fish ?? 200}"></div>
           <div class="field"><label>前幾隻／條免稅</label><input name="breed_free" type="number" min="0" value="${c.breed_free ?? 1}"></div>
+        </div>
+
+
+        <hr style="border:none;border-top:1px solid var(--border);margin:16px 0">
+        <h3>🤝 普發（救濟金）</h3>
+        <div class="hint" style="margin-bottom:10px">課完稅之後立刻執行：把窮的／欠稅的人拉回來，縮小貧富差距。管理員免稅名單內的人不會領。</div>
+        <div class="field">${H.toggle('relief_enabled', c.relief_enabled, '啟用普發')}</div>
+        <div class="form-row">
+          <div class="field"><label>發放對象：餘額低於</label><input name="relief_below" type="number" value="${c.relief_below ?? 0}">
+            <div class="hint">填 0＝只發給餘額是負數的人；填 50000＝餘額不到 5 萬的都發。</div></div>
+          <div class="field"><label>發放方式</label>
+            <select name="relief_mode">
+              <option value="floor" ${(c.relief_mode || 'floor') === 'floor' ? 'selected' : ''}>補到保底金額（負債的人先填平）</option>
+              <option value="fixed" ${c.relief_mode === 'fixed' ? 'selected' : ''}>每人發固定金額</option>
+            </select></div>
+        </div>
+        <div class="form-row">
+          <div class="field"><label>保底金額（補到多少）</label><input name="relief_floor" type="number" value="${c.relief_floor ?? 0}">
+            <div class="hint">「補到保底」模式用：餘額 −5,000、保底 10,000 → 發 15,000。</div></div>
+          <div class="field"><label>固定金額（每人發多少）</label><input name="relief_amount" type="number" min="0" value="${c.relief_amount ?? 10000}">
+            <div class="hint">「固定金額」模式用。</div></div>
+        </div>
+        <div class="form-row">
+          <div class="field"><label>每人單期上限（0＝不限）</label><input name="relief_max" type="number" min="0" value="${c.relief_max ?? 0}"></div>
+          <div class="field">${H.toggle('relief_from_tax', c.relief_from_tax ?? 1, '財源限本期稅收（不夠就等比例縮減）')}
+            <div class="hint">關掉＝憑空發錢，會讓星幣總量變多。</div></div>
+        </div>
+        <hr style="border:none;border-top:1px solid var(--border);margin:16px 0">
+        <h3>📈 證券稅（依「持股市值」課，股票也要繳稅）</h3>
+        <div class="field">${H.toggle('stock_enabled', c.stock_enabled, '開徵證券稅')}</div>
+        <div class="form-row">
+          <div class="field"><label>稅率 %（持股市值）</label><input name="stock_pct" type="number" min="0" max="100" step="0.5" value="${c.stock_pct ?? 5}">
+            <div class="hint">市值＝所有持股的「股數 × 現價」，現價是負數的股票不計入、也不會退稅。</div></div>
+          <div class="field"><label>市值免稅額</label><input name="stock_free" type="number" min="0" value="${c.stock_free ?? 0}">
+            <div class="hint">市值低於這個數字的部分不課。</div></div>
         </div>
 
         <div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap">
@@ -142,10 +185,10 @@ App.page('tax', {
       UI.modal({
         title: `${b.dataset.period} 稅單明細`,
         bodyHTML: `<div class="table-wrap"><table class="list">
-          <thead><tr><th>玩家</th><th>當時餘額</th><th>所得稅</th><th>農地稅</th><th>養殖稅</th><th>應繳</th><th>實繳</th></tr></thead>
+          <thead><tr><th>玩家</th><th>當時餘額</th><th>所得稅</th><th>農地稅</th><th>養殖稅</th><th>證券稅</th><th>應繳</th><th>實繳</th></tr></thead>
           <tbody>${rows.map(r => `<tr><td>${UI.esc(r.username || r.user_id)}</td><td>${coin(r.balance)}</td>
-            <td>${coin(r.income_tax)}</td><td>${coin(r.land_tax)}</td><td>${coin(r.breed_tax)}</td>
-            <td>${coin(r.total)}</td><td>${r.paid < r.total ? `<span style="color:#e74c3c">${coin(r.paid)}</span>` : coin(r.paid)}</td>
+            <td>${coin(r.income_tax)}</td><td>${coin(r.land_tax)}</td><td>${coin(r.breed_tax)}</td><td>${coin(r.stock_tax)}</td>
+            <td>${coin(r.total)}</td><td>${r.balance - r.paid < 0 ? `<span style="color:#e74c3c">${coin(r.paid)}（欠稅，餘額變 ${coin(r.balance - r.paid)}）</span>` : coin(r.paid)}</td>
           </tr>`).join('')}</tbody></table></div>`,
         okText: '關閉'
       });

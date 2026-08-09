@@ -2,6 +2,7 @@
 // 按鈕由各功能模組（gather/ranch/crops/special）用 customId 'adv:*' 接手處理。
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags, PermissionsBitField } = require('discord.js');
 const { brandColor } = require('../../util/brand');
+const { guildConfig } = require('../../db');
 
 function buildPanel() {
   const embed = new EmbedBuilder().setColor(brandColor()).setTitle('🌿 冒險生活 · 一鍵面板')
@@ -34,10 +35,15 @@ function buildPanel() {
 }
 
 // 股市面板（第二則訊息）：主面板 5 排已滿，股市另發一則。按鈕由 stock 模組的 stk:* 接手。
-function buildStockPanel() {
+// 🧾 稅務按鈕也放這排（主面板沒位子了），由 tax 模組的 adv:tax 接手。
+function buildStockPanel(gid) {
+  const c = gid ? guildConfig('market_config', gid) : {};
+  const fee = c.fee_pct ?? 2;
   const embed = new EmbedBuilder().setColor(0x2ecc71).setTitle('📈 星幣股市 · 面板')
     .setDescription('用星幣買賣股票賺價差——價格每小時跳動，還會被 📰財經新聞影響，高風險高報酬。\n' +
-      '全部**用點的**：看行情、看持股、買股、賣股都不用打指令（會收 2% 手續費、有交易冷卻）。');
+      `全部**用點的**：看行情、看持股、買股、賣股都不用打指令（買賣各收 ${fee}% 交易稅、有交易冷卻）。\n` +
+      '⚠️ 股價可能跌到**負數**，這時賣出會**倒扣星幣**，出場前先看清楚現價。\n' +
+      '🧾 想知道自己會被課多少稅、什麼時候結算，點 **稅務** 查。');
   const row1 = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('stk:market').setLabel('股市行情').setEmoji('📈').setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId('stk:buymenu').setLabel('買股').setEmoji('📥').setStyle(ButtonStyle.Success),
@@ -45,14 +51,15 @@ function buildStockPanel() {
     new ButtonBuilder().setCustomId('stk:mine').setLabel('我的持股').setEmoji('📊').setStyle(ButtonStyle.Secondary));
   const row2 = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('stk:news').setLabel('財經新聞').setEmoji('📰').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId('stk:quotes').setLabel('目前行情').setEmoji('📊').setStyle(ButtonStyle.Secondary));
+    new ButtonBuilder().setCustomId('stk:quotes').setLabel('目前行情').setEmoji('📊').setStyle(ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId('adv:tax').setLabel('稅務').setEmoji('🧾').setStyle(ButtonStyle.Secondary));
   return { embeds: [embed], components: [row1, row2] };
 }
 
 async function publishPanel(channel) {
   const sent = await channel.send(buildPanel());
   await sent.pin().catch(() => {});   // 釘選，方便玩家隨時從釘選找到
-  const stk = await channel.send(buildStockPanel()).catch(() => null);
+  const stk = await channel.send(buildStockPanel(channel.guild && channel.guild.id)).catch(() => null);
   if (stk) await stk.pin().catch(() => {});
   return sent;
 }

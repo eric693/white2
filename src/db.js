@@ -220,6 +220,31 @@ ensureColumns('special_redeems', {
   qty: 'INTEGER NOT NULL DEFAULT 1'
 });
 
+// 稅金免稅名單：這些人／身分組完全不課稅（管理員、活動帳號等）
+ensureColumns('tax_config', {
+  exempt_users: "TEXT NOT NULL DEFAULT ''",
+  exempt_roles: "TEXT NOT NULL DEFAULT ''",
+  // 1＝整筆跳級：整個餘額乘上適用級距的 %；0＝像真實所得稅那樣分段累進
+  income_flat: 'INTEGER NOT NULL DEFAULT 1',
+  // 證券稅：按「持股市值」課（股票也要繳稅）
+  stock_enabled: 'INTEGER NOT NULL DEFAULT 0',
+  stock_pct: 'REAL NOT NULL DEFAULT 5',        // 市值的百分比
+  stock_free: 'INTEGER NOT NULL DEFAULT 0',    // 市值免稅額
+  // 普發（救濟金）：課完稅後把窮／欠稅的人拉回來
+  relief_enabled: 'INTEGER NOT NULL DEFAULT 0',
+  relief_below: 'INTEGER NOT NULL DEFAULT 0',
+  relief_mode: "TEXT NOT NULL DEFAULT 'floor'",
+  relief_amount: 'INTEGER NOT NULL DEFAULT 10000',
+  relief_floor: 'INTEGER NOT NULL DEFAULT 0',
+  relief_max: 'INTEGER NOT NULL DEFAULT 0',
+  relief_from_tax: 'INTEGER NOT NULL DEFAULT 1'
+});
+
+// 稅單紀錄多一欄證券稅
+ensureColumns('tax_records', {
+  stock_tax: 'INTEGER NOT NULL DEFAULT 0'
+});
+
 ensureColumns('welcome_config', {
   // 新成員一進來就自動掛上的身分組（逗號分隔的 role_id，空＝不給）
   join_roles: "TEXT NOT NULL DEFAULT ''",

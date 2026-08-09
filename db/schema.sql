@@ -1112,7 +1112,7 @@ CREATE TABLE IF NOT EXISTS market_config (
   channels          TEXT    NOT NULL DEFAULT '',  -- 允許下股市指令的頻道（空＝不限）
   news_channel      TEXT    NOT NULL DEFAULT '',  -- 快報發布頻道
   tick_minutes      INTEGER NOT NULL DEFAULT 60,  -- 股價幾分鐘結算一次
-  fee_pct           INTEGER NOT NULL DEFAULT 2,   -- 買賣手續費 %（銷毀）
+  fee_pct           REAL NOT NULL DEFAULT 2,      -- 買賣交易稅 %（銷毀）；可填小數，例如 1.5
   limit_pct         INTEGER NOT NULL DEFAULT 20,  -- 單次結算漲跌停 %
   min_trade         INTEGER NOT NULL DEFAULT 1,
   max_trade         INTEGER NOT NULL DEFAULT 100,
@@ -1313,6 +1313,7 @@ CREATE TABLE IF NOT EXISTS tax_config (
   income_free    INTEGER NOT NULL DEFAULT 100000,  -- 免稅額：餘額低於此不課
   income_brackets TEXT NOT NULL DEFAULT '',        -- JSON [{"over":100000,"pct":5},…]：超過 over 的部分課 pct%
   income_max_pct INTEGER NOT NULL DEFAULT 50,      -- 單次稅額上限（占餘額 %），避免一次被抄家
+  income_flat    INTEGER NOT NULL DEFAULT 1,       -- 1＝整筆跳級（整個餘額 × 適用級距 %）；0＝分段累進
   -- 農地稅（依「已種著的格數」課，空地不課）
   land_enabled   INTEGER NOT NULL DEFAULT 1,
   land_field     INTEGER NOT NULL DEFAULT 50,      -- 每格農地
@@ -1323,6 +1324,20 @@ CREATE TABLE IF NOT EXISTS tax_config (
   breed_animal   INTEGER NOT NULL DEFAULT 80,      -- 每隻牧場動物
   breed_fish     INTEGER NOT NULL DEFAULT 200,     -- 每條 SSR 魚
   breed_free     INTEGER NOT NULL DEFAULT 1,       -- 前幾隻/條免稅
+  -- 證券稅（依「持股市值」課，股票也要繳稅）
+  stock_enabled  INTEGER NOT NULL DEFAULT 0,
+  stock_pct      REAL NOT NULL DEFAULT 5,        -- 持股市值的 %
+  stock_free     INTEGER NOT NULL DEFAULT 0,     -- 市值免稅額
+  -- 普發（救濟金）：課完稅後，把窮／欠稅的人拉回來，縮小貧富差距
+  relief_enabled INTEGER NOT NULL DEFAULT 0,
+  relief_below   INTEGER NOT NULL DEFAULT 0,       -- 餘額低於這個數字才發（0＝只發給負債的人）
+  relief_mode    TEXT NOT NULL DEFAULT 'floor',    -- floor＝補到保底金額；fixed＝每人發固定金額
+  relief_amount  INTEGER NOT NULL DEFAULT 10000,   -- fixed 模式：每人發多少
+  relief_floor   INTEGER NOT NULL DEFAULT 0,       -- floor 模式：補到餘額至少這麼多
+  relief_max     INTEGER NOT NULL DEFAULT 0,       -- 每人單期最多領多少（0＝不限）
+  relief_from_tax INTEGER NOT NULL DEFAULT 1,      -- 1＝總發放不超過本期稅收（不夠就等比例縮減）
+  exempt_users   TEXT NOT NULL DEFAULT '',        -- 免稅名單：user_id 逗號分隔（管理員/測試帳號）
+  exempt_roles   TEXT NOT NULL DEFAULT '',        -- 免稅身分組：role_id 逗號分隔
   last_period    TEXT NOT NULL DEFAULT ''          -- 上次結算的期間代碼，避免同一期重複課
 );
 
@@ -1337,10 +1352,24 @@ CREATE TABLE IF NOT EXISTS tax_records (
   income_tax INTEGER NOT NULL DEFAULT 0,
   land_tax   INTEGER NOT NULL DEFAULT 0,
   breed_tax  INTEGER NOT NULL DEFAULT 0,
+  stock_tax  INTEGER NOT NULL DEFAULT 0,      -- 證券稅（持股市值）
   total      INTEGER NOT NULL DEFAULT 0,      -- 應繳
-  paid       INTEGER NOT NULL DEFAULT 0,      -- 實繳（餘額不足時會小於應繳）
+  paid       INTEGER NOT NULL DEFAULT 0,      -- 實繳（＝應繳全額，餘額不夠就欠稅變負數）
   detail     TEXT NOT NULL DEFAULT '',        -- 課稅明細（格數/隻數）
   created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
 CREATE INDEX IF NOT EXISTS idx_tax_records ON tax_records(guild_id, period);
 CREATE INDEX IF NOT EXISTS idx_tax_records_user ON tax_records(guild_id, user_id);
+
+-- 普發紀錄：每期發給誰、發多少（跟稅單分開，因為領普發的人不一定有繳稅）
+CREATE TABLE IF NOT EXISTS tax_reliefs (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id   TEXT NOT NULL DEFAULT '',
+  period     TEXT NOT NULL DEFAULT '',
+  user_id    TEXT NOT NULL,
+  username   TEXT NOT NULL DEFAULT '',
+  before_coins INTEGER NOT NULL DEFAULT 0,
+  amount     INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_tax_reliefs ON tax_reliefs(guild_id, period);

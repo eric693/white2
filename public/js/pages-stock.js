@@ -40,7 +40,7 @@ App.page('stock', {
         <h3 style="margin-top:18px">股市參數</h3>
         <div class="form-row">
           <div class="field"><label>結算間隔（分鐘）</label><input name="tick_minutes" type="number" min="1" value="${c.tick_minutes ?? 60}"></div>
-          <div class="field"><label>手續費 %（買賣各收，直接銷毀）</label><input name="fee_pct" type="number" min="0" max="50" value="${c.fee_pct ?? 2}"></div>
+          <div class="field"><label>交易稅 %（買賣各收，直接銷毀，可填小數如 1.5）</label><input name="fee_pct" type="number" min="0" max="50" step="0.1" value="${c.fee_pct ?? 2}"></div>
           <div class="field"><label>單次漲跌停 %</label><input name="limit_pct" type="number" min="1" max="100" value="${c.limit_pct ?? 20}"></div>
         </div>
         <div class="form-row">

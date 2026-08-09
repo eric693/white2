@@ -254,7 +254,7 @@ function buy(gid, uid, username, key, shares) {
   const fee = Math.ceil(cost * (c.fee_pct || 0) / 100);
   const w = wallet(gid, uid, username);
   if (w.coins < cost + fee) {
-    return { error: `${gc.currency_name || '星幣'}不夠：需要 ${num(cost + fee)}（含手續費 ${num(fee)}），你只有 ${num(w.coins)}。` };
+    return { error: `${gc.currency_name || '星幣'}不夠：需要 ${num(cost + fee)}（含交易稅 ${num(fee)}），你只有 ${num(w.coins)}。` };
   }
 
   db.transaction(() => {
@@ -267,7 +267,7 @@ function buy(gid, uid, username, key, shares) {
       .run(gid, uid, username || '', s.id, shares, s.price, fee, Date.now());
     db.prepare('UPDATE stock_prices SET volume = volume + ? WHERE guild_id=? AND symbol_id=? AND ts=(SELECT MAX(ts) FROM stock_prices WHERE guild_id=? AND symbol_id=?)')
       .run(shares, gid, s.id, gid, s.id);
-    // 手續費直接銷毀（不進任何人口袋）＝ 星幣回收
+    // 交易稅直接銷毀（不進任何人口袋）＝ 星幣回收
     db.prepare('UPDATE market_config SET burned_total = burned_total + ? WHERE guild_id=?').run(fee, gid);
     bumpRate(gid, uid, rate.day, rate.used);
   })();
@@ -277,7 +277,7 @@ function buy(gid, uid, username, key, shares) {
     embed: new EmbedBuilder().setColor(UP).setTitle('📥 買進成交')
       .setDescription(`${s.emoji} **${s.name}** \`${s.code}\`\n成交 **${num(shares)}** 股 × ${num(s.price)}`)
       .addFields(
-        { name: '總支出', value: `${num(cost + fee)}（手續費 ${num(fee)}）`, inline: true },
+        { name: '總支出', value: `${num(cost + fee)}（交易稅 ${num(fee)}）`, inline: true },
         { name: '持有', value: `${num(nh.shares)} 股`, inline: true },
         { name: '餘額', value: num(wallet(gid, uid).coins), inline: true })
   };
@@ -303,7 +303,7 @@ function sell(gid, uid, username, key, sharesRaw) {
 
   // 負股價時賣出＝真的背負債：gross 是負數，會從錢包倒扣（餘額可以變負）
   const gross = s.price * shares;
-  // 手續費只對「有收到錢」的部分抽，賠錢出場不再多抽一筆
+  // 交易稅只對「有收到錢」的部分抽，賠錢出場不再多抽一筆
   const fee = Math.ceil(Math.max(0, gross) * (c.fee_pct || 0) / 100);
   const net = gross - fee;
   const avg = h.shares > 0 ? h.cost_sum / h.shares : 0;
@@ -332,7 +332,7 @@ function sell(gid, uid, username, key, sharesRaw) {
       .setDescription(`${s.emoji} **${s.name}** \`${s.code}\`\n賣出 **${num(shares)}** 股 × ${num(s.price)}`
         + (net < 0 ? `\n⚠️ 這是負股價，出清要**倒賠 ${num(-net)}**` : ''))
       .addFields(
-        { name: net < 0 ? '倒扣' : '實收', value: `${num(net)}（手續費 ${num(fee)}）`, inline: true },
+        { name: net < 0 ? '倒扣' : '實收', value: `${num(net)}（交易稅 ${num(fee)}）`, inline: true },
         { name: '這筆損益', value: `${pnl >= 0 ? '📈 +' : '📉 '}${num(pnl)}`, inline: true },
         { name: '餘額', value: num(wallet(gid, uid).coins), inline: true })
   };
@@ -353,7 +353,7 @@ function marketEmbed(gid) {
   return new EmbedBuilder().setColor(brandColor())
     .setTitle('📈 星幣股市')
     .setDescription(lines.join('\n'))
-    .setFooter({ text: `下次結算 ${new Date(next).toLocaleTimeString('zh-TW', { timeZone: 'Asia/Taipei', hour: '2-digit', minute: '2-digit' })}　手續費 ${c.fee_pct}%　漲跌停 ±${c.limit_pct}%` });
+    .setFooter({ text: `下次結算 ${new Date(next).toLocaleTimeString('zh-TW', { timeZone: 'Asia/Taipei', hour: '2-digit', minute: '2-digit' })}　交易稅 ${c.fee_pct}%　漲跌停 ±${c.limit_pct}%` });
 }
 
 function symbolEmbed(gid, uid, s) {
@@ -626,7 +626,7 @@ function init(client) {
         if (cap <= 0) return i.update({ content: `買不起或已達持股上限（現價 ${num(s.price)}）。`, components: [], embeds: [] }).catch(() => {});
         const amts = [...new Set([1, 5, 10, 25, 50, 100].filter(x => x < cap).concat([cap]))].sort((a, b) => a - b);
         const menu = new StringSelectMenuBuilder().setCustomId('stk:buyqty:' + s.code).setPlaceholder('要買幾股？').setMinValues(1).setMaxValues(1)
-          .addOptions(amts.slice(0, 25).map(x => ({ label: x === cap ? `買 ${num(x)} 股（最多）` : `買 ${num(x)} 股`, description: `約花 ${num(Math.round(per * x))}（含手續費）`.slice(0, 100), value: String(x) })));
+          .addOptions(amts.slice(0, 25).map(x => ({ label: x === cap ? `買 ${num(x)} 股（最多）` : `買 ${num(x)} 股`, description: `約花 ${num(Math.round(per * x))}（含交易稅）`.slice(0, 100), value: String(x) })));
         return i.update({ content: `${s.emoji || ''}${s.name} \`${s.code}\` 現價 ${num(s.price)}：要買幾股？`, components: [new ActionRowBuilder().addComponents(menu)], embeds: [] }).catch(() => {});
       }
       if (i.isStringSelectMenu() && i.customId.startsWith('stk:buyqty:')) {

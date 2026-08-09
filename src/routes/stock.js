@@ -8,6 +8,11 @@ const router = express.Router();
 router.use(requireAuth(), guardModule('stock'));
 
 const int = (v, d = 0, min = -1e12) => { const n = parseInt(v, 10); return Number.isFinite(n) ? Math.max(min, n) : d; };
+// 手續費要能填小數（例如 1.5%），只保留到小數點後兩位
+const pct = (v, d = 0, min = 0, max = 100) => {
+  const n = Math.round(parseFloat(v) * 100) / 100;
+  return Number.isFinite(n) ? Math.min(max, Math.max(min, n)) : d;
+};
 const cfg = (gid) => guildConfig('market_config', gid);
 
 // ---------- 設定 ----------
@@ -37,7 +42,7 @@ router.put('/market', (req, res) => {
     channels: String(b.channels || ''),
     news_channel: String(b.news_channel || ''),
     tick_minutes: int(b.tick_minutes, 60, 1),
-    fee_pct: int(b.fee_pct, 2, 0),
+    fee_pct: pct(b.fee_pct, 2, 0, 50),
     limit_pct: int(b.limit_pct, 20, 1),
     min_trade: int(b.min_trade, 1, 1),
     max_trade: int(b.max_trade, 100, 0),

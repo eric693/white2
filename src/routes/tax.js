@@ -27,35 +27,62 @@ router.put('/tax', (req, res) => {
       .filter(x => x.pct > 0).sort((a, c) => a.over - c.over)
     : [];
 
+  // 只覆蓋這次真的有送上來的欄位：舊分頁沒有新欄位時，不要把既有設定（例如免稅名單）洗掉
+  const cur = guildConfig('tax_config', req.guildId);
+  const keep = (v, k, f) => (v === undefined || v === null ? cur[k] : f(v));
+  const bool = (v, k) => (v === undefined || v === null ? cur[k] : (v ? 1 : 0));
+
   db.prepare(
     `UPDATE tax_config SET enabled=@enabled, period=@period, dow=@dow, dom=@dom, run_time=@run_time,
        channel=@channel, dm_bill=@dm_bill, min_total=@min_total,
        income_enabled=@income_enabled, income_free=@income_free, income_brackets=@income_brackets,
-       income_max_pct=@income_max_pct,
+       income_max_pct=@income_max_pct, income_flat=@income_flat,
        land_enabled=@land_enabled, land_field=@land_field, land_greenhouse=@land_greenhouse, land_free=@land_free,
-       breed_enabled=@breed_enabled, breed_animal=@breed_animal, breed_fish=@breed_fish, breed_free=@breed_free
+       breed_enabled=@breed_enabled, breed_animal=@breed_animal, breed_fish=@breed_fish, breed_free=@breed_free,
+       stock_enabled=@stock_enabled, stock_pct=@stock_pct, stock_free=@stock_free,
+       relief_enabled=@relief_enabled, relief_below=@relief_below, relief_mode=@relief_mode,
+       relief_amount=@relief_amount, relief_floor=@relief_floor, relief_max=@relief_max,
+       relief_from_tax=@relief_from_tax,
+       exempt_users=@exempt_users, exempt_roles=@exempt_roles
      WHERE guild_id=@guild_id`
   ).run({
-    enabled: b.enabled ? 1 : 0,
-    period: ['day', 'week', 'month'].includes(b.period) ? b.period : 'week',
-    dow: Math.max(0, Math.min(6, int(b.dow, 1, 0))),
-    dom: Math.max(1, Math.min(28, int(b.dom, 1, 1))),
-    run_time: /^\d{2}:\d{2}$/.test(b.run_time || '') ? b.run_time : '09:00',
-    channel: b.channel || '',
-    dm_bill: b.dm_bill ? 1 : 0,
-    min_total: int(b.min_total, 1, 0),
-    income_enabled: b.income_enabled ? 1 : 0,
-    income_free: int(b.income_free, 100000, 0),
-    income_brackets: JSON.stringify(brackets),
-    income_max_pct: Math.max(0, Math.min(100, int(b.income_max_pct, 50, 0))),
-    land_enabled: b.land_enabled ? 1 : 0,
-    land_field: int(b.land_field, 50, 0),
-    land_greenhouse: int(b.land_greenhouse, 120, 0),
-    land_free: int(b.land_free, 2, 0),
-    breed_enabled: b.breed_enabled ? 1 : 0,
-    breed_animal: int(b.breed_animal, 80, 0),
-    breed_fish: int(b.breed_fish, 200, 0),
-    breed_free: int(b.breed_free, 1, 0),
+    enabled: bool(b.enabled, 'enabled'),
+    period: ['day', 'week', 'month'].includes(b.period) ? b.period : cur.period || 'week',
+    dow: keep(b.dow, 'dow', v => Math.max(0, Math.min(6, int(v, 1, 0)))),
+    dom: keep(b.dom, 'dom', v => Math.max(1, Math.min(28, int(v, 1, 1)))),
+    run_time: /^\d{2}:\d{2}$/.test(b.run_time || '') ? b.run_time : (cur.run_time || '09:00'),
+    channel: keep(b.channel, 'channel', v => String(v || '')),
+    dm_bill: bool(b.dm_bill, 'dm_bill'),
+    min_total: keep(b.min_total, 'min_total', v => int(v, 1, 0)),
+    income_enabled: bool(b.income_enabled, 'income_enabled'),
+    income_free: keep(b.income_free, 'income_free', v => int(v, 100000, 0)),
+    // brackets 只在有送 brackets 陣列時才覆寫
+    income_brackets: Array.isArray(bs) ? JSON.stringify(brackets) : (cur.income_brackets || ''),
+    income_max_pct: keep(b.income_max_pct, 'income_max_pct', v => Math.max(0, Math.min(100, int(v, 50, 0)))),
+    income_flat: bool(b.income_flat, 'income_flat'),
+    land_enabled: bool(b.land_enabled, 'land_enabled'),
+    land_field: keep(b.land_field, 'land_field', v => int(v, 50, 0)),
+    land_greenhouse: keep(b.land_greenhouse, 'land_greenhouse', v => int(v, 120, 0)),
+    land_free: keep(b.land_free, 'land_free', v => int(v, 2, 0)),
+    breed_enabled: bool(b.breed_enabled, 'breed_enabled'),
+    breed_animal: keep(b.breed_animal, 'breed_animal', v => int(v, 80, 0)),
+    breed_fish: keep(b.breed_fish, 'breed_fish', v => int(v, 200, 0)),
+    breed_free: keep(b.breed_free, 'breed_free', v => int(v, 1, 0)),
+    // 證券稅：按持股市值課
+    stock_enabled: bool(b.stock_enabled, 'stock_enabled'),
+    stock_pct: keep(b.stock_pct, 'stock_pct', v => Math.max(0, Math.min(100, Math.round(parseFloat(v) * 100) / 100 || 0))),
+    stock_free: keep(b.stock_free, 'stock_free', v => int(v, 0, 0)),
+    // 普發
+    relief_enabled: bool(b.relief_enabled, 'relief_enabled'),
+    relief_below: keep(b.relief_below, 'relief_below', v => int(v, 0, -1e12)),
+    relief_mode: ['floor', 'fixed'].includes(b.relief_mode) ? b.relief_mode : (cur.relief_mode || 'floor'),
+    relief_amount: keep(b.relief_amount, 'relief_amount', v => int(v, 10000, 0)),
+    relief_floor: keep(b.relief_floor, 'relief_floor', v => int(v, 0, -1e12)),
+    relief_max: keep(b.relief_max, 'relief_max', v => int(v, 0, 0)),
+    relief_from_tax: bool(b.relief_from_tax, 'relief_from_tax'),
+    // 免稅名單：逗號／空白／換行都能分隔
+    exempt_users: keep(b.exempt_users, 'exempt_users', v => String(v).split(/[\s,;、]+/).map(x => x.trim()).filter(Boolean).join(',')),
+    exempt_roles: keep(b.exempt_roles, 'exempt_roles', v => String(v).split(/[\s,;、]+/).map(x => x.trim()).filter(Boolean).join(',')),
     guild_id: req.guildId
   });
   audit(req.user.name, '更新稅金設定', 'gather', '', req.guildId);
