@@ -24,6 +24,29 @@ App.page('special', {
       <div class="card" style="max-width:760px" id="cfgwrap">
         <h3>基本設定</h3>
         <div class="field">${H.toggle('enabled', c.enabled, '啟用特殊兌換商店')}</div>
+        <div class="form-row">
+          <div class="field"><label>每人每項兌換上限（0＝不限）</label><input name="per_item_limit" type="number" min="0" value="${c.per_item_limit ?? 0}">
+            <div class="hint">例如填 5：每個玩家「每一項商品」各最多換 5 份。單一商品可在下方商品設定裡另外覆寫。</div></div>
+          <div class="field"><label>上限／累進的重置週期</label>
+            <select name="limit_reset">
+              <option value="month" ${(c.limit_reset||'month')==='month'?'selected':''}>每月 1 號歸零</option>
+              <option value="week" ${c.limit_reset==='week'?'selected':''}>每週一歸零</option>
+              <option value="none" ${c.limit_reset==='none'?'selected':''}>永不重置（一輩子就這些）</option>
+            </select></div>
+        </div>
+        <div class="form-row">
+          <div class="field">${H.toggle('price_escalate', c.price_escalate, '累進價格（同一項越換越貴）')}
+            <div class="hint">第 1 份原價，第 2 份 ×倍率，第 3 份 ×倍率²…重置後回到原價。</div></div>
+          <div class="field"><label>累進倍率</label><input name="escalate_mult" type="number" min="1" max="100" step="0.5" value="${c.escalate_mult ?? 2}">
+            <div class="hint">填 2 就是每次翻倍：5,000 → 10,000 → 20,000 → 40,000…</div></div>
+        </div>
+        <div class="field"><label>兌換通知要發到哪</label>
+          <select name="notify_mode">
+            <option value="shop" ${(c.notify_mode||'shop')==='shop'?'selected':''}>商店頻道（公開，大家都看得到誰換了什麼）</option>
+            <option value="dm" ${c.notify_mode==='dm'?'selected':''}>只私訊管理員（不公開，推薦）</option>
+            <option value="log" ${c.notify_mode==='log'?'selected':''}>只發到下方的「預設通知頻道」（建議設成管理員專用頻道）</option>
+          </select>
+          <div class="hint">玩家自己看到的兌換結果一律只有他本人看得到，這裡只決定「通知管理員」的方式。</div></div>
         <div class="field"><label>預設要標記的管理員身分組（可複選，商店沒自訂時用這組）</label>
           ${roleBox('data-adminrole', c.admin_roles)}</div>
         <div class="field"><label>預設通知頻道（商店/商品沒設頻道時用這個）</label>${H.chanSelect('log_channel', c.log_channel)}</div>
@@ -91,7 +114,7 @@ App.page('special', {
               <td>${UI.esc(r.username || r.user_id)}</td>
               <td>${UI.esc(r.item_name)}</td>
               <td>×${r.qty || 1}</td>
-              <td>${coin(r.price * (r.qty || 1))}</td>
+              <td>${coin(r.paid > 0 ? r.paid : r.price * (r.qty || 1))}</td>
               <td>${r.status === 'done' ? '✅ 已處理' : '⏳ 待處理'}</td>
               <td>${r.status === 'done' ? '' : `<button class="btn tiny secondary" data-done="${r.id}">標記已處理</button>`}</td>
             </tr>`).join('') : '<tr><td colspan="7" class="hint">尚無兌換紀錄。</td></tr>'}
@@ -123,6 +146,7 @@ App.page('special', {
       <div class="field"><label>獎勵圖片（可空）</label>${H.uploadField('image_url', it.image_url || '', { label: '圖片' })}</div>
       <div class="field"><label>說明</label><input name="description" value="${UI.esc(it.description || '')}" placeholder="兌換內容說明，會顯示給玩家與管理員"></div>
       <div class="field"><label>排序</label><input name="sort" type="number" value="${it.sort ?? 0}"></div>
+      <div class="field"><label>這項的每人上限（0＝跟隨全域設定）</label><input name="per_user_limit" type="number" min="0" value="${it.per_user_limit ?? 0}"></div>
       <div class="field">${H.toggle('enabled', it.enabled ?? 1, '上架')}</div>`;
 
     const openItem = (it) => {

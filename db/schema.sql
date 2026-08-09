@@ -957,7 +957,13 @@ CREATE TABLE IF NOT EXISTS special_config (
   admin_roles TEXT NOT NULL DEFAULT '',    -- 兌換時要 @ 的管理員身分組（逗號分隔 role_id）
   admin_users TEXT NOT NULL DEFAULT '',    -- 兌換時要 @ 的管理員（逗號分隔 user_id）
   log_channel TEXT NOT NULL DEFAULT '',    -- 商品沒設頻道時的預設公告頻道
-  channel_scoped INTEGER NOT NULL DEFAULT 0 -- 1＝在有綁分店的頻道只顯示該分店（其他頻道仍看全部）
+  channel_scoped INTEGER NOT NULL DEFAULT 0, -- 1＝在有綁分店的頻道只顯示該分店（其他頻道仍看全部）
+  -- 兌換通知去哪：shop＝商店頻道（公開，大家看得到誰換了什麼）／log＝只發到管理員通知頻道／dm＝只私訊管理員
+  notify_mode TEXT NOT NULL DEFAULT 'shop',
+  per_item_limit INTEGER NOT NULL DEFAULT 0,   -- 每人每期每項最多幾份（0＝不限）
+  price_escalate INTEGER NOT NULL DEFAULT 0,   -- 1＝開啟累進價格
+  escalate_mult  REAL NOT NULL DEFAULT 2,      -- 每多買一次就乘一次這個倍率
+  limit_reset    TEXT NOT NULL DEFAULT 'month' -- month＝每月 1 號歸零／week＝每週一／none＝不重置
 );
 
 CREATE TABLE IF NOT EXISTS special_items (
@@ -986,6 +992,7 @@ CREATE TABLE IF NOT EXISTS special_redeems (
   item_name  TEXT NOT NULL DEFAULT '',
   price      INTEGER NOT NULL DEFAULT 0,        -- 單價（總價＝price×qty）
   qty        INTEGER NOT NULL DEFAULT 1,        -- 兌換份數
+  paid       INTEGER NOT NULL DEFAULT 0,        -- 實付總額（累進價格時 price×qty 會有誤差，以這欄為準）
   status     TEXT NOT NULL DEFAULT 'pending',   -- pending / done
   created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
@@ -1334,6 +1341,9 @@ CREATE TABLE IF NOT EXISTS tax_config (
   spend_pct      REAL NOT NULL DEFAULT 20,       -- 本期兌換金額的 %
   spend_free     INTEGER NOT NULL DEFAULT 0,     -- 兌換金額免稅額
   last_run_at    TEXT NOT NULL DEFAULT '',       -- 上次實際結算時間，界定「本期」
+  -- 強制清算：課完稅還是負數的人，系統自動變賣資產抵債
+  liquidate_enabled INTEGER NOT NULL DEFAULT 0,
+  liquidate_order TEXT NOT NULL DEFAULT 'bag,stock,fish,animal',   -- 變賣順序
   -- 普發（救濟金）：課完稅後，把窮／欠稅的人拉回來，縮小貧富差距
   relief_enabled INTEGER NOT NULL DEFAULT 0,
   relief_below   INTEGER NOT NULL DEFAULT 0,       -- 餘額低於這個數字才發（0＝只發給負債的人）
@@ -1380,3 +1390,17 @@ CREATE TABLE IF NOT EXISTS tax_reliefs (
   created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
 CREATE INDEX IF NOT EXISTS idx_tax_reliefs ON tax_reliefs(guild_id, period);
+
+-- 強制清算紀錄：欠稅時系統賣掉了哪些資產、賣了多少
+CREATE TABLE IF NOT EXISTS tax_liquidations (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id   TEXT NOT NULL DEFAULT '',
+  period     TEXT NOT NULL DEFAULT '',
+  user_id    TEXT NOT NULL,
+  username   TEXT NOT NULL DEFAULT '',
+  kind       TEXT NOT NULL DEFAULT '',        -- bag / stock / fish / animal
+  detail     TEXT NOT NULL DEFAULT '',        -- 賣了什麼
+  amount     INTEGER NOT NULL DEFAULT 0,      -- 賣得多少星幣
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_tax_liq ON tax_liquidations(guild_id, period);

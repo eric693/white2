@@ -41,6 +41,7 @@ router.put('/tax', (req, res) => {
        breed_enabled=@breed_enabled, breed_animal=@breed_animal, breed_fish=@breed_fish, breed_free=@breed_free,
        stock_enabled=@stock_enabled, stock_pct=@stock_pct, stock_free=@stock_free,
        spend_enabled=@spend_enabled, spend_pct=@spend_pct, spend_free=@spend_free,
+       liquidate_enabled=@liquidate_enabled, liquidate_order=@liquidate_order,
        relief_enabled=@relief_enabled, relief_below=@relief_below, relief_mode=@relief_mode,
        relief_amount=@relief_amount, relief_floor=@relief_floor, relief_max=@relief_max,
        relief_from_tax=@relief_from_tax,
@@ -78,6 +79,10 @@ router.put('/tax', (req, res) => {
     spend_enabled: bool(b.spend_enabled, 'spend_enabled'),
     spend_pct: keep(b.spend_pct, 'spend_pct', v => Math.max(0, Math.min(100, Math.round(parseFloat(v) * 100) / 100 || 0))),
     spend_free: keep(b.spend_free, 'spend_free', v => int(v, 0, 0)),
+    // 強制清算
+    liquidate_enabled: bool(b.liquidate_enabled, 'liquidate_enabled'),
+    liquidate_order: keep(b.liquidate_order, 'liquidate_order', v => String(v).split(/[\s,;、]+/)
+      .map(x => x.trim()).filter(x => ['bag', 'stock', 'fish', 'animal'].includes(x)).join(',') || 'bag,stock,fish,animal'),
     // 普發
     relief_enabled: bool(b.relief_enabled, 'relief_enabled'),
     relief_below: keep(b.relief_below, 'relief_below', v => int(v, 0, -1e12)),

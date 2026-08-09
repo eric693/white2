@@ -5,6 +5,7 @@ const { db, guildConfig, logError } = require('../../db');
 const { brandColor } = require('../../util/brand');
 const { absUrl } = require('../../util/url');
 const { wallet } = require('./gather');
+const { localToday, localWeekStart, parts } = require('../../util/time');
 
 const scfg = (gid) => guildConfig('special_config', gid);
 const gcfg = (gid) => guildConfig('gather_config', gid);
@@ -13,6 +14,24 @@ const money = (c, n) => `${c.currency_emoji || '🪙'} ${Number(n).toLocaleStrin
 
 const shopsOf = (gid) => db.prepare('SELECT * FROM special_shops WHERE guild_id=? AND enabled=1 ORDER BY sort, id').all(gid);
 const itemsOfShop = (gid, shopId) => db.prepare('SELECT * FROM special_items WHERE guild_id=? AND enabled=1 AND shop_id=? ORDER BY sort, price').all(gid, shopId);
+
+// 要私訊誰：後台指定的管理員 user_id ＋ 通知身分組裡的成員（去重）
+async function adminIds(client, gid, roleIds, adminUsers) {
+  const ids = new Set(csv(adminUsers));
+  const roles = csv(roleIds);
+  if (roles.length) {
+    const guild = client.guilds.cache.get(gid);
+    if (guild) {
+      // 身分組成員可能不在快取裡，抓一次（Discord 會快取起來，之後不用再抓）
+      if (guild.members.cache.size < guild.memberCount) await guild.members.fetch().catch(() => {});
+      for (const r of roles) {
+        const role = guild.roles.cache.get(r);
+        if (role) for (const m of role.members.values()) if (!m.user.bot) ids.add(m.id);
+      }
+    }
+  }
+  return [...ids];
+}
 
 // 欠稅（餘額負數）的人不能兌換：先把債還完才能花錢
 const debtError = (gid, uid, uname) => {
@@ -23,13 +42,65 @@ const debtError = (gid, uid, uname) => {
     `要先把${gc.currency_name || '星幣'}賺回正數才能兌換。`;
 };
 
-// 一次可以兌換幾份：受庫存與餘額夾擊，上限 25（下拉選單最多 25 個選項）
+// ---- 每人兌換上限 & 累進價格 ----
+// 兩個都以「期」為單位，預設每月 1 號歸零（也可改每週一或永不重置）。
 const QTY_MAX = 25;
+
+// 本期起算時間（字串比對 special_redeems.created_at，格式一致都是 'YYYY-MM-DD HH:MM:SS'）
+function periodStart(c) {
+  const mode = c.limit_reset || 'month';
+  if (mode === 'none') return '';
+  if (mode === 'week') return `${localWeekStart()} 00:00:00`;
+  const p = parts();
+  return `${p.y}-${String(p.mo).padStart(2, '0')}-01 00:00:00`;
+}
+// 本期起算之後的下一個重置日，講給玩家聽
+function nextResetText(c) {
+  const mode = c.limit_reset || 'month';
+  if (mode === 'none') return '不會重置';
+  if (mode === 'week') return '每週一 00:00 歸零';
+  return '每月 1 號 00:00 歸零';
+}
+// 這個人這一期已經換過幾份
+function usedQty(gid, uid, itemId, since) {
+  const q = since
+    ? db.prepare('SELECT COALESCE(SUM(qty),0) n FROM special_redeems WHERE guild_id=? AND user_id=? AND item_id=? AND created_at >= ?').get(gid, uid, itemId, since)
+    : db.prepare('SELECT COALESCE(SUM(qty),0) n FROM special_redeems WHERE guild_id=? AND user_id=? AND item_id=?').get(gid, uid, itemId);
+  return q.n;
+}
+// 每人上限：商品自己有設就用商品的，否則用全域（0＝不限）
+const limitOf = (c, item) => (item.per_user_limit > 0 ? item.per_user_limit : (c.per_item_limit || 0));
+
+// 第 n 份的單價（n 從 0 起算）。沒開累進就一律原價。
+function unitPrice(c, item, n) {
+  if (!c.price_escalate) return item.price;
+  const mult = Math.max(1, Number(c.escalate_mult) || 1);
+  return Math.round(item.price * Math.pow(mult, n));
+}
+// 買 qty 份的總價（已經換過 already 份的人，從第 already+1 份開始算）
+function costOf(c, item, already, qty) {
+  let sum = 0;
+  for (let k = 0; k < qty; k++) sum += unitPrice(c, item, already + k);
+  return sum;
+}
+
+// 一次可以兌換幾份：受庫存、餘額、每人上限三方夾擊，最多 25（下拉選單上限）
 function qtyCap(gid, item, uid, uname) {
+  const c = scfg(gid);
   const w = wallet(gid, uid, uname);
-  const afford = item.price > 0 ? Math.floor(w.coins / item.price) : QTY_MAX;
+  const already = usedQty(gid, uid, item.id, periodStart(c));
+  const limit = limitOf(c, item);
+  const roomByLimit = limit > 0 ? Math.max(0, limit - already) : QTY_MAX;
   const stock = item.stock < 0 ? QTY_MAX : item.stock;
-  return { cap: Math.max(0, Math.min(QTY_MAX, stock, afford)), coins: w.coins };
+  // 累進價格下每一份都比前一份貴，所以一份一份加上去看買得起幾份
+  let cap = 0, spent = 0;
+  const max = Math.min(QTY_MAX, stock, roomByLimit);
+  while (cap < max) {
+    const next = spent + unitPrice(c, item, already + cap);
+    if (next > w.coins) break;
+    spent = next; cap++;
+  }
+  return { cap, coins: w.coins, already, limit, roomByLimit };
 }
 
 // 共用兌換邏輯：扣星幣、扣庫存、記錄、通知管理員。回傳給玩家看的 embed。
@@ -40,47 +111,86 @@ async function doRedeem(client, gid, item, user, uname, qtyRaw = 1) {
   if (debt) return { error: debt };
   if (item.stock === 0) return { error: `**${item.name}** 已經兌換完了（庫存 0）。` };
   if (item.stock > 0 && qty > item.stock) return { error: `**${item.name}** 只剩 ${item.stock} 份，沒辦法一次換 ${qty} 份。` };
+
+  // 每人上限（每期）
+  const since = periodStart(c);
+  const already = usedQty(gid, user.id, item.id, since);
+  const limit = limitOf(c, item);
+  if (limit > 0 && already + qty > limit) {
+    return {
+      error: already >= limit
+        ? `**${item.name}** 你這期已經換滿 ${limit} 份了（${nextResetText(c)}）。`
+        : `**${item.name}** 每人這期上限 ${limit} 份，你已經換了 ${already} 份，最多還能再換 ${limit - already} 份。`
+    };
+  }
+
   const w = wallet(gid, user.id, uname);
-  const total = item.price * qty;
-  if (w.coins < total) return { error: `${gc.currency_name}不夠：需要 ${total.toLocaleString('en-US')}（${item.price.toLocaleString('en-US')} × ${qty}），你只有 ${w.coins.toLocaleString('en-US')}。` };
+  const total = costOf(c, item, already, qty);
+  if (w.coins < total) {
+    const detail = c.price_escalate
+      ? `第 ${already + 1}~${already + qty} 份共 ${total.toLocaleString('en-US')}（越換越貴）`
+      : `${item.price.toLocaleString('en-US')} × ${qty}`;
+    return { error: `${gc.currency_name}不夠：需要 ${total.toLocaleString('en-US')}（${detail}），你只有 ${w.coins.toLocaleString('en-US')}。` };
+  }
 
   let redeemId;
   const tx = db.transaction(() => {
     db.prepare('UPDATE econ_wallets SET coins = coins - ? WHERE guild_id=? AND user_id=?').run(total, gid, user.id);
     if (item.stock > 0) db.prepare('UPDATE special_items SET stock = stock - ? WHERE id=?').run(qty, item.id);
-    redeemId = db.prepare('INSERT INTO special_redeems (guild_id,user_id,username,item_id,item_name,price,qty) VALUES (?,?,?,?,?,?,?)')
-      .run(gid, user.id, uname, item.id, item.name, item.price, qty).lastInsertRowid;
+    // price 記「這次實際的平均單價」，總價才等於 price×qty，後台與消費稅都對得上
+    redeemId = db.prepare('INSERT INTO special_redeems (guild_id,user_id,username,item_id,item_name,price,qty,paid) VALUES (?,?,?,?,?,?,?,?)')
+      .run(gid, user.id, uname, item.id, item.name, Math.round(total / qty), qty, total).lastInsertRowid;
   });
   tx();
 
   // 通知目標：優先用商品所屬「商店」綁定的頻道與身分組，其次商品自訂，最後全域預設
   const shop = item.shop_id ? db.prepare('SELECT * FROM special_shops WHERE id=? AND guild_id=?').get(item.shop_id, gid) : null;
-  const chId = item.channel_id || (shop && shop.channel_id) || c.log_channel;
   const roleIds = (shop && shop.notify_roles) ? shop.notify_roles : c.admin_roles;
+  const mode = c.notify_mode || 'shop';
+  // shop＝發在商店頻道（公開）；log＝只發到管理員通知頻道；dm＝不發任何頻道，改私訊管理員
+  const chId = mode === 'dm' ? '' : (mode === 'log' ? c.log_channel : (item.channel_id || (shop && shop.channel_id) || c.log_channel));
+
+  const notify = new EmbedBuilder().setColor(brandColor()).setTitle('🎁 收到一筆兌換')
+    .setDescription(`<@${user.id}> 用 ${money(gc, total)} 兌換了 **${item.emoji || ''}${item.name}** × **${qty}**` +
+      (item.role_id ? `\n對應身分組：<@&${item.role_id}>` : '') +
+      (item.description ? `\n\n${item.description}` : '') +
+      `\n\n請管理員協助處理，完成後可到後台把這筆標記為已處理。`)
+    .setFooter({ text: `兌換單 #${redeemId}｜${uname}` });
+  if (item.image_url) notify.setThumbnail(absUrl(item.image_url));
+
   let posted = false;
   if (chId) {
     const ch = client.channels.cache.get(chId) || await client.channels.fetch(chId).catch(() => null);
     if (ch) {
       const mentions = [...csv(roleIds).map(r => `<@&${r}>`), ...csv(c.admin_users).map(u => `<@${u}>`)];
-      const notify = new EmbedBuilder().setColor(brandColor()).setTitle('🎁 收到一筆兌換')
-        .setDescription(`<@${user.id}> 用 ${money(gc, total)} 兌換了 **${item.emoji || ''}${item.name}** × **${qty}**` +
-          (item.role_id ? `\n對應身分組：<@&${item.role_id}>` : '') +
-          (item.description ? `\n\n${item.description}` : '') +
-          `\n\n請管理員協助處理，完成後可到後台把這筆標記為已處理。`)
-        .setFooter({ text: `兌換單 #${redeemId}｜${uname}` });
-      if (item.image_url) notify.setThumbnail(absUrl(item.image_url));
       await ch.send({ content: `🔔 ${mentions.join(' ')} 有新的兌換需要處理！`.trim(), embeds: [notify] })
         .catch(e => logError(gid, '兌換公告發送失敗：', e.message));
       posted = true;
     }
   }
+  if (mode === 'dm') {
+    for (const id of await adminIds(client, gid, roleIds, c.admin_users)) {
+      const u = await client.users.fetch(id).catch(() => null);
+      if (!u) continue;
+      if (await u.send({ embeds: [notify] }).then(() => true).catch(() => false)) posted = true;
+    }
+  }
   const embed = new EmbedBuilder().setColor(brandColor()).setTitle('✅ 兌換成功')
     .setDescription(`你兌換了 ${item.emoji || '🎁'} **${item.name}** × **${qty}**！\n` +
       `共花費 ${money(gc, total)}\n` +
-      (posted ? '已通知管理員為你處理，請留意對應頻道或私訊。' : '⚠️ 尚未設定通知頻道，請管理員盡快處理。') +
+      (posted ? '已私下通知管理員為你處理，請留意私訊。' : '⚠️ 目前沒有可用的通知管道，請直接聯絡管理員。') +
       `\n\n兌換單編號：#${redeemId}`)
     .setFooter({ text: `餘額 ${(w.coins - total).toLocaleString('en-US')} ${gc.currency_name}` });
   return { embed };
+}
+
+// 規則摘要：上限與累進價格要讓玩家一眼看到，不然會覺得被坑
+function rulesLine(gid) {
+  const c = scfg(gid);
+  const bits = [];
+  if (c.per_item_limit > 0) bits.push(`每人每項上限 ${c.per_item_limit} 份（${nextResetText(c)}）`);
+  if (c.price_escalate) bits.push(`同一項越換越貴（每份 ×${Number(c.escalate_mult) || 2}）`);
+  return bits.length ? bits.join('｜') : '';
 }
 
 // 商店面板（一則含商品清單 + 兌換下拉選單）
@@ -94,7 +204,7 @@ function shopPanel(gid, shop) {
         const stock = it.stock < 0 ? '' : `　庫存 ${it.stock}`;
         return `${it.emoji || '🎁'} **${it.name}**　${money(gc, it.price)}${stock}${it.description ? `\n　　${it.description}` : ''}`;
       }).join('\n') : '（尚無商品）'))
-    .setFooter({ text: '從下方選單選一項即可兌換，系統會通知管理員處理' });
+    .setFooter({ text: rulesLine(gid) || '從下方選單選一項即可兌換，系統會通知管理員處理' });
   const components = [];
   if (items.length) {
     components.push(new ActionRowBuilder().addComponents(
@@ -156,18 +266,29 @@ function init(client) {
         if (item.stock === 0) return i.reply({ content: `**${item.name}** 已經兌換完了（庫存 0）。`, flags: MessageFlags.Ephemeral });
         const debt = debtError(gid, i.user.id, i.user.username);
         if (debt) return i.reply({ content: debt, flags: MessageFlags.Ephemeral });
-        const { cap, coins } = qtyCap(gid, item, i.user.id, i.user.username);
+        const { cap, coins, already, limit, roomByLimit } = qtyCap(gid, item, i.user.id, i.user.username);
+        if (limit > 0 && roomByLimit <= 0) {
+          return i.reply({ content: `**${item.name}** 你這期已經換滿 ${limit} 份了（${nextResetText(c)}）。`, flags: MessageFlags.Ephemeral });
+        }
         if (cap <= 0) {
-          return i.reply({ content: `${gc.currency_name}不夠：**${item.name}** 一份要 ${item.price.toLocaleString('en-US')}，你只有 ${coins.toLocaleString('en-US')}。`, flags: MessageFlags.Ephemeral });
+          const need = unitPrice(c, item, already);
+          return i.reply({ content: `${gc.currency_name}不夠：**${item.name}** 你的下一份要 ${need.toLocaleString('en-US')}，你只有 ${coins.toLocaleString('en-US')}。`, flags: MessageFlags.Ephemeral });
         }
         // 只能換一份就不用問了，直接兌換
         if (cap === 1) return await finishRedeem(i, gid, item, shopId, 1);
         const opts = [];
-        for (let n = 1; n <= cap; n++) opts.push({ label: `${n} 份`, description: `共 ${(item.price * n).toLocaleString('en-US')} ${gc.currency_name}`.slice(0, 100), value: String(n) });
+        for (let n = 1; n <= cap; n++) {
+          const sum = costOf(c, item, already, n);
+          opts.push({ label: `${n} 份`, description: `共 ${sum.toLocaleString('en-US')} ${gc.currency_name}`.slice(0, 100), value: String(n) });
+        }
         const menu = new StringSelectMenuBuilder().setCustomId(`sqty:${shopId}:${item.id}`)
           .setPlaceholder('要兌換幾份？').setMinValues(1).setMaxValues(1).addOptions(opts);
+        const head = `${item.emoji || '🎁'} **${item.name}**　下一份 ${money(gc, unitPrice(c, item, already))}` +
+          (item.stock < 0 ? '' : `　庫存 ${item.stock}`) +
+          (limit > 0 ? `\n你這期已換 **${already}/${limit}** 份（${nextResetText(c)}）` : '') +
+          (c.price_escalate ? `\n📈 這間店**越換越貴**：每多換一份，下一份價格 ×${Number(c.escalate_mult) || 2}` : '');
         return i.reply({
-          content: `${item.emoji || '🎁'} **${item.name}**　單價 ${money(gc, item.price)}${item.stock < 0 ? '' : `　庫存 ${item.stock}`}\n要兌換幾份？（最多 ${cap} 份）`,
+          content: `${head}\n要兌換幾份？（最多 ${cap} 份）`,
           components: [new ActionRowBuilder().addComponents(menu)], flags: MessageFlags.Ephemeral
         });
       }

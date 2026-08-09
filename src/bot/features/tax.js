@@ -8,6 +8,7 @@ const cron = require('node-cron');
 const { db, guildConfig, activeGuildIds, logError } = require('../../db');
 const { brandColor } = require('../../util/brand');
 const { parts, localToday } = require('../../util/time');
+const { livePrice } = require('../../util/market');
 
 const cfg = (gid) => guildConfig('tax_config', gid);
 const gcfg = (gid) => guildConfig('gather_config', gid);
@@ -83,8 +84,8 @@ function assess(gid, userId) {
   // 本期兌換金額：上次結算之後在神秘商店花掉的錢（沒結算過就算全部）
   const since = c.last_run_at || '';
   const spent = since
-    ? db.prepare('SELECT COALESCE(SUM(price*qty),0) v FROM special_redeems WHERE guild_id=? AND user_id=? AND created_at > ?').get(gid, userId, since).v
-    : db.prepare('SELECT COALESCE(SUM(price*qty),0) v FROM special_redeems WHERE guild_id=? AND user_id=?').get(gid, userId).v;
+    ? db.prepare('SELECT COALESCE(SUM(CASE WHEN paid>0 THEN paid ELSE price*qty END),0) v FROM special_redeems WHERE guild_id=? AND user_id=? AND created_at > ?').get(gid, userId, since).v
+    : db.prepare('SELECT COALESCE(SUM(CASE WHEN paid>0 THEN paid ELSE price*qty END),0) v FROM special_redeems WHERE guild_id=? AND user_id=?').get(gid, userId).v;
   // 持股市值：只算「現價為正」的股票，負價股不會反過來變成退稅
   const stockVal = db.prepare(
     `SELECT COALESCE(SUM(h.shares * s.price),0) v FROM stock_holdings h JOIN stock_symbols s ON s.id=h.symbol_id
@@ -125,6 +126,129 @@ function assess(gid, userId) {
     wallet: w, balance: w.coins, income, land, breed, stock, spend, total, earned, incomeBase: base,
     counts: { field, green, animals, fish, fieldTaxed, greenTaxed, animalTaxed, fishTaxed, stockVal, stockTaxed, spent, spendTaxed, earned }
   };
+}
+
+// ================== 強制清算：欠稅就變賣資產抵債 ==================
+// 只賣到「剛好把債還清」為止。股票／魚／動物是整份資產，賣不了半股，所以
+// 一律「便宜的先賣」，讓最後那一份的超賣金額最小；超賣的部分會留在玩家錢包裡。
+// 動物與魚回收半價（跟 /放生、/賣魚 一致），
+// 背包物品照 /賣出 的即時賣價，股票照現價扣交易稅（負價股不賣，賣了只會更負）。
+const LIQ_LABEL = { bag: '🎒 背包物品', stock: '📈 股票', fish: '🐠 魚缸的魚', animal: '🐄 牧場動物' };
+const SELL_PCT = 0.5;   // 動物／魚的回收比例，與 ranch.js／aquarium.js 相同
+
+function liquidate(gid, userId, debt) {
+  const c = cfg(gid);
+  const order = String(c.liquidate_order || 'bag,stock,fish,animal').split(',').map(x => x.trim()).filter(Boolean);
+  const sold = [];
+  let left = debt;   // 還差多少才回到 0（正數）
+
+  const take = (kind, detail, amount) => {
+    if (amount <= 0) return;
+    sold.push({ kind, detail, amount });
+    left -= amount;
+  };
+
+  for (const kind of order) {
+    if (left <= 0) break;
+
+    if (kind === 'bag') {
+      // 貴的先賣，賣到夠了就停；同一種物品可以只賣一部分
+      const rows = db.prepare(
+        `SELECT v.count, it.* FROM gather_inventory v JOIN gather_items it ON it.id=v.item_id
+          WHERE v.guild_id=? AND v.user_id=? AND v.count>0`).all(gid, userId);
+      rows.map(r => ({ ...r, unit: livePrice(gid, r) }))
+        .filter(r => r.unit > 0)
+        .sort((a, b) => b.unit - a.unit)
+        .forEach(r => {
+          if (left <= 0) return;
+          const need = Math.min(r.count, Math.ceil(left / r.unit));
+          db.prepare('UPDATE gather_inventory SET count = count - ? WHERE guild_id=? AND user_id=? AND item_id=?')
+            .run(need, gid, userId, r.id);
+          take('bag', `${r.emoji || ''}${r.name} ×${need}`, need * r.unit);
+        });
+
+    } else if (kind === 'stock') {
+      const rows = db.prepare(
+        `SELECT h.shares, s.id, s.code, s.name, s.emoji, s.price FROM stock_holdings h
+           JOIN stock_symbols s ON s.id=h.symbol_id
+          WHERE h.guild_id=? AND h.user_id=? AND h.shares>0 AND s.price>0
+          ORDER BY s.price ASC`).all(gid, userId);
+      const fee = (mc => Math.max(0, mc.fee_pct || 0))(guildConfig('market_config', gid));
+      for (const r of rows) {
+        if (left <= 0) break;
+        const unitNet = r.price - (r.price * fee / 100);
+        if (unitNet <= 0) continue;
+        const n = Math.min(r.shares, Math.ceil(left / unitNet));
+        const gross = r.price * n;
+        const cut = Math.ceil(gross * fee / 100);
+        const net = gross - cut;
+        const h = db.prepare('SELECT shares, cost_sum FROM stock_holdings WHERE guild_id=? AND user_id=? AND symbol_id=?').get(gid, userId, r.id);
+        const costPart = h.shares > 0 ? Math.round((h.cost_sum / h.shares) * n) : 0;
+        db.prepare('UPDATE stock_holdings SET shares=shares-?, cost_sum=cost_sum-?, realized=realized+? WHERE guild_id=? AND user_id=? AND symbol_id=?')
+          .run(n, costPart, net - costPart, gid, userId, r.id);
+        db.prepare("INSERT INTO stock_trades (guild_id,user_id,username,symbol_id,side,shares,price,fee,pnl,ts) VALUES (?,?,'系統強制清算',?,'sell',?,?,?,?,?)")
+          .run(gid, userId, r.id, n, r.price, cut, net - costPart, Date.now());
+        db.prepare('UPDATE market_config SET burned_total = burned_total + ? WHERE guild_id=?').run(cut, gid);
+        take('stock', `${r.emoji || ''}${r.name} ${n} 股`, net);
+      }
+
+    } else if (kind === 'fish') {
+      const rows = db.prepare(
+        `SELECT a.slot, a.pending, f.name, f.emoji, f.price FROM aquarium_slots a
+           JOIN aquarium_fish f ON f.id=a.fish_id WHERE a.guild_id=? AND a.user_id=? ORDER BY f.price ASC`).all(gid, userId);
+      for (const r of rows) {
+        if (left <= 0) break;
+        const amt = Math.max(1, Math.floor((r.price || 0) * SELL_PCT)) + (r.pending || 0);
+        db.prepare('DELETE FROM aquarium_slots WHERE guild_id=? AND user_id=? AND slot=?').run(gid, userId, r.slot);
+        take('fish', `${r.emoji || ''}${r.name}`, amt);
+      }
+
+    } else if (kind === 'animal') {
+      const rows = db.prepare(
+        `SELECT r.slot, a.name, a.emoji, a.price FROM ranch_slots r
+           JOIN ranch_animals a ON a.id=r.animal_id WHERE r.guild_id=? AND r.user_id=? ORDER BY a.price ASC`).all(gid, userId);
+      for (const r of rows) {
+        if (left <= 0) break;
+        const amt = Math.max(1, Math.floor((r.price || 0) * SELL_PCT));
+        db.prepare('DELETE FROM ranch_slots WHERE guild_id=? AND user_id=? AND slot=?').run(gid, userId, r.slot);
+        take('animal', `${r.emoji || ''}${r.name}`, amt);
+      }
+    }
+  }
+  return { sold, total: sold.reduce((a, b) => a + b.amount, 0) };
+}
+
+// 對全服欠稅的人跑一次清算（課完稅之後、普發之前）
+function runLiquidation(gid, period, client, dryRun) {
+  const c = cfg(gid);
+  if (!c.liquidate_enabled) return [];
+  const guild = client && client.guilds ? client.guilds.cache.get(gid) : null;
+  const debtors = db.prepare('SELECT user_id, username, coins FROM econ_wallets WHERE guild_id=? AND coins < 0').all(gid);
+  const out = [];
+  for (const d of debtors) {
+    if (isExempt(gid, d.user_id, guild && guild.members.cache.get(d.user_id))) continue;
+    if (dryRun) {
+      // 試算不動資料：另外開一個交易算完就 rollback
+      let res;
+      try {
+        db.transaction(() => { res = liquidate(gid, d.user_id, -d.coins); throw new Error('__rollback__'); })();
+      } catch (e) { if (e.message !== '__rollback__') throw e; }
+      if (res && res.total > 0) out.push({ userId: d.user_id, username: d.username, before: d.coins, ...res });
+      continue;
+    }
+    const res = db.transaction(() => {
+      const r = liquidate(gid, d.user_id, -d.coins);
+      if (r.total > 0) {
+        db.prepare("UPDATE econ_wallets SET coins = coins + ?, updated_at = datetime('now','localtime') WHERE guild_id=? AND user_id=?")
+          .run(r.total, gid, d.user_id);
+        const ins = db.prepare('INSERT INTO tax_liquidations (guild_id,period,user_id,username,kind,detail,amount) VALUES (?,?,?,?,?,?,?)');
+        for (const x of r.sold) ins.run(gid, period, d.user_id, d.username || '', x.kind, x.detail, x.amount);
+      }
+      return r;
+    })();
+    if (res.total > 0) out.push({ userId: d.user_id, username: d.username, before: d.coins, ...res });
+  }
+  return out;
 }
 
 // 普發（救濟金）：課完稅之後跑。條件是「餘額低於 relief_below」，
@@ -226,17 +350,27 @@ async function runGuild(client, gid, { force = false, dryRun = false } = {}) {
     pay();
   }
   const sum = bills.reduce((s, b) => s + (b.paid ?? b.total), 0);
+  // 試算時錢包還沒被扣，先把「課稅後餘額」寫進去，清算與普發才算得準
   const after = new Map(bills.map(b => [b.userId, b.balance - (b.paid ?? b.total)]));
+  if (dryRun) {
+    for (const [uid, v] of after) db.prepare('UPDATE econ_wallets SET coins=? WHERE guild_id=? AND user_id=?').run(v, gid, uid);
+  }
+  const liq = runLiquidation(gid, period, client, dryRun);
+  for (const l of liq) after.set(l.userId, (after.has(l.userId) ? after.get(l.userId) : l.before) + l.total);
+  if (dryRun) {
+    // 還原試算時動到的餘額
+    for (const b of bills) db.prepare('UPDATE econ_wallets SET coins=? WHERE guild_id=? AND user_id=?').run(b.balance, gid, b.userId);
+  }
   const relief = planRelief(gid, sum, client, after);
   const reliefSum = dryRun ? relief.reduce((a, b) => a + b.amount, 0) : payRelief(gid, period, relief);
-  if (!dryRun) await announce(client, gid, period, bills, relief, reliefSum).catch(() => {});
-  return { period, bills, sum, relief, reliefSum };
+  if (!dryRun) await announce(client, gid, period, bills, relief, reliefSum, liq).catch(() => {});
+  return { period, bills, sum, relief, reliefSum, liq };
 }
 
 // 公告本期稅收＋納稅大戶，並（可選）私訊每個人自己的稅單
-async function announce(client, gid, period, bills, relief = [], reliefSum = 0) {
+async function announce(client, gid, period, bills, relief = [], reliefSum = 0, liq = []) {
   const c = cfg(gid);
-  if (!bills.length && !relief.length) return;
+  if (!bills.length && !relief.length && !liq.length) return;
   const sum = bills.reduce((s, b) => s + b.paid, 0);
   if (c.channel) {
     const ch = await client.channels.fetch(c.channel).catch(() => null);
@@ -251,6 +385,12 @@ async function announce(client, gid, period, bills, relief = [], reliefSum = 0) 
         })
         .setFooter({ text: '所得稅算餘額／證券稅算持股市值／消費稅算本期兌換金額／農地稅算種著的格數／養殖稅算動物與魚。用 /稅單 查明細。' })
         .setColor(brandColor());
+      if (liq.length) {
+        emb.addFields({
+          name: `⚖️ 欠稅強制清算　${liq.length} 人被變賣資產`,
+          value: liq.slice(0, 10).map(l => `<@${l.userId}> — 變賣 ${money(gid, l.total)}（${l.sold.length} 項）`).join('\n').slice(0, 1024)
+        });
+      }
       if (relief.length) {
         const topR = [...relief].sort((a, b) => b.amount - a.amount).slice(0, 10);
         emb.addFields({
@@ -352,6 +492,14 @@ function infoEmbed(gid, userId, username) {
       ((c.spend_free || 0) > 0 ? `（${money(gid, c.spend_free)} 以內免稅）` : '') +
       `\n　把錢換成獎勵一樣要繳，不能靠結算前掃貨逃稅。`);
   }
+  if (c.liquidate_enabled) {
+    const order = String(c.liquidate_order || 'bag,stock,fish,animal').split(',').map(x => LIQ_LABEL[x.trim()] || x.trim());
+    emb.addFields({
+      name: '⚖️ 欠稅會被強制清算',
+      value: `課完稅還是負數的話，系統會**自動變賣你的資產**抵債，順序是：\n　${order.join(' → ')}\n` +
+        `只賣到剛好把債還清為止，不會多賣。背包照 \`/賣出\` 的價格、股票照現價（扣交易稅、負價股不賣）、動物與魚回收半價。`
+    });
+  }
   if (c.relief_enabled) {
     emb.addFields({
       name: '🤝 普發（救濟金）',
@@ -360,6 +508,17 @@ function infoEmbed(gid, userId, username) {
         : `結算後，餘額低於 ${money(gid, c.relief_below || 0)} 的人會被**補到 ${money(gid, c.relief_floor || 0)}**`) +
         (c.relief_max > 0 ? `（每人單期上限 ${money(gid, c.relief_max)}）` : '') +
         (c.relief_from_tax ? '\n財源是本期稅收，不夠時所有人等比例縮減。' : '')
+    });
+  }
+  const lastL = db.prepare(
+    'SELECT period, COUNT(*) n, COALESCE(SUM(amount),0) s FROM tax_liquidations WHERE guild_id=? AND user_id=? GROUP BY period ORDER BY period DESC LIMIT 1'
+  ).get(gid, userId);
+  if (lastL && lastL.n) {
+    const items = db.prepare('SELECT detail, amount FROM tax_liquidations WHERE guild_id=? AND user_id=? AND period=? ORDER BY amount DESC LIMIT 6')
+      .all(gid, userId, lastL.period);
+    emb.addFields({
+      name: `⚖️ 上一期（${lastL.period}）被強制清算`,
+      value: `共變賣 ${money(gid, lastL.s)}\n` + items.map(x => `　・${x.detail} → ${money(gid, x.amount)}`).join('\n')
     });
   }
   const lastR = db.prepare('SELECT * FROM tax_reliefs WHERE guild_id=? AND user_id=? ORDER BY id DESC LIMIT 1').get(gid, userId);
@@ -460,4 +619,4 @@ function nextRunText(c) {
   return `每週${DOW[c.dow ?? 1]} ${c.run_time}`;
 }
 
-module.exports = { init, assess, runGuild, incomeTax, DEFAULT_BRACKETS, nextRunText, infoEmbed, isExempt, planRelief };
+module.exports = { init, assess, runGuild, incomeTax, DEFAULT_BRACKETS, nextRunText, infoEmbed, isExempt, planRelief, liquidate, runLiquidation };

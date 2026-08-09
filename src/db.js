@@ -215,9 +215,28 @@ ensureColumns('special_shops', {
   notify_roles: "TEXT NOT NULL DEFAULT ''"
 });
 
+// 兌換通知的去向：shop＝發在商店頻道（公開）／log＝只發到管理員通知頻道／dm＝只私訊管理員
+ensureColumns('special_config', {
+  notify_mode: "TEXT NOT NULL DEFAULT 'shop'",
+  // 每人兌換限制：每期每項最多幾份（0＝不限）
+  per_item_limit: 'INTEGER NOT NULL DEFAULT 0',
+  // 累進價格：同一項每多買一次就乘一次倍率（第 1 次原價、第 2 次 ×mult、第 3 次 ×mult²…）
+  price_escalate: 'INTEGER NOT NULL DEFAULT 0',
+  escalate_mult: 'REAL NOT NULL DEFAULT 2',
+  // 上限與累進的重置週期：month＝每月 1 號歸零／week＝每週一／none＝永不重置
+  limit_reset: "TEXT NOT NULL DEFAULT 'month'"
+});
+
+// 個別商品可覆寫每人上限（0＝跟隨全域設定）
+ensureColumns('special_items', {
+  per_user_limit: 'INTEGER NOT NULL DEFAULT 0'
+});
+
 // 一次兌換多份：qty＝份數，price 仍是單價（總價＝price×qty）
 ensureColumns('special_redeems', {
-  qty: 'INTEGER NOT NULL DEFAULT 1'
+  qty: 'INTEGER NOT NULL DEFAULT 1',
+  // 實付總額。累進價格時 price 只是平均單價，price×qty 會有進位誤差，一律以這欄為準
+  paid: 'INTEGER NOT NULL DEFAULT 0'
 });
 
 // 稅金免稅名單：這些人／身分組完全不課稅（管理員、活動帳號等）
@@ -244,7 +263,10 @@ ensureColumns('tax_config', {
   spend_free: 'INTEGER NOT NULL DEFAULT 0',
   last_run_at: "TEXT NOT NULL DEFAULT ''",    // 上次實際結算的時間，用來界定「本期」兌換
   // 所得稅的稅基：balance＝目前餘額／earned＝本期總收入／max＝兩者取高（花掉也逃不掉）
-  income_base: "TEXT NOT NULL DEFAULT 'balance'"
+  income_base: "TEXT NOT NULL DEFAULT 'balance'",
+  // 強制清算：欠稅的人由系統自動變賣資產抵債
+  liquidate_enabled: 'INTEGER NOT NULL DEFAULT 0',
+  liquidate_order: "TEXT NOT NULL DEFAULT 'bag,stock,fish,animal'"
 });
 
 // 本期收入的起算點：earned_mark＝上次結算時的 total_earned，

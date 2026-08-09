@@ -101,6 +101,18 @@ App.page('tax', {
           <div class="field"><label>兌換金額免稅額</label><input name="spend_free" type="number" min="0" value="${c.spend_free ?? 0}">
             <div class="hint">這期兌換總額低於這個數字的部分不課。</div></div>
         </div>
+
+        <hr style="border:none;border-top:1px solid var(--border);margin:16px 0">
+        <h3>⚖️ 欠稅強制清算</h3>
+        <div class="hint" style="margin-bottom:10px">課完稅還是負數的人，系統自動變賣資產抵債，<b>只賣到剛好還清為止</b>。背包照 <code>/賣出</code> 的即時價、股票照現價扣交易稅（現價是負數的不賣）、動物與魚回收半價。免稅名單的人不會被清算。</div>
+        <div class="field">${H.toggle('liquidate_enabled', c.liquidate_enabled, '啟用強制清算')}</div>
+        <div class="field"><label>變賣順序</label>
+          <select name="liquidate_order">
+            <option value="bag,stock,fish,animal" ${(c.liquidate_order||'bag,stock,fish,animal')==='bag,stock,fish,animal'?'selected':''}>背包 → 股票 → 魚 → 動物（推薦）</option>
+            <option value="stock,bag,fish,animal" ${c.liquidate_order==='stock,bag,fish,animal'?'selected':''}>股票 → 背包 → 魚 → 動物</option>
+            <option value="bag,fish,animal,stock" ${c.liquidate_order==='bag,fish,animal,stock'?'selected':''}>背包 → 魚 → 動物 → 股票（股票最後才動）</option>
+            <option value="bag,stock" ${c.liquidate_order==='bag,stock'?'selected':''}>只賣背包與股票（不動動物與魚）</option>
+          </select></div>
         <hr style="border:none;border-top:1px solid var(--border);margin:16px 0">
         <h3>🤝 普發（救濟金）</h3>
         <div class="hint" style="margin-bottom:10px">課完稅之後立刻執行：把窮的／欠稅的人拉回來，縮小貧富差距。管理員免稅名單內的人不會領。</div>
