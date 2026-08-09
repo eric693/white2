@@ -268,7 +268,7 @@ function runLiquidation(gid, period, client, dryRun) {
 //   fixed 模式＝每人固定發 relief_amount
 // relief_from_tax=1 時，總發放不會超過本期實收稅金，超過就等比例縮減（國庫不會憑空印錢）。
 // after：{user_id: 課稅後餘額}。試算模式錢包還沒被扣，一定要靠這份對照表才算得準。
-function planRelief(gid, taxSum, client, after = new Map()) {
+function planRelief(gid, extraBudget, client, after = new Map()) {
   const c = cfg(gid);
   if (!c.relief_enabled) return [];
   const guild = client && client.guilds ? client.guilds.cache.get(gid) : null;
@@ -287,9 +287,9 @@ function planRelief(gid, taxSum, client, after = new Map()) {
     if (amt > 0) list.push({ userId: w.user_id, username: w.username || '', before: w.coins, amount: Math.floor(amt) });
   }
   // 預算控管：發不出這麼多就等比例縮減（至少留 1 塊，免得縮成 0 還記一筆）
-  // 財源＝本期稅收＋慈善基金會餘額（捐款直接變成救濟金）
+  // 財源＝慈善基金會餘額（本期稅收已在結算時存入基金會）；試算時稅還沒進池，用 extraBudget 補上預估稅收
   if (c.relief_from_tax) {
-    const budget = Math.max(0, taxSum) + require('./charity').reliefBudget(gid);
+    const budget = Math.max(0, extraBudget) + require('./charity').reliefBudget(gid);
     const want = list.reduce((a, b) => a + b.amount, 0);
     if (want > budget) {
       const ratio = budget / want;
@@ -299,8 +299,8 @@ function planRelief(gid, taxSum, client, after = new Map()) {
   return list;
 }
 
-// taxSum：本期實收稅金。發放總額超過稅收的部分，從慈善基金會的餘額撥出。
-function payRelief(gid, period, list, taxSum = 0) {
+// 普發全額從基金會池撥出（本期稅收已在結算時存入基金會，所以池子裡就有錢）。
+function payRelief(gid, period, list) {
   if (!list.length) return 0;
   db.transaction(() => {
     for (const r of list) {
@@ -311,7 +311,7 @@ function payRelief(gid, period, list, taxSum = 0) {
     }
   })();
   const sum = list.reduce((a, b) => a + b.amount, 0);
-  const fromPool = require('./charity').takeFromPool(gid, Math.max(0, sum - Math.max(0, taxSum)));
+  const fromPool = require('./charity').takeFromPool(gid, sum);
   if (fromPool > 0) require('./charity').logPayout(gid, period, fromPool, list.length);
   return sum;
 }
@@ -383,8 +383,10 @@ async function runGuild(client, gid, { force = false, dryRun = false } = {}) {
     // 還原試算時動到的餘額
     for (const b of bills) db.prepare('UPDATE econ_wallets SET coins=? WHERE guild_id=? AND user_id=?').run(b.balance, gid, b.userId);
   }
-  const relief = planRelief(gid, sum, client, after);
-  const reliefSum = dryRun ? relief.reduce((a, b) => a + b.amount, 0) : payRelief(gid, period, relief, sum);
+  // 收的稅存入慈善基金會（正式結算才做）：稅收變基金會的錢，普發從基金會撥、剩的累積下來
+  if (!dryRun && sum > 0) require('./charity').addTax(gid, sum);
+  const relief = planRelief(gid, dryRun ? sum : 0, client, after);
+  const reliefSum = dryRun ? relief.reduce((a, b) => a + b.amount, 0) : payRelief(gid, period, relief);
   if (!dryRun) await announce(client, gid, period, bills, relief, reliefSum, liq, donTop).catch(() => {});
   return { period, bills, sum, relief, reliefSum, liq, donTop };
 }
@@ -440,19 +442,21 @@ async function announce(client, gid, period, bills, relief = [], reliefSum = 0, 
 }
 
 function billEmbed(gid, b, period) {
+  // 每項一行、後面括號附計算依據——玩家喜歡這種乾淨版面
   const lines = [];
   if (b.income) lines.push(`💰 所得稅　${money(gid, b.income)}（課稅基準 ${Number(b.incomeBase ?? b.balance).toLocaleString('en-US')}｜餘額 ${b.balance.toLocaleString('en-US')}、本期收入 ${Number(b.earned || 0).toLocaleString('en-US')}）`);
   if (b.land) lines.push(`🌾 農地稅　${money(gid, b.land)}（農地 ${b.counts.fieldTaxed} 格／溫室 ${b.counts.greenTaxed} 格）`);
   if (b.breed) lines.push(`🐄 養殖稅　${money(gid, b.breed)}（動物 ${b.counts.animalTaxed} 隻／魚 ${b.counts.fishTaxed} 條）`);
   if (b.stock) lines.push(`📈 證券稅　${money(gid, b.stock)}（持股市值 ${Number(b.counts.stockVal || 0).toLocaleString('en-US')}）`);
   if (b.spend) lines.push(`🛍️ 消費稅　${money(gid, b.spend)}（本期兌換 ${Number(b.counts.spent || 0).toLocaleString('en-US')}）`);
-  if (b.credit) {
-    lines.push(`❤️ 慈善折抵　**−${money(gid, b.credit)}**（本期捐款 ${Number(b.donated || 0).toLocaleString('en-US')}）`);
-  }
+  if (b.credit) lines.push(`❤️ 慈善折抵　**−${money(gid, b.credit)}**（本期捐款 ${Number(b.donated || 0).toLocaleString('en-US')}）`);
   const emb = new EmbedBuilder()
     .setTitle('🧾 你的稅單')
     .setDescription(lines.join('\n') || '本期免稅 🎉')
-    .addFields({ name: '合計', value: money(gid, b.total) + (b.credit ? `（折抵前 ${Number(b.gross || 0).toLocaleString('en-US')}）` : ''), inline: true })
+    .addFields(
+      { name: '合計', value: money(gid, b.total) + (b.credit ? `（折抵前 ${Number(b.gross || 0).toLocaleString('en-US')}）` : ''), inline: true },
+      { name: '你目前的錢包餘額', value: money(gid, b.balance), inline: true }
+    )
     .setColor(brandColor());
   if (period) emb.setFooter({ text: `期間 ${period}` });
   // 課稅不會把人課成負數（no_debt）：錢不夠時只課到 0，差額記為未繳

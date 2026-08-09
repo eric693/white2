@@ -33,13 +33,22 @@ async function adminIds(client, gid, roleIds, adminUsers) {
   return [...ids];
 }
 
-// 欠稅（餘額負數）的人不能兌換：先把債還完才能花錢
+// 欠稅（餘額負數）或有未還清的貸款的人不能兌換：先把債還完才能花錢
 const debtError = (gid, uid, uname) => {
   const w = wallet(gid, uid, uname);
-  if (w.coins >= 0) return null;
   const gc = gcfg(gid);
-  return `🚫 你目前**欠稅**（餘額 ${w.coins.toLocaleString('en-US')} ${gc.currency_name || '星幣'}），` +
-    `要先把${gc.currency_name || '星幣'}賺回正數才能兌換。`;
+  if (w.coins < 0) {
+    return `🚫 你目前**欠稅**（餘額 ${w.coins.toLocaleString('en-US')} ${gc.currency_name || '星幣'}），` +
+      `要先把${gc.currency_name || '星幣'}賺回正數才能兌換。`;
+  }
+  // 有未還清的貸款也不能兌換：避免借錢掃貨後擺爛違約
+  try {
+    const open = require('./loans').openLoans(gid, uid);
+    if (open && open.length) {
+      return `🚫 你有 **${open.length} 筆未還清的貸款**，先用 \`/還款\` 全部還清才能使用神秘商店。`;
+    }
+  } catch { /* loans 模組未載入就略過 */ }
+  return null;
 };
 
 // ---- 每人兌換上限 & 累進價格 ----

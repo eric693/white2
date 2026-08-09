@@ -3,7 +3,8 @@
 //   2. 基金會的錢自動流進普發池 → 捐款直接變成別人的救濟金
 //   3. 結算公告會列出本期捐款榜
 // 設計重點：捐出去的錢不會回到捐款人手上（不是存錢），折抵只在「本期」有效，結算後重新算。
-const { EmbedBuilder, MessageFlags } = require('discord.js');
+const { EmbedBuilder, MessageFlags, ActionRowBuilder, ButtonBuilder, ButtonStyle,
+  ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 const { db, guildConfig, logError } = require('../../db');
 const { brandColor } = require('../../util/brand');
 
@@ -122,6 +123,33 @@ async function announceGift(client, gid, fromId, r) {
   }).catch(() => {});
 }
 
+// 本期實收稅金存入基金會（結算時呼叫）：稅收變成基金會的錢，之後普發從基金會撥出、剩的累積起來。
+function addTax(gid, amount) {
+  const c = cfg(gid);
+  const amt = Math.floor(Number(amount) || 0);
+  if (!c.enabled || amt <= 0) return 0;
+  db.prepare('UPDATE charity_config SET pool = pool + ?, total_in = total_in + ? WHERE guild_id=?').run(amt, amt, gid);
+  return amt;
+}
+
+// 基金會放貸：借款從基金會池出（池不夠回 false）。沒開基金會＝不牽動、照舊放貸。
+function fundPay(gid, amount) {
+  const c = cfg(gid);
+  const n = Math.floor(Number(amount) || 0);
+  if (!c.enabled || n <= 0) return true;
+  if ((c.pool || 0) < n) return false;
+  db.prepare('UPDATE charity_config SET pool = pool - ?, total_out = total_out + ? WHERE guild_id=?').run(n, n, gid);
+  return true;
+}
+// 錢回到基金會：還款、信用違約回收（利息也回池，基金會會慢慢變大）
+function fundGet(gid, amount) {
+  const c = cfg(gid);
+  const n = Math.floor(Number(amount) || 0);
+  if (!c.enabled || n <= 0) return 0;
+  db.prepare('UPDATE charity_config SET pool = pool + ?, total_in = total_in + ? WHERE guild_id=?').run(n, n, gid);
+  return n;
+}
+
 // 普發撥款：從基金池取出最多 amount，回傳實際取出的金額（不足就給有多少算多少）
 function takeFromPool(gid, amount) {
   const c = cfg(gid);
@@ -174,20 +202,13 @@ function infoEmbed(gid, userId) {
     });
   }
 
-  const top = periodTop(gid, 10);
+  const top = periodTop(gid, 3);
   emb.addFields({
-    name: '本期捐款榜',
+    name: '本期捐款榜 Top 3',
     value: top.length
-      ? top.map((t, i) => `${['🥇', '🥈', '🥉'][i] || `${i + 1}.`} <@${t.user_id}> — ${money(gid, t.amount)}（${t.times} 筆）`).join('\n').slice(0, 1024)
+      ? top.map((t, i) => `${['🥇', '🥈', '🥉'][i]} <@${t.user_id}> — ${money(gid, t.amount)}`).join('\n').slice(0, 1024)
       : '這期還沒有人捐款。'
   });
-  const all = allTimeTop(gid, 5);
-  if (all.length) {
-    emb.addFields({
-      name: '歷代大善人',
-      value: all.map((t, i) => `${i + 1}. <@${t.user_id}> — ${money(gid, t.amount)}`).join('\n').slice(0, 1024)
-    });
-  }
   if (userId) {
     const mine = periodDonated(gid, userId);
     const total = db.prepare('SELECT COALESCE(SUM(amount),0) v FROM charity_donations WHERE guild_id=? AND user_id=?').get(gid, userId).v;
@@ -227,11 +248,37 @@ async function announceDonation(client, gid, userId, r) {
 function init(client) {
   client.on('interactionCreate', async (i) => {
     try {
+      // 捐款按鈕（讓玩家不用記指令，直接點）
+      const donateRow = () => new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('chr:donate').setLabel('我要捐款').setEmoji('❤️').setStyle(ButtonStyle.Success));
+
       if (i.isButton() && i.customId === 'adv:charity') {
-        return await i.reply({ embeds: [infoEmbed(i.guildId, i.user.id)], flags: MessageFlags.Ephemeral });
+        return await i.reply({ embeds: [infoEmbed(i.guildId, i.user.id)], components: [donateRow()], flags: MessageFlags.Ephemeral });
       }
       if (i.isChatInputCommand() && i.commandName === '基金會') {
-        return await i.reply({ embeds: [infoEmbed(i.guildId, i.user.id)] });
+        return await i.reply({ embeds: [infoEmbed(i.guildId, i.user.id)], components: [donateRow()] });
+      }
+      // 點「我要捐款」→ 跳出輸入金額的視窗
+      if (i.isButton() && i.customId === 'chr:donate') {
+        const modal = new ModalBuilder().setCustomId('chr:donateModal').setTitle('捐款給基金會')
+          .addComponents(new ActionRowBuilder().addComponents(
+            new TextInputBuilder().setCustomId('amount').setLabel('要捐多少星幣？').setStyle(TextInputStyle.Short)
+              .setPlaceholder('例如 10000').setRequired(true)));
+        return await i.showModal(modal).catch(() => {});
+      }
+      // 送出捐款視窗
+      if (i.isModalSubmit() && i.customId === 'chr:donateModal') {
+        const amount = parseInt(String(i.fields.getTextInputValue('amount')).replace(/[^\d]/g, ''), 10);
+        const r = donate(i.guildId, i.user.id, i.user.username, amount);
+        if (!r.ok) return await i.reply({ content: `❌ ${r.msg}`, flags: MessageFlags.Ephemeral });
+        const emb = new EmbedBuilder().setColor(brandColor()).setTitle(`❤️ 感謝你捐給${fundName(i.guildId)}`)
+          .setDescription(`捐出 **${money(i.guildId, r.amount)}**\n剩餘餘額 ${money(i.guildId, r.coins)}`)
+          .addFields(
+            { name: '本期累計捐款', value: money(i.guildId, r.donated), inline: true },
+            { name: '可折抵稅額', value: r.credit > 0 ? money(i.guildId, r.credit) : '—', inline: true },
+            { name: '基金會餘額', value: money(i.guildId, r.pool), inline: true })
+          .setFooter({ text: '折抵會在下次稅金結算時自動生效' });
+        return await i.reply({ embeds: [emb], flags: MessageFlags.Ephemeral });
       }
       if (i.isChatInputCommand() && i.commandName === '捐款') {
         const gid = i.guildId;
@@ -245,8 +292,7 @@ function init(client) {
             .setTitle('🤝 愛心資助成功')
             .setDescription(`你資助了 <@${target.id}> **${money(gid, g.amount)}**\n你的餘額 ${money(gid, g.coins)}`)
             .setFooter({ text: '直接資助不折抵稅額；想折抵稅就用 /捐款 金額（不填對象）捐給基金會' });
-          await i.reply({ embeds: [emb] });
-          return announceGift(client, gid, i.user.id, g).catch(() => {});
+          return await i.reply({ embeds: [emb], flags: MessageFlags.Ephemeral });
         }
         const r = donate(gid, i.user.id, i.user.username, amount);
         if (!r.ok) return await i.reply({ content: `❌ ${r.msg}`, flags: MessageFlags.Ephemeral });
@@ -260,8 +306,7 @@ function init(client) {
             { name: '基金會餘額', value: money(gid, r.pool), inline: true }
           )
           .setFooter({ text: '折抵會在下次稅金結算時自動生效（用 /稅單 看預估）' });
-        await i.reply({ embeds: [emb] });
-        return announceDonation(client, gid, i.user.id, r).catch(() => {});
+        return await i.reply({ embeds: [emb], flags: MessageFlags.Ephemeral });
       }
     } catch (e) {
       logError(i.guildId, '基金會操作失敗：', e && e.stack ? e.stack : e);
@@ -272,6 +317,6 @@ function init(client) {
 }
 
 module.exports = {
-  init, cfg, donate, creditFor, takeFromPool, reliefBudget, logPayout,
+  init, cfg, donate, creditFor, takeFromPool, reliefBudget, logPayout, addTax, fundPay, fundGet,
   periodDonated, periodTop, allTimeTop, infoEmbed, fundName
 };

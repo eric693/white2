@@ -4,7 +4,8 @@
 //   ・到期還不出來 → 沒收抵押品（延後版的強制清算，給人喘息空間）
 // 為什麼不押股票／背包：欠稅的強制清算已經在收股票，這裡故意只收「生產工具」，
 // 讓借錢的代價是「暫時少賺」，還得出來就全部原封不動還回去。
-const { EmbedBuilder, MessageFlags } = require('discord.js');
+const { EmbedBuilder, MessageFlags, ActionRowBuilder, ButtonBuilder, ButtonStyle,
+  ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 const cron = require('node-cron');
 const { db, guildConfig, activeGuildIds, logError } = require('../../db');
 const { brandColor } = require('../../util/brand');
@@ -140,7 +141,13 @@ function borrow(gid, userId, username, amount) {
   const interest = Math.ceil(amt * Math.max(0, c.interest_pct || 0) / 100);
   const dueMs = Date.now() + Math.max(1, c.term_days || 7) * 86400000;
 
+  // 借的錢從基金會池出：池不夠就不能借
+  const charity = require('./charity');
+  if (charity.cfg(gid).enabled && (charity.cfg(gid).pool || 0) < amt) {
+    return { ok: false, msg: `慈善基金會目前餘額不足以放貸（池只剩 ${money(gid, charity.cfg(gid).pool || 0)}），請改小金額或稍後再試。` };
+  }
   const loanId = db.transaction(() => {
+    charity.fundPay(gid, amt);   // 從基金會池扣出借款
     const info = db.prepare(
       `INSERT INTO loans (guild_id,user_id,username,principal,interest,owed,collateral_value,status,due_ms)
        VALUES (?,?,?,?,?,?,?,'open',?)`
@@ -188,7 +195,13 @@ function borrowCredit(gid, userId, username, amount) {
   if (amt > max) return { ok: false, msg: `信用貸款單筆上限是 ${money(gid, max)}。` };
   const interest = Math.ceil(amt * Math.max(0, c.credit_interest_pct || 0) / 100);
   const dueMs = Date.now() + Math.max(1, c.credit_term_days || 7) * 86400000;
+  // 借的錢從基金會池出：池不夠就不能借
+  const charity = require('./charity');
+  if (charity.cfg(gid).enabled && (charity.cfg(gid).pool || 0) < amt) {
+    return { ok: false, msg: `慈善基金會目前餘額不足以放貸（池只剩 ${money(gid, charity.cfg(gid).pool || 0)}），請改小金額或稍後再試。` };
+  }
   const loanId = db.transaction(() => {
+    charity.fundPay(gid, amt);   // 從基金會池扣出借款
     const info = db.prepare(
       `INSERT INTO loans (guild_id,user_id,username,principal,interest,owed,collateral_value,status,due_ms,loan_type)
        VALUES (?,?,?,?,?,?,0,'open',?,'credit')`
@@ -251,6 +264,7 @@ function repay(gid, userId, amount) {
   const res = db.transaction(() => {
     db.prepare("UPDATE econ_wallets SET coins = coins - ?, updated_at = datetime('now','localtime') WHERE guild_id=? AND user_id=?")
       .run(amt, gid, userId);
+    require('./charity').fundGet(gid, amt);   // 還的錢回基金會池（利息也回，基金會會變大）
     const left = loan.owed - amt;
     db.prepare('UPDATE loans SET owed=? WHERE id=?').run(left, loan.id);
     if (left > 0) return { cleared: false, left };
@@ -263,9 +277,10 @@ function repay(gid, userId, amount) {
 // ---- 到期沒還 → 沒收抵押品 ----
 function defaultLoan(gid, loan) {
   db.transaction(() => {
-    // 信用貸款沒有抵押品 → 直接把應還金額從錢包扣掉（餘額可負），賴不掉
+    // 信用貸款沒有抵押品 → 直接把應還金額從錢包扣掉（餘額可負），賴不掉；扣回的錢回基金會池
     if (loan.loan_type === 'credit') {
       db.prepare("UPDATE econ_wallets SET coins = coins - ?, updated_at=datetime('now','localtime') WHERE guild_id=? AND user_id=?").run(loan.owed, gid, loan.user_id);
+      require('./charity').fundGet(gid, loan.owed);
     }
     db.prepare("UPDATE loans SET status='defaulted', closed_at=datetime('now','localtime') WHERE id=?").run(loan.id);
     db.prepare('DELETE FROM loan_collaterals WHERE loan_id=?').run(loan.id);   // 物資貸款：抵押品沒收（本來就已經不在玩家身上）
@@ -381,8 +396,53 @@ async function announceBorrow(client, gid, userId, r) {
 function init(client) {
   client.on('interactionCreate', async (i) => {
     try {
+      // 貸款面板按鈕：查詢 + 三顆動作鈕（免記指令）
       if (i.isButton() && i.customId === 'adv:loan') {
-        return await i.reply({ embeds: [infoEmbed(i.guildId, i.user.id)], flags: MessageFlags.Ephemeral });
+        const lc = cfg(i.guildId);
+        const btns = [new ButtonBuilder().setCustomId('loan:borrow').setLabel('物資借款').setEmoji('🏦').setStyle(ButtonStyle.Primary)];
+        if (lc.credit_enabled) btns.push(new ButtonBuilder().setCustomId('loan:credit').setLabel('信用借款').setEmoji('🪪').setStyle(ButtonStyle.Primary));
+        btns.push(new ButtonBuilder().setCustomId('loan:repay').setLabel('還款').setEmoji('💸').setStyle(ButtonStyle.Success));
+        return await i.reply({ embeds: [infoEmbed(i.guildId, i.user.id)], components: [new ActionRowBuilder().addComponents(btns)], flags: MessageFlags.Ephemeral });
+      }
+      // 三顆按鈕 → 跳出輸入金額的視窗
+      if (i.isButton() && (i.customId === 'loan:borrow' || i.customId === 'loan:credit' || i.customId === 'loan:repay')) {
+        const map = {
+          'loan:borrow': ['loan:borrowModal', '物資借款', '要借多少星幣？（會自動挑抵押品）', false],
+          'loan:credit': ['loan:creditModal', '信用借款（免抵押）', '要借多少星幣？', false],
+          'loan:repay': ['loan:repayModal', '還款', '要還多少？（留空＝全部還清）', true]
+        };
+        const [mid, title, label, optional] = map[i.customId];
+        const modal = new ModalBuilder().setCustomId(mid).setTitle(title)
+          .addComponents(new ActionRowBuilder().addComponents(
+            new TextInputBuilder().setCustomId('amount').setLabel(label).setStyle(TextInputStyle.Short)
+              .setPlaceholder('例如 10000').setRequired(!optional)));
+        return await i.showModal(modal).catch(() => {});
+      }
+      // 送出借/還款視窗
+      if (i.isModalSubmit() && (i.customId === 'loan:borrowModal' || i.customId === 'loan:creditModal' || i.customId === 'loan:repayModal')) {
+        const gid = i.guildId;
+        const raw = String(i.fields.getTextInputValue('amount') || '').replace(/[^\d]/g, '');
+        const amt = raw ? parseInt(raw, 10) : null;
+        if (i.customId === 'loan:repayModal') {
+          const r = repay(gid, i.user.id, amt);
+          if (!r.ok) return await i.reply({ content: `❌ ${r.msg}`, flags: MessageFlags.Ephemeral });
+          const emb = new EmbedBuilder().setColor(brandColor()).setTitle(r.cleared ? '✅ 貸款已還清' : '💸 已部分還款')
+            .setDescription(`還了 **${money(gid, r.paid)}**，目前餘額 ${money(gid, r.coins)}`
+              + (r.cleared ? '' : `\n這筆貸款還欠 **${money(gid, r.left)}**（全部還清才會贖回抵押品）`));
+          if (r.cleared && r.back && r.back.length) emb.addFields({ name: '贖回的抵押品', value: r.back.map(x => `・${x.detail}`).join('\n').slice(0, 1024) });
+          if (r.cleared && r.cash && r.cash.length) emb.addFields({ name: '格子被佔走，改折現還你', value: r.cash.map(x => `・${x.detail} → ${money(gid, x.value)}`).join('\n').slice(0, 1024) });
+          return await i.reply({ embeds: [emb], flags: MessageFlags.Ephemeral });
+        }
+        const isCredit = i.customId === 'loan:creditModal';
+        const r = isCredit ? borrowCredit(gid, i.user.id, i.user.username, amt) : borrow(gid, i.user.id, i.user.username, amt);
+        if (!r.ok) return await i.reply({ content: `❌ ${r.msg}`, flags: MessageFlags.Ephemeral });
+        const emb = new EmbedBuilder().setColor(brandColor())
+          .setTitle(isCredit ? '🪪 信用貸款成功' : '🏦 貸款成功')
+          .setDescription(`借到 **${money(gid, r.loan.principal)}**（利息 ${money(gid, r.loan.interest)}，應還 **${money(gid, r.loan.owed)}**）\n`
+            + `目前餘額 ${money(gid, r.coins)}\n到期：<t:${Math.floor(r.loan.due_ms / 1000)}:R>`);
+        if (!isCredit && r.picked) emb.addFields({ name: '被代管的抵押品（還清就還你）', value: r.picked.map(x => `・${x.detail} — 估值 ${money(gid, x.value)}`).join('\n').slice(0, 1024) });
+        else emb.setFooter({ text: '到期沒還會直接從餘額扣款（可能變負數）' });
+        return await i.reply({ embeds: [emb], flags: MessageFlags.Ephemeral });
       }
       if (!i.isChatInputCommand()) return;
       const gid = i.guildId;
@@ -401,8 +461,7 @@ function init(client) {
             value: r.picked.map(x => `・${x.detail} — 估值 ${money(gid, x.value)}`).join('\n').slice(0, 1024)
           })
           .setFooter({ text: '工具被押走期間不能採集；到期沒還會沒收抵押品' });
-        await i.reply({ embeds: [emb], flags: MessageFlags.Ephemeral });
-        return announceBorrow(client, gid, i.user.id, r).catch(() => {});
+        return await i.reply({ embeds: [emb], flags: MessageFlags.Ephemeral });
       }
 
       if (i.commandName === '信用貸款') {
@@ -415,15 +474,7 @@ function init(client) {
           .setDescription(`免抵押借到 **${money(gid, r.loan.principal)}**（利息 ${money(gid, r.loan.interest)}，應還 **${money(gid, r.loan.owed)}**）\n`
             + `目前餘額 ${money(gid, r.coins)}\n到期：<t:${Math.floor(r.loan.due_ms / 1000)}:f>（<t:${Math.floor(r.loan.due_ms / 1000)}:R>）`)
           .setFooter({ text: '到期沒還會直接從餘額扣款（可能變負數）；用 /還款 還錢' });
-        await i.reply({ embeds: [emb], flags: MessageFlags.Ephemeral });
-        const cc = cfg(gid);
-        if (cc.channel) {
-          const ch = await client.channels.fetch(cc.channel).catch(() => null);
-          if (ch) await ch.send({ embeds: [new EmbedBuilder().setColor(brandColor()).setTitle('🪪 有人辦了信用貸款')
-            .setDescription(`<@${i.user.id}> 免抵押借了 **${money(gid, r.loan.principal)}**（應還 ${money(gid, r.loan.owed)}）`)
-            .setFooter({ text: '到期沒還會直接扣款' })] }).catch(() => {});
-        }
-        return;
+        return await i.reply({ embeds: [emb], flags: MessageFlags.Ephemeral });
       }
 
       if (i.commandName === '還款') {
