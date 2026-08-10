@@ -185,6 +185,10 @@ function borrowCredit(gid, userId, username, amount) {
   if (!c.credit_enabled) return { ok: false, msg: '這個伺服器目前沒有開放信用貸款。' };
   const w = db.prepare('SELECT * FROM econ_wallets WHERE guild_id=? AND user_id=?').get(gid, userId);
   if (!w) return { ok: false, msg: '你還沒有錢包（先玩一下再來借吧）。' };
+  // 防漏洞：餘額是負數（欠著錢）就不能再信用貸款，避免違約後又一直借、越借越深。信用曝險最多卡在單筆上限。
+  if (w.coins < 0) {
+    return { ok: false, msg: `你目前**欠著錢**（餘額 ${money(gid, w.coins)}），要先把餘額賺回正數才能再辦信用貸款——不然會越借越深。` };
+  }
   const openC = db.prepare("SELECT COUNT(*) n FROM loans WHERE guild_id=? AND user_id=? AND status='open' AND loan_type='credit'").get(gid, userId).n;
   if (openC >= Math.max(1, c.credit_max_open || 1)) {
     return { ok: false, msg: `你已經有 ${openC} 筆未還清的信用貸款（同時上限 ${Math.max(1, c.credit_max_open || 1)} 筆），先用 \`/還款\` 還掉再借。` };

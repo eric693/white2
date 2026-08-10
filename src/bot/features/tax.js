@@ -486,137 +486,52 @@ function infoEmbed(gid, userId, username) {
   if (isExempt(gid, userId)) {
     return emb.setDescription(`✅ 你在**免稅名單**內，這個伺服器的稅金不會扣到你。`);
   }
+  // 稅率：一稅一行、精簡好讀
   const lines = [];
   if (c.income_enabled) {
     const bs = brackets(c);
-    const baseLabel = c.income_base === 'earned' ? '**本期總收入**（這一期賺到的錢，花掉也算）'
-      : c.income_base === 'max' ? '**餘額與本期總收入取高的那個**（花掉逃不掉、囤著也逃不掉，但不會課兩次）'
-        : '**錢包餘額**';
-    lines.push(`　課稅基準：${baseLabel}`);
+    const range = bs.length ? `${bs[0].pct}%〜${bs[bs.length - 1].pct}%（${bs.length} 級）` : '';
+    const baseLabel = c.income_base === 'earned' ? '本期總收入' : c.income_base === 'max' ? '餘額與本期收入取高' : '錢包餘額';
     lines.push(c.income_flat
-      ? `💰 **所得稅**　**整筆跳級**：看餘額落在哪一級，就用那一級的 % 課**整個餘額**（免稅額 ${money(gid, c.income_free || 0)}）\n` +
-        bs.map(b => `　・餘額超過 ${Number(b.over).toLocaleString('en-US')}　→　整筆課 ${b.pct}%`).join('\n')
-      : `💰 **所得稅**　對**錢包餘額**分段累進，免稅額 ${money(gid, c.income_free || 0)}\n` +
-        bs.map(b => `　・超過 ${Number(b.over).toLocaleString('en-US')} 的部分：${b.pct}%`).join('\n'));
+      ? `💰 **所得稅**　整筆跳級 ${range}，免稅 ${money(gid, c.income_free || 0)}（基準：${baseLabel}）`
+      : `💰 **所得稅**　免稅 ${money(gid, c.income_free || 0)}，超過的部分累進 ${range}（基準：${baseLabel}）`);
   }
-  if (c.land_enabled) {
-    lines.push(`🌾 **農地稅**　只算**種著作物**的格數（空地不課）\n` +
-      `　・農地 ${money(gid, c.land_field || 0)} ／格　・溫室 ${money(gid, c.land_greenhouse || 0)} ／格` +
-      (c.land_free ? `　（前 ${c.land_free} 格免稅）` : ''));
-  }
-  if (c.breed_enabled) {
-    lines.push(`🐄 **養殖稅**　算牧場動物與魚缸的魚\n` +
-      `　・動物 ${money(gid, c.breed_animal || 0)} ／隻　・魚 ${money(gid, c.breed_fish || 0)} ／條` +
-      (c.breed_free ? `　（前 ${c.breed_free} 隻免稅）` : ''));
-  }
-  if (c.stock_enabled) {
-    lines.push(`📈 **證券稅**　按**持股市值**課 ${c.stock_pct || 0}%` +
-      ((c.stock_free || 0) > 0 ? `（市值 ${money(gid, c.stock_free)} 以內免稅）` : '') +
-      `\n　現價是負數的股票不計入市值，也不會退稅。`);
-  }
-  if (!lines.length) lines.push('目前三種稅都沒有開啟。');
-  emb.setDescription(lines.join('\n\n'));
+  if (c.stock_enabled) lines.push(`📈 **證券稅**　持股市值 × ${c.stock_pct || 0}%${(c.stock_free || 0) > 0 ? `（${money(gid, c.stock_free)} 以內免稅）` : ''}，負價股不算`);
+  if (c.land_enabled) lines.push(`🌾 **農地稅**　種著的作物：農地 ${money(gid, c.land_field || 0)}／溫室 ${money(gid, c.land_greenhouse || 0)} 每格${c.land_free ? `（前 ${c.land_free} 格免稅）` : ''}`);
+  if (c.breed_enabled) lines.push(`🐄 **養殖稅**　動物 ${money(gid, c.breed_animal || 0)}／隻、魚 ${money(gid, c.breed_fish || 0)}／條${c.breed_free ? `（前 ${c.breed_free} 隻免稅）` : ''}`);
+  if (c.spend_enabled) lines.push(`🛍️ **消費稅**　神秘商店花掉的金額 × ${c.spend_pct || 0}%${(c.spend_free || 0) > 0 ? `（${money(gid, c.spend_free)} 以內免稅）` : ''}`);
+  if (!lines.length) lines.push('目前沒有開徵稅金。');
+  emb.setDescription(lines.join('\n'));
 
+  // 你這期預估（本人最在意的）
   const a = assess(gid, userId);
   if (a) {
     const detail = [];
-    if (a.income) detail.push(`💰 所得稅 ${money(gid, a.income)}`);
-    if (a.land) detail.push(`🌾 農地稅 ${money(gid, a.land)}（農地 ${a.counts.fieldTaxed}／溫室 ${a.counts.greenTaxed} 格）`);
-    if (a.breed) detail.push(`🐄 養殖稅 ${money(gid, a.breed)}（動物 ${a.counts.animalTaxed}／魚 ${a.counts.fishTaxed}）`);
-    if (a.stock) detail.push(`📈 證券稅 ${money(gid, a.stock)}（持股市值 ${Number(a.counts.stockVal || 0).toLocaleString('en-US')}）`);
-    if (a.spend) detail.push(`🛍️ 消費稅 ${money(gid, a.spend)}（本期兌換 ${Number(a.counts.spent || 0).toLocaleString('en-US')}）`);
-    if (a.credit) detail.push(`❤️ 慈善折抵 **−${money(gid, a.credit)}**（本期捐款 ${Number(a.donated || 0).toLocaleString('en-US')}）`);
+    if (a.income) detail.push(`💰所得 ${money(gid, a.income)}`);
+    if (a.stock) detail.push(`📈證券 ${money(gid, a.stock)}`);
+    if (a.land) detail.push(`🌾農地 ${money(gid, a.land)}`);
+    if (a.breed) detail.push(`🐄養殖 ${money(gid, a.breed)}`);
+    if (a.spend) detail.push(`🛍️消費 ${money(gid, a.spend)}`);
+    if (a.credit) detail.push(`❤️折抵 −${money(gid, a.credit)}`);
     emb.addFields({
       name: '你這期預估要繳',
-      value: (detail.length ? detail.join('\n') + `\n**合計 ${money(gid, a.total)}**` : '本期免稅 🎉') +
-        `\n（目前餘額 ${money(gid, a.balance)}）`
+      value: (detail.length ? detail.join('　') + `\n**合計 ${money(gid, a.total)}**` : '本期免稅 🎉') + `　（餘額 ${money(gid, a.balance)}）`
     });
   }
-  if (c.spend_enabled) {
-    lines.push(`🛍️ **消費稅**　本期在神秘商店**兌換掉的金額**課 ${c.spend_pct || 0}%` +
-      ((c.spend_free || 0) > 0 ? `（${money(gid, c.spend_free)} 以內免稅）` : '') +
-      `\n　把錢換成獎勵一樣要繳，不能靠結算前掃貨逃稅。`);
-  }
+
+  // 重點提醒濃縮成一欄，不再一堆欄位
+  const notes = [c.no_debt ? '課稅只扣錢包、**不會課成負數**（不夠只課到 0，差額算未繳）' : '錢不夠會欠稅、餘額變負數'];
   if (c.liquidate_enabled) {
     const order = String(c.liquidate_order || 'stock').split(',').map(x => LIQ_LABEL[x.trim()] || x.trim());
-    emb.addFields({
-      name: '⚖️ 欠稅會被強制清算',
-      value: `課完稅還是負數的話，系統會**自動變賣你的資產**抵債，順序是：\n　${order.join(' → ')}\n` +
-        `只賣到剛好把債還清為止，不會多賣。背包照 \`/賣出\` 的價格、股票照現價（扣交易稅、負價股不賣）、動物與魚回收半價。`
-    });
+    notes.push(`欠稅會自動變賣 ${order.join('→')} 抵債（只賣到剛好還清）`);
   }
-  {
-    const ch = require('./charity');
-    const cc = ch.cfg(gid);
-    if (cc.enabled && cc.deduct_pct > 0) {
-      emb.addFields({
-        name: `❤️ 捐款可以抵稅（${ch.fundName(gid)}）`,
-        value: `\`/捐款 金額\` 捐進基金會，捐款的 **${cc.deduct_pct}%** 直接折抵這期稅金`
-          + `（捐 100,000 → 少繳 ${money(gid, Math.floor(100000 * cc.deduct_pct / 100))}）。`
-          + (cc.deduct_max > 0 ? `\n每人每期折抵上限 ${money(gid, cc.deduct_max)}。` : '')
-          + ((cc.deduct_max_pct ?? 100) < 100 ? `\n最多只能抵掉稅金的 ${cc.deduct_max_pct}%。` : '')
-          + `\n基金會目前餘額 ${money(gid, cc.pool)}${cc.to_relief ? '，會自動變成普發救濟金' : ''}。用 \`/基金會\` 查帳目。`
-      });
-    }
-  }
-  if (c.relief_enabled) {
-    emb.addFields({
-      name: '🤝 普發（救濟金）',
-      value: (c.relief_mode === 'fixed'
-        ? `結算後，餘額低於 ${money(gid, c.relief_below || 0)} 的人每人發 ${money(gid, c.relief_amount || 0)}`
-        : `結算後，餘額低於 ${money(gid, c.relief_below || 0)} 的人會被**補到 ${money(gid, c.relief_floor || 0)}**`) +
-        (c.relief_max > 0 ? `（每人單期上限 ${money(gid, c.relief_max)}）` : '') +
-        (c.relief_from_tax ? '\n財源是本期稅收，不夠時所有人等比例縮減。' : '')
-    });
-  }
-  const lastL = db.prepare(
-    'SELECT period, COUNT(*) n, COALESCE(SUM(amount),0) s FROM tax_liquidations WHERE guild_id=? AND user_id=? GROUP BY period ORDER BY period DESC LIMIT 1'
-  ).get(gid, userId);
-  if (lastL && lastL.n) {
-    const items = db.prepare('SELECT detail, amount FROM tax_liquidations WHERE guild_id=? AND user_id=? AND period=? ORDER BY amount DESC LIMIT 6')
-      .all(gid, userId, lastL.period);
-    emb.addFields({
-      name: `⚖️ 上一期（${lastL.period}）被強制清算`,
-      value: `共變賣 ${money(gid, lastL.s)}\n` + items.map(x => `　・${x.detail} → ${money(gid, x.amount)}`).join('\n')
-    });
-  }
-  const lastR = db.prepare('SELECT * FROM tax_reliefs WHERE guild_id=? AND user_id=? ORDER BY id DESC LIMIT 1').get(gid, userId);
-  if (lastR) {
-    emb.addFields({ name: `上一期普發（${lastR.period}）你領到`, value: `**${money(gid, lastR.amount)}**（發放前餘額 ${money(gid, lastR.before_coins)}）` });
-  }
-  const last = db.prepare('SELECT * FROM tax_records WHERE guild_id=? AND user_id=? ORDER BY id DESC LIMIT 1').get(gid, userId);
-  if (last) {
-    const parts2 = [];
-    if (last.income_tax) parts2.push(`所得 ${money(gid, last.income_tax)}`);
-    if (last.land_tax) parts2.push(`農地 ${money(gid, last.land_tax)}`);
-    if (last.breed_tax) parts2.push(`養殖 ${money(gid, last.breed_tax)}`);
-    if (last.stock_tax) parts2.push(`證券 ${money(gid, last.stock_tax)}`);
-    if (last.spend_tax) parts2.push(`消費 ${money(gid, last.spend_tax)}`);
-    emb.addFields({
-      name: `上一期（${last.period}）你繳了`,
-      value: `**${money(gid, last.paid)}**` + (parts2.length ? `\n　${parts2.join('　')}` : '') +
-        `\n（當時餘額 ${money(gid, last.balance)}）`
-    });
-  }
-  const guildLast = db.prepare(
-    'SELECT period, COUNT(*) n, COALESCE(SUM(paid),0) s FROM tax_records WHERE guild_id=? GROUP BY period ORDER BY period DESC LIMIT 1'
-  ).get(gid);
-  if (guildLast) {
-    const gr = db.prepare('SELECT COUNT(*) n, COALESCE(SUM(amount),0) s FROM tax_reliefs WHERE guild_id=? AND period=?').get(gid, guildLast.period);
-    emb.addFields({
-      name: `上一期全服（${guildLast.period}）`,
-      value: `🧾 ${guildLast.n} 人繳稅，總稅收 ${money(gid, guildLast.s)}` +
-        (gr && gr.n ? `\n🤝 ${gr.n} 人領普發，共 ${money(gid, gr.s)}` : '')
-    });
-  }
-  emb.addFields({
-    name: '結算方式',
-    value: `${nextRunText(c)}` + ((c.income_max_pct ?? 50) > 0 ? `　·　單期最多課走餘額的 ${c.income_max_pct}%` : '') + '\n' +
-      (c.no_debt
-        ? `只從**錢包**扣（背包與資產不會被動），而且**不會把你課成負數**：錢不夠就只課到餘額歸零，差額算未繳、不追討。`
-        : `只從**錢包**扣（背包與資產不會被動），但**錢不夠會欠稅、餘額變成負數**，要賺回來才會回正。`)
-  });
-  return emb.setFooter({ text: '用 /稅單 可以隨時查自己的明細' });
+  const cc = require('./charity').cfg(gid);
+  if (cc.enabled && cc.deduct_pct > 0) notes.push(`\`/捐款\` 捐基金會可折抵 **${cc.deduct_pct}%** 稅`);
+  if (c.relief_enabled) notes.push(`結算後餘額 < ${money(gid, c.relief_below || 0)} 的人可領普發救濟金`);
+  emb.addFields({ name: '📌 重點', value: '・' + notes.join('\n・') });
+
+  emb.addFields({ name: '結算', value: `${nextRunText(c)}${(c.income_max_pct ?? 50) > 0 ? `　·　單期最多課走餘額的 ${c.income_max_pct}%` : ''}` });
+  return emb.setFooter({ text: '用 /稅單 查自己的完整明細與上期紀錄' });
 }
 
 function init(client) {
