@@ -251,7 +251,7 @@
   </table></div>
   <ul>
     <li><strong>一階工具每人第一把免費送</strong>，用壞後再要一把（或 <code>/修理</code>）要 100 星幣。</li>
-    <li>⚠️ <strong>徒手不能採集</strong>：工具壞掉、還沒買、或被抵押給物資貸款時，釣魚／挖礦／伐木／採集／狩獵都會被擋下，要先 <code>/修理</code>、買一把新的，或 <code>/還款</code> 把工具贖回來。</li>
+    <li>⚠️ <strong>徒手不能採集</strong>：工具壞掉、還沒買、或被抵押給物資貸款時，釣魚／挖礦／伐木／採集／狩獵都會被擋下，要先 <code>/修理</code>、買一把新的，或 <code>/還款</code> 把工具贖回來。<br><strong>救急</strong>：如果你<strong>餘額是負數（欠債）</strong>又沒工具，系統會<strong>免費補一把最基本的工具</strong>給你，讓你一定能採集、慢慢賺回來還債。</li>
     <li>系統會<strong>自動使用你擁有的最高階</strong>，不用手動裝備。</li>
     <li>每採集一次扣 1 點耐久，歸零就壞掉，用 <code>/修理</code> 花星幣修好（費用如上表）。</li>
     <li>五種採集各有各的工具（釣竿／鎬／斧／籃／弓），要分開買。</li>
@@ -541,7 +541,7 @@
 
   <div class="note warn">
     <span class="h">只扣錢包，也不會把你課成負數</span>
-    稅只從<strong>星幣餘額</strong>扣，不會動你的背包、作物、動物或魚。而且錢不夠時<strong>最多只課到餘額歸零</strong>——差額算「未繳」，<strong>不會變成負債、不會追討</strong>。
+    稅只從<strong>星幣餘額</strong>扣，不會動你的背包、作物、動物或魚。而且錢不夠時<strong>最多只課到餘額歸零</strong>——沒繳完的算「欠稅」，<strong>不會變成負債</strong>，會<strong>延到下一次結算一起補收</strong>（也可以自己按「💸補繳欠稅」隨時繳掉）。
     （負數餘額只會來自其他情況，例如賣出負股價的股票、被看門動物罰款。）
   </div>
 
@@ -549,7 +549,7 @@
   <div class="scroll"><table>
     <thead><tr><th>稅目</th><th class="wrap">課什麼</th><th class="wrap">預設稅額</th></tr></thead>
     <tbody>
-      <tr><td>💰 所得稅</td><td class="wrap">你目前的<strong>星幣餘額</strong></td><td class="wrap">免稅額（3 萬）以上<strong>累進課稅</strong>（只課超過的部分），5%～30%，見下表</td></tr>
+      <tr><td>💰 所得稅</td><td class="wrap">你目前的<strong>星幣餘額</strong></td><td class="wrap">免稅額（2 萬）以上<strong>累進課稅</strong>（只課超過的部分），5%～25%，見下表</td></tr>
       <tr><td>📈 證券稅</td><td class="wrap">你的<strong>持股市值</strong>（股數 × 現價）</td><td class="wrap">市值的 5%；現價是負數的股票不計入，也不會退稅</td></tr>
       <tr><td>🌾 農地稅</td><td class="wrap">正在<strong>種著作物</strong>的格數（空地不課）</td><td class="wrap">農地／溫室各以格計價，前幾格免稅</td></tr>
       <tr><td>🐄 養殖稅</td><td class="wrap">牧場動物數 ＋ 魚缸的魚數</td><td class="wrap">動物／魚各以隻計價，前幾隻免稅</td></tr>
@@ -558,22 +558,22 @@
 
   <h3>所得稅是「累進課稅」（只課超過的部分）</h3>
   <p>採<strong>累進級距</strong>：<strong>不是整筆課</strong>，而是每一段各用自己的稅率——跨過門檻，<strong>只有超過的那一段</strong>才適用更高的稅率。所以<strong>不會「多賺一塊整筆爆增」</strong>，越有錢的部分才課越重，中低玩家幾乎沒感覺。</p>
-  <p>免稅額 <strong>3 萬</strong>，超過的部分分段課，最高 30%：</p>
+  <p>免稅額 <strong>2 萬</strong>，超過的部分分段課，最高 25%：</p>
   <div class="scroll"><table>
     <thead><tr><th class="wrap">這一段餘額</th><th class="num">稅率</th></tr></thead>
     <tbody>
-      <tr><td class="wrap">3 萬以下（免稅額）</td><td class="num">0%</td></tr>
-      <tr><td class="wrap">3 萬 ～ 6 萬</td><td class="num">5%</td></tr>
+      <tr><td class="wrap">2 萬以下（免稅額）</td><td class="num">0%</td></tr>
+      <tr><td class="wrap">2 萬 ～ 6 萬</td><td class="num">5%</td></tr>
       <tr><td class="wrap">6 萬 ～ 15 萬</td><td class="num">8%</td></tr>
       <tr><td class="wrap">15 萬 ～ 50 萬</td><td class="num">12%</td></tr>
       <tr><td class="wrap">50 萬 ～ 200 萬</td><td class="num">16%</td></tr>
-      <tr><td class="wrap">200 萬 ～ 1000 萬</td><td class="num">22%</td></tr>
-      <tr><td class="wrap">1000 萬以上</td><td class="num">30%</td></tr>
+      <tr><td class="wrap">200 萬 ～ 1000 萬</td><td class="num">20%</td></tr>
+      <tr><td class="wrap">1000 萬以上</td><td class="num">25%</td></tr>
     </tbody>
   </table></div>
   <div class="note">
     <span class="h">怎麼算的（舉例）</span>
-    餘額 <strong>10 萬</strong>：3～6 萬那段 3 萬 ×5%＝1,500，加 6～10 萬那段 4 萬 ×8%＝3,200，<strong>合計 4,700</strong>（有效稅率才 4.7%）。<br>
+    餘額 <strong>10 萬</strong>：2～6 萬那段 4 萬 ×5%＝2,000，加 6～10 萬那段 4 萬 ×8%＝3,200，<strong>合計 5,200</strong>（有效稅率才 5.2%）。<br>
     餘額 <strong>100 萬</strong>：分段加起來約 <strong>13 萬</strong>（13%）。越往上、超過的部分才課越重。
   </div>
   <p class="sub">級距與免稅額工程師可能會調整，實際以 <code>/稅單</code> 或冒險面板的 🧾稅務 顯示為準。</p>
@@ -591,7 +591,7 @@
   <h3>規則</h3>
   <ul>
     <li><strong>預設每週一 09:00</strong> 結算一次（台灣時間），結算後會在公告頻道公布總稅收與納稅大戶，並私訊你自己的稅單。</li>
-    <li><strong>錢不夠不會變負債</strong>：這期最多只課到餘額歸零，差額算未繳、下期不累積。（若餘額因為其他原因變成負數，<strong>不能使用神秘商店</strong>，而且系統會自動<strong>變賣你的股票</strong>抵債——只賣股票，農場、魚缸、背包都不會被收。）</li>
+    <li><strong>錢不夠不會變負債</strong>：這期最多只課到餘額歸零，<strong>沒繳完的會延到下一次結算補收</strong>（累積起來直到繳清；也可用 <code>/稅單</code> 或面板 🧾稅務 的「💸補繳欠稅」按鈕隨時自己補）。（若餘額因為其他原因變成負數，<strong>不能使用神秘商店</strong>，而且系統會自動<strong>變賣你的股票</strong>抵債——只賣股票，農場、魚缸、背包都不會被收。）</li>
     <li>稅額太小就免徵，新手基本上課不到。</li>
     <li><strong>農地稅只算種著的格子</strong>：成熟了放著不採收＝一直被課稅，收成完的空地不用繳。</li>
     <li>用 <code>/稅單</code>，或冒險面板的 <strong>🧾稅務</strong> 按鈕，隨時查本期預估要繳多少、上期實際繳了多少、上期領了多少普發，以及下次什麼時候結算。</li>
@@ -682,9 +682,13 @@
 
   <h3>🎁 特殊兌換商店</h3>
   <p>用 <code>/特殊商店</code> 看有什麼可以換，<code>/兌換 商品名稱 數量</code> 換下去（可以一次換多份）。這裡的獎勵<strong>由管理員人工處理</strong>——兌換後機器人會通知管理員，不是自動發放，所以請耐心等。</p>
+  <div class="note">
+    <span class="h">越換越貴，每兩週回原價</span>
+    同一項商品<strong>每換一次就翻倍</strong>（第 1 次原價、第 2 次 ×2、第 3 次 ×4…），到<strong>每兩週的週一</strong>會<strong>重置回原價</strong>再重新翻倍。想搶便宜就趁重置後。
+  </div>
   <div class="note warn">
-    <span class="h">兩個限制</span>
-    <strong>欠稅（餘額是負數）的人不能兌換</strong>，要先把星幣賺回正數。另外商店可由工程師<strong>暫停</strong>，暫停期間指令與面板都會擋下，不會扣到你的錢。
+    <span class="h">這些情況不能兌換</span>
+    <strong>欠稅（餘額是負數）</strong>或<strong>有未還清的貸款</strong>的人不能兌換，要先把餘額弄回正數／把貸款還清。另外商店可由工程師<strong>暫停</strong>，暫停期間指令與面板都會擋下，不會扣到你的錢。
   </div>
 
   <h3>📜 任務與🏆懸賞</h3>
