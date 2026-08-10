@@ -295,6 +295,8 @@ ensureColumns('tax_config', {
   const had = db.prepare('PRAGMA table_info(econ_wallets)').all().some(c => c.name === 'earned_mark');
   ensureColumns('econ_wallets', { earned_mark: 'INTEGER NOT NULL DEFAULT 0' });
   if (!had) db.exec('UPDATE econ_wallets SET earned_mark = total_earned');
+  // 未繳的稅延到下一期補收（no_debt 模式）：累積在這欄，有錢就先補
+  ensureColumns('econ_wallets', { tax_arrears: 'INTEGER NOT NULL DEFAULT 0' });
 }
 
 // 強制清算預設改成「只賣股票」：玩家反映農場／魚缸被收掉會完全不想玩。

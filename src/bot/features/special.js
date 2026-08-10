@@ -60,6 +60,15 @@ function periodStart(c) {
   const mode = c.limit_reset || 'month';
   if (mode === 'none') return '';
   if (mode === 'week') return `${localWeekStart()} 00:00:00`;
+  if (mode === 'biweek') {
+    // 每兩週一重置：以 2024-01-01（週一）為基準數週數，偶數週用本週一、奇數週用上週一
+    const monday = localWeekStart();
+    const mondayMs = new Date(monday + 'T00:00:00+08:00').getTime();
+    const anchorMs = new Date('2024-01-01T00:00:00+08:00').getTime();
+    const weeks = Math.floor((mondayMs - anchorMs) / (7 * 86400000));
+    const start = weeks % 2 === 0 ? monday : localToday(new Date(mondayMs - 7 * 86400000));
+    return `${start} 00:00:00`;
+  }
   const p = parts();
   return `${p.y}-${String(p.mo).padStart(2, '0')}-01 00:00:00`;
 }
@@ -68,6 +77,7 @@ function nextResetText(c) {
   const mode = c.limit_reset || 'month';
   if (mode === 'none') return '不會重置';
   if (mode === 'week') return '每週一 00:00 歸零';
+  if (mode === 'biweek') return '每兩週的週一 00:00 歸零';
   return '每月 1 號 00:00 歸零';
 }
 // 這個人這一期已經換過幾份

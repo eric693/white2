@@ -283,17 +283,6 @@ function init(client) {
       if (i.isChatInputCommand() && i.commandName === '捐款') {
         const gid = i.guildId;
         const amount = i.options.getInteger('金額');
-        const target = i.options.getUser('對象');
-        // 有填對象 → 直接資助那位玩家（不折抵稅、不上榜）
-        if (target) {
-          const g = giftPlayer(gid, i.user, target, amount);
-          if (!g.ok) return await i.reply({ content: `❌ ${g.msg}`, flags: MessageFlags.Ephemeral });
-          const emb = new EmbedBuilder().setColor(brandColor())
-            .setTitle('🤝 愛心資助成功')
-            .setDescription(`你資助了 <@${target.id}> **${money(gid, g.amount)}**\n你的餘額 ${money(gid, g.coins)}`)
-            .setFooter({ text: '直接資助不折抵稅額；想折抵稅就用 /捐款 金額（不填對象）捐給基金會' });
-          return await i.reply({ embeds: [emb], flags: MessageFlags.Ephemeral });
-        }
         const r = donate(gid, i.user.id, i.user.username, amount);
         if (!r.ok) return await i.reply({ content: `❌ ${r.msg}`, flags: MessageFlags.Ephemeral });
         const emb = new EmbedBuilder()

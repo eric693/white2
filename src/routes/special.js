@@ -32,7 +32,7 @@ router.put('/special', (req, res) => {
     per_item_limit: Math.max(0, parseInt(b.per_item_limit, 10) || 0),
     price_escalate: b.price_escalate ? 1 : 0,
     escalate_mult: Math.max(1, Math.min(100, parseFloat(b.escalate_mult) || 2)),
-    limit_reset: ['month', 'week', 'none'].includes(b.limit_reset) ? b.limit_reset
+    limit_reset: ['month', 'biweek', 'week', 'none'].includes(b.limit_reset) ? b.limit_reset
       : (guildConfig('special_config', req.guildId).limit_reset || 'month'),
     guild_id: req.guildId
   });

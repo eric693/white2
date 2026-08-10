@@ -316,7 +316,12 @@ function currentTool(gid, userId, kind) {
   // 免費工具有耐久：查玩家的耐久紀錄
   const rec = db.prepare('SELECT uses_left FROM gather_user_tools WHERE guild_id=? AND user_id=? AND tool_id=?').get(gid, userId, base.id);
   if (!rec) return { ...base, uses_left: base.durability };   // 還沒用過＝滿耐久
-  return rec.uses_left > 0 ? { ...base, uses_left: rec.uses_left } : BARE_HANDS;  // 免費工具也壞了 → 徒手
+  if (rec.uses_left > 0) return { ...base, uses_left: rec.uses_left };
+  // 免費工具也壞了：若玩家餘額是負數（欠債），系統免費補一把最基本的，
+  // 避免「負債→沒工具→不能採集→賺不到錢還債」的死結。正常玩家（餘額≥0）維持原樣，壞了要自己修。
+  const bal = (db.prepare('SELECT coins FROM econ_wallets WHERE guild_id=? AND user_id=?').get(gid, userId) || {}).coins ?? 0;
+  if (bal < 0) return { ...base, uses_left: base.durability };
+  return BARE_HANDS;   // 餘額正常又不修 → 徒手（被 require_tool 擋）
 }
 // 免費工具（售價 0）修理免費；其餘＝售價一半（可在後台自訂 repair_cost）
 const repairCostOf = (t) => (t.repair_cost > 0 ? t.repair_cost : Math.ceil((t.price || 0) / 2));

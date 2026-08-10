@@ -3,7 +3,7 @@
 //   2. 養殖稅：依牧場動物數＋魚缸魚數課 → 養越多越要顧
 //   3. 所得稅：對「目前餘額」累進課徵 → 專門抽囤在錢包不花的錢
 // 設計重點：只從錢包扣，不動背包/資產；扣到 0 為止不會變負數，缺繳的部分記在稅單上。
-const { EmbedBuilder, MessageFlags } = require('discord.js');
+const { EmbedBuilder, MessageFlags, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
 const cron = require('node-cron');
 const { db, guildConfig, activeGuildIds, logError } = require('../../db');
 const { brandColor } = require('../../util/brand');
@@ -131,9 +131,12 @@ function assess(gid, userId) {
   // 慈善捐款折抵：本期捐款 × 折抵比例，直接從應繳稅額扣掉（不會扣成負數）
   const gross = total;
   const { credit, donated } = require('./charity').creditFor(gid, userId, total);
-  total = Math.max(0, total - credit);
+  const curTax = Math.max(0, total - credit);   // 這一期新產生的稅（折抵後）
+  // 上期沒繳完、延到這期的欠稅（no_debt 模式才有；一起補收）
+  const arrears = c.no_debt ? Math.max(0, w.tax_arrears || 0) : 0;
+  total = curTax + arrears;
   return {
-    wallet: w, balance: w.coins, income, land, breed, stock, spend, gross, credit, donated, total, earned, incomeBase: base,
+    wallet: w, balance: w.coins, income, land, breed, stock, spend, gross, credit, donated, curTax, arrears, total, earned, incomeBase: base,
     counts: { field, green, animals, fish, fieldTaxed, greenTaxed, animalTaxed, fishTaxed, stockVal, stockTaxed, spent, spendTaxed, earned, donated, credit }
   };
 }
@@ -357,6 +360,8 @@ async function runGuild(client, gid, { force = false, dryRun = false } = {}) {
         const paid = c.no_debt ? Math.max(0, Math.min(b.total, b.balance)) : b.total;
         db.prepare("UPDATE econ_wallets SET coins = coins - ?, updated_at = datetime('now','localtime') WHERE guild_id=? AND user_id=?")
           .run(paid, gid, b.userId);
+        // 沒繳完的（含上期延過來的）存成新欠稅，延到下一期繼續補收；繳清就歸 0
+        if (c.no_debt) db.prepare('UPDATE econ_wallets SET tax_arrears=? WHERE guild_id=? AND user_id=?').run(Math.max(0, b.total - paid), gid, b.userId);
         db.prepare(
           `INSERT INTO tax_records (guild_id, period, user_id, username, balance, income_tax, land_tax, breed_tax, stock_tax, spend_tax, charity_credit, total, paid, detail)
            VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
@@ -450,6 +455,7 @@ function billEmbed(gid, b, period) {
   if (b.stock) lines.push(`📈 證券稅　${money(gid, b.stock)}（持股市值 ${Number(b.counts.stockVal || 0).toLocaleString('en-US')}）`);
   if (b.spend) lines.push(`🛍️ 消費稅　${money(gid, b.spend)}（本期兌換 ${Number(b.counts.spent || 0).toLocaleString('en-US')}）`);
   if (b.credit) lines.push(`❤️ 慈善折抵　**−${money(gid, b.credit)}**（本期捐款 ${Number(b.donated || 0).toLocaleString('en-US')}）`);
+  if (b.arrears) lines.push(`🔁 上期未繳補收　${money(gid, b.arrears)}（延過來一起收）`);
   const emb = new EmbedBuilder()
     .setTitle('🧾 你的稅單')
     .setDescription(lines.join('\n') || '本期免稅 🎉')
@@ -462,8 +468,8 @@ function billEmbed(gid, b, period) {
   // 課稅不會把人課成負數（no_debt）：錢不夠時只課到 0，差額記為未繳
   if (b.paid !== undefined && b.total > b.paid) {
     emb.addFields({
-      name: '⚠️ 餘額不足',
-      value: `應繳 ${money(gid, b.total)}，但你只有 ${money(gid, b.balance)}，這期**只課到餘額歸零**（未繳 ${money(gid, b.total - b.paid)}，不會變成負債）。`,
+      name: '⚠️ 餘額不足，未繳延到下期',
+      value: `應繳 ${money(gid, b.total)}，但你只有 ${money(gid, b.balance)}，這期**只課到餘額歸零**。未繳的 **${money(gid, b.total - b.paid)}** 會**延到下一次結算一起補收**（不會變成負債，也不會消失）。`,
       inline: true
     });
   } else if (b.paid !== undefined && b.balance !== undefined && b.balance - b.paid < 0) {
@@ -513,6 +519,7 @@ function infoEmbed(gid, userId, username) {
     if (a.breed) detail.push(`🐄養殖 ${money(gid, a.breed)}`);
     if (a.spend) detail.push(`🛍️消費 ${money(gid, a.spend)}`);
     if (a.credit) detail.push(`❤️折抵 −${money(gid, a.credit)}`);
+    if (a.arrears) detail.push(`🔁上期未繳補收 ${money(gid, a.arrears)}`);
     emb.addFields({
       name: '你這期預估要繳',
       value: (detail.length ? detail.join('　') + `\n**合計 ${money(gid, a.total)}**` : '本期免稅 🎉') + `　（餘額 ${money(gid, a.balance)}）`
@@ -520,7 +527,7 @@ function infoEmbed(gid, userId, username) {
   }
 
   // 重點提醒濃縮成一欄，不再一堆欄位
-  const notes = [c.no_debt ? '課稅只扣錢包、**不會課成負數**（不夠只課到 0，差額算未繳）' : '錢不夠會欠稅、餘額變負數'];
+  const notes = [c.no_debt ? '課稅只扣錢包、**不會課成負數**：錢不夠只課到 0，**未繳的延到下一次一起補收**（不會消失）' : '錢不夠會欠稅、餘額變負數'];
   if (c.liquidate_enabled) {
     const order = String(c.liquidate_order || 'stock').split(',').map(x => LIQ_LABEL[x.trim()] || x.trim());
     notes.push(`欠稅會自動變賣 ${order.join('→')} 抵債（只賣到剛好還清）`);
@@ -534,12 +541,49 @@ function infoEmbed(gid, userId, username) {
   return emb.setFooter({ text: '用 /稅單 查自己的完整明細與上期紀錄' });
 }
 
+// 主動補繳累積的欠稅：從錢包扣、減 tax_arrears、錢進基金會池
+function payArrears(gid, userId, amount) {
+  const w = db.prepare('SELECT * FROM econ_wallets WHERE guild_id=? AND user_id=?').get(gid, userId);
+  if (!w) return { ok: false, msg: '你還沒有錢包。' };
+  const arrears = Math.max(0, w.tax_arrears || 0);
+  if (arrears <= 0) return { ok: false, msg: '你目前沒有欠稅，不用補繳 🎉' };
+  if (w.coins <= 0) return { ok: false, msg: `你目前餘額 ${money(gid, w.coins)}，沒有錢可以補繳，先賺一點再來。` };
+  const want = amount != null ? Math.max(0, Math.floor(amount)) : arrears;
+  const pay = Math.min(want, arrears, w.coins);
+  if (pay <= 0) return { ok: false, msg: '沒有可補繳的金額。' };
+  db.transaction(() => {
+    db.prepare("UPDATE econ_wallets SET coins = coins - ?, tax_arrears = tax_arrears - ?, updated_at=datetime('now','localtime') WHERE guild_id=? AND user_id=?").run(pay, pay, gid, userId);
+    require('./charity').addTax(gid, pay);   // 補的稅一樣進慈善基金會
+  })();
+  const nw = db.prepare('SELECT coins, tax_arrears FROM econ_wallets WHERE guild_id=? AND user_id=?').get(gid, userId);
+  return { ok: true, paid: pay, left: Math.max(0, nw.tax_arrears || 0), coins: nw.coins };
+}
+
+// 稅務面板要不要附「補繳欠稅」按鈕（有欠稅才顯示）
+function arrearsRow(gid, userId) {
+  const w = db.prepare('SELECT tax_arrears FROM econ_wallets WHERE guild_id=? AND user_id=?').get(gid, userId);
+  if (!w || (w.tax_arrears || 0) <= 0) return [];
+  return [new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('tax:payArrears').setLabel(`補繳欠稅 ${Number(w.tax_arrears).toLocaleString('en-US')}`).setEmoji('💸').setStyle(ButtonStyle.Danger))];
+}
+
 function init(client) {
   // 冒險面板的 🧾稅務按鈕
   client.on('interactionCreate', async (i) => {
+    if (i.isButton() && i.customId === 'tax:payArrears') {
+      try {
+        const r = payArrears(i.guildId, i.user.id);
+        if (!r.ok) return await i.reply({ content: `❌ ${r.msg}`, flags: MessageFlags.Ephemeral });
+        return await i.reply({ content: `✅ 已補繳欠稅 ${money(i.guildId, r.paid)}——${r.left > 0 ? `還欠 ${money(i.guildId, r.left)}` : '**欠稅全部繳清！**'}　目前餘額 ${money(i.guildId, r.coins)}`, flags: MessageFlags.Ephemeral });
+      } catch (e) {
+        logError(i.guildId, '補繳欠稅失敗：', e && e.stack ? e.stack : e);
+        if (!i.replied && !i.deferred) i.reply({ content: '補繳時發生錯誤。', flags: MessageFlags.Ephemeral }).catch(() => {});
+      }
+      return;
+    }
     if (!i.isButton() || i.customId !== 'adv:tax') return;
     try {
-      return await i.reply({ embeds: [infoEmbed(i.guildId, i.user.id, i.user.username)], flags: MessageFlags.Ephemeral });
+      return await i.reply({ embeds: [infoEmbed(i.guildId, i.user.id, i.user.username)], components: arrearsRow(i.guildId, i.user.id), flags: MessageFlags.Ephemeral });
     } catch (e) {
       logError(i.guildId, '稅務面板失敗：', e && e.stack ? e.stack : e);
       if (!i.replied && !i.deferred) i.reply({ content: '查詢稅務資訊時發生錯誤。', flags: MessageFlags.Ephemeral }).catch(() => {});
@@ -569,7 +613,9 @@ function init(client) {
             ? `上期（${last.period}）實繳 ${last.paid.toLocaleString('en-US')}　·　下次結算：${nextRunText(c)}`
             : `下次結算：${nextRunText(c)}`
         });
-      return i.reply({ embeds: [emb], flags: MessageFlags.Ephemeral });
+      // 查自己的稅單且有欠稅 → 附「補繳欠稅」按鈕
+      const comps = target.id === i.user.id ? arrearsRow(gid, i.user.id) : [];
+      return i.reply({ embeds: [emb], components: comps, flags: MessageFlags.Ephemeral });
     } catch (e) {
       logError(i.guildId, '稅單查詢失敗：', e && e.stack ? e.stack : e);
       if (!i.replied && !i.deferred) i.reply({ content: '查詢稅單時發生錯誤。', flags: MessageFlags.Ephemeral }).catch(() => {});

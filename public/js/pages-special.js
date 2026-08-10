@@ -30,6 +30,7 @@ App.page('special', {
           <div class="field"><label>上限／累進的重置週期</label>
             <select name="limit_reset">
               <option value="month" ${(c.limit_reset||'month')==='month'?'selected':''}>每月 1 號歸零</option>
+              <option value="biweek" ${c.limit_reset==='biweek'?'selected':''}>每兩週的週一歸零</option>
               <option value="week" ${c.limit_reset==='week'?'selected':''}>每週一歸零</option>
               <option value="none" ${c.limit_reset==='none'?'selected':''}>永不重置（一輩子就這些）</option>
             </select></div>
