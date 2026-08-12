@@ -342,6 +342,9 @@ function init(client) {
         const shops = here.length ? here : all;
         const scoped = here.length > 0;
         const w = wallet(gid, uid, uname);
+        // 這位玩家「下一份」實際要付的價（含翻倍）：讓他不用點進去就知道
+        const priceNow = (it) => c.price_escalate ? unitPrice(c, it, usedQty(gid, uid, it.id, periodStart(c))) : it.price;
+        const priceStr = (it) => { const p = priceNow(it); return `${money(gc, p)}${p !== it.price ? `（原價 ${money(gc, it.price)}）` : ''}`; };
         const embed = new EmbedBuilder().setColor(brandColor()).setTitle('🎁 特殊兌換商店')
           .setFooter({ text: `你的餘額：${w.coins.toLocaleString('en-US')} ${gc.currency_name}｜用 /兌換 商品名稱 兌換` });
         const blocks = [];
@@ -349,12 +352,12 @@ function init(client) {
           const its = itemsOfShop(gid, s.id);
           if (!its.length) continue;
           blocks.push(`**${s.emoji || '🏷️'} ${s.name}**\n` + its.map(it =>
-            `　${it.emoji || '🎁'} ${it.name}　${money(gc, it.price)}${it.stock < 0 ? '' : `（庫存 ${it.stock}）`}`).join('\n'));
+            `　${it.emoji || '🎁'} ${it.name}　${priceStr(it)}${it.stock < 0 ? '' : `（庫存 ${it.stock}）`}`).join('\n'));
         }
         // 未分類（shop_id=0）的商品。限定到某間分店時不列，免得別店的東西混進來
         const loose = scoped ? [] : db.prepare('SELECT * FROM special_items WHERE guild_id=? AND enabled=1 AND (shop_id=0 OR shop_id IS NULL) ORDER BY sort, price').all(gid);
         if (loose.length) blocks.push('**🏷️ 其他**\n' + loose.map(it =>
-          `　${it.emoji || '🎁'} ${it.name}　${money(gc, it.price)}${it.stock < 0 ? '' : `（庫存 ${it.stock}）`}`).join('\n'));
+          `　${it.emoji || '🎁'} ${it.name}　${priceStr(it)}${it.stock < 0 ? '' : `（庫存 ${it.stock}）`}`).join('\n'));
         if (!blocks.length) return await reply({ content: scoped ? '這個頻道的商店目前沒有上架任何獎勵。' : '特殊商店目前還沒有任何獎勵。' });
         if (scoped) embed.setTitle('🎁 ' + shops.map(s => `${s.emoji || '🏷️'} ${s.name}`).join('・'));
         if (debtMsg) blocks.unshift(debtMsg + '\n');
@@ -366,11 +369,14 @@ function init(client) {
         const avail = pool.filter(x => x.it.stock !== 0);
         const rows = avail.length ? [new ActionRowBuilder().addComponents(
           new StringSelectMenuBuilder().setCustomId('sredeem:0').setPlaceholder('選擇要兌換的獎勵…')
-            .addOptions(avail.slice(0, 25).map(({ it, shop }) => ({
-              label: `${shop ? shop.name + '：' : ''}${it.name}`.slice(0, 100),
-              description: `${it.price.toLocaleString('en-US')} ${gc.currency_name}${it.stock < 0 ? '' : `　庫存 ${it.stock}`}`.slice(0, 100),
-              value: String(it.id), emoji: it.emoji || '🎁'
-            })))) ] : [];
+            .addOptions(avail.slice(0, 25).map(({ it, shop }) => {
+              const p = priceNow(it);
+              return {
+                label: `${shop ? shop.name + '：' : ''}${it.name}`.slice(0, 100),
+                description: `你這份 ${p.toLocaleString('en-US')} ${gc.currency_name}${p !== it.price ? '（越換越貴）' : ''}${it.stock < 0 ? '' : `　庫存 ${it.stock}`}`.slice(0, 100),
+                value: String(it.id), emoji: it.emoji || '🎁'
+              };
+            }))) ] : [];
         return await reply({ embeds: [embed], components: rows });
       }
 

@@ -186,13 +186,10 @@ function init(client) {
       }
 
       if (i.isButton() && i.customId.startsWith('ticket:open')) {
-        const panelId = i.customId.split(':')[2] || '';
-        // 開單前先問主旨（可留空）
-        const modal = new ModalBuilder().setCustomId(`ticket:modal:${panelId}`).setTitle('開啟客服單');
-        modal.addComponents(new ActionRowBuilder().addComponents(
-          new TextInputBuilder().setCustomId('subject').setLabel('想詢問什麼？（可留空）')
-            .setStyle(TextInputStyle.Short).setRequired(false).setMaxLength(100)));
-        return i.showModal(modal);
+        // 點按鈕直接建單、直接給連結進去（不再跳出填主題的視窗）
+        await i.deferReply({ flags: MessageFlags.Ephemeral });
+        const panelId = parseInt(i.customId.split(':')[2], 10) || 0;
+        return openTicket(i, '', panelId);
       }
 
       if (i.isModalSubmit() && i.customId.startsWith('ticket:modal')) {
