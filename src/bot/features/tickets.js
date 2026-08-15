@@ -151,7 +151,7 @@ async function closeTicket(i, ticketId) {
     new ButtonBuilder().setCustomId(`ticket:del:${ticketId}`).setLabel('刪除此頻道').setStyle(ButtonStyle.Danger));
   await i.reply({
     embeds: [new EmbedBuilder().setColor(0x99aab5).setTitle('客服單已關閉')
-      .setDescription(`由 ${i.user.username} 關閉。客服人員確認無誤後可刪除此頻道。`)],
+      .setDescription(`由 ${i.user.username} 關閉。客服人員確認無誤後可刪除此頻道。\n\n此頻道稍後可能被移除，屆時原本的頻道連結將無法開啟（屬正常現象）。`)],
     components: [row]
   }).catch(() => {});
 
@@ -208,6 +208,20 @@ function init(client) {
           || i.member.roles.cache.some(r => csv(c.support_role_ids).includes(r.id));
         if (!isSupport) return i.reply({ content: '僅客服人員可刪除頻道。', flags: MessageFlags.Ephemeral });
         await i.reply('頻道將在 5 秒後刪除。').catch(() => {});
+
+        // 頻道一刪，開單者手上的連結就會變成「您沒有存取此連結的權限」。
+        // 先私訊告知，避免玩家以為是權限出錯又回報一次。
+        const delId = i.customId.split(':')[2];
+        const dt = db.prepare('SELECT * FROM tickets WHERE id=?').get(delId);
+        if (dt && dt.user_id) {
+          const u = await i.client.users.fetch(dt.user_id).catch(() => null);
+          if (u) {
+            await u.send({
+              embeds: [new EmbedBuilder().setColor(0x99aab5).setTitle(`客服單 #${delId} 已處理完畢`)
+                .setDescription(`${dt.subject ? `**主旨**：${dt.subject}\n\n` : ''}你的客服單已結案，頻道已關閉並移除，原本的頻道連結將無法再開啟（這是正常的，不是權限問題）。\n\n若還有需要，歡迎重新開一張客服單。`)]
+            }).catch(() => {});
+          }
+        }
         // 先把頻道抓在手上：5 秒後 i.channel 可能已經是 null（頻道被別人先刪掉、
         // 或快取失效），那時候直接 i.channel.delete() 會丟出未捕捉的例外把整個程序帶掉。
         const target = i.channel;
