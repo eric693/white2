@@ -63,6 +63,30 @@ async function postPanel(client, channelId, panelId) {
   await ch.send(panelPayload(panel));
 }
 
+// 把「頻道已經不存在」的殘留 open 單自動結案。
+// 客服若直接右鍵刪頻道（沒走關閉→刪除按鈕），DB 會永遠停在 open，
+// 開單者之後就卡在「你已有進行中的客服單：# 不明」，而且連結是死的。
+async function reapDeadTickets(client, gid, userId) {
+  const rows = userId
+    ? db.prepare("SELECT * FROM tickets WHERE guild_id=? AND user_id=? AND status='open'").all(gid, userId)
+    : db.prepare("SELECT * FROM tickets WHERE guild_id=? AND status='open'").all(gid);
+  let reaped = 0;
+  for (const t of rows) {
+    if (!t.channel_id) { // 建頻道失敗留下的空單
+      db.prepare(`UPDATE tickets SET status='closed', closed_at=datetime('now','localtime'), closed_by='系統（頻道不存在）' WHERE id=?`).run(t.id);
+      reaped++;
+      continue;
+    }
+    const ch = client.channels.cache.get(t.channel_id)
+      || await client.channels.fetch(t.channel_id).catch(() => null);
+    if (!ch) {
+      db.prepare(`UPDATE tickets SET status='closed', closed_at=datetime('now','localtime'), closed_by='系統（頻道已刪除）' WHERE id=?`).run(t.id);
+      reaped++;
+    }
+  }
+  return reaped;
+}
+
 async function openTicket(i, subject, panelId) {
   const gid = i.guild.id;
   const c = cfg(gid);
@@ -70,11 +94,21 @@ async function openTicket(i, subject, panelId) {
   const panel = getPanel(panelId) || db.prepare('SELECT * FROM ticket_panels WHERE guild_id=? ORDER BY id LIMIT 1').get(gid);
   if (!panel) return i.editReply('尚未設定客服面板，請聯繫管理員。');
 
-  // 同時開單上限（該伺服器內）
+  // 同時開單上限（該伺服器內）。先清掉頻道已被刪除的殘留單，避免使用者被死單卡住。
+  await reapDeadTickets(i.client, gid, i.user.id);
   const open = db.prepare("SELECT COUNT(*) n FROM tickets WHERE guild_id=? AND user_id=? AND status='open'").get(gid, i.user.id).n;
   if (open >= (c.max_open || 1)) {
     const t = db.prepare("SELECT channel_id FROM tickets WHERE guild_id=? AND user_id=? AND status='open' ORDER BY id DESC").get(gid, i.user.id);
-    return i.editReply(`你已有進行中的客服單${t ? `：<#${t.channel_id}>` : ''}，請先在原單內溝通或等候關閉。`);
+    // 頻道還在但使用者看不到（權限被覆寫改掉、退群重進等）→ 直接補回權限，不要叫他去點一條開不了的連結
+    if (t && t.channel_id) {
+      const ch = i.client.channels.cache.get(t.channel_id) || await i.client.channels.fetch(t.channel_id).catch(() => null);
+      if (ch) {
+        await ch.permissionOverwrites.edit(i.user.id, {
+          ViewChannel: true, SendMessages: true, ReadMessageHistory: true, AttachFiles: true
+        }).catch(() => {});
+      }
+    }
+    return i.editReply(`你已有進行中的客服單${t && t.channel_id ? `：<#${t.channel_id}>` : ''}，請先在原單內溝通或等候關閉。`);
   }
 
   const info = db.prepare('INSERT INTO tickets (guild_id, user_id, username, subject, panel_id, panel_name) VALUES (?,?,?,?,?,?)')
@@ -173,6 +207,29 @@ async function closeTicket(i, ticketId) {
 }
 
 function init(client) {
+  // 頻道被直接刪除（沒走關閉→刪除按鈕）→ 立刻把對應客服單結案，不留死單
+  client.on('channelDelete', (ch) => {
+    try {
+      const t = db.prepare("SELECT * FROM tickets WHERE channel_id=? AND status='open'").get(ch.id);
+      if (!t) return;
+      db.prepare(`UPDATE tickets SET status='closed', closed_at=datetime('now','localtime'), closed_by='系統（頻道已刪除）' WHERE id=?`).run(t.id);
+      // 開單者可能還握著那條連結，先說明一聲，免得以為是權限壞掉
+      client.users.fetch(t.user_id).then(u => u.send({
+        embeds: [new EmbedBuilder().setColor(0x99aab5).setTitle(`客服單 #${t.id} 已結束`)
+          .setDescription('這張客服單的頻道已被移除，原本的頻道連結將無法再開啟（這是正常的，不是權限問題）。\n\n若還有需要，歡迎重新開一張客服單。')]
+      })).catch(() => {});
+    } catch (e) { logError(ch.guild && ch.guild.id, '客服單頻道刪除處理失敗：', e.message); }
+  });
+
+  // 開機補掃一次：機器人離線期間被刪掉的頻道，事件收不到，這裡補結案
+  // （init 本身就是在 clientReady 裡呼叫的，所以直接掃，不再等 ready 事件）
+  (async () => {
+    for (const [gid] of client.guilds.cache) {
+      const n = await reapDeadTickets(client, gid).catch(() => 0);
+      if (n) console.log(`  ↳ 客服單：已自動結案 ${n} 張頻道不存在的殘留單（${gid}）`);
+    }
+  })();
+
   client.on('interactionCreate', async (i) => {
     try {
       // /客服面板 指令（管理員）
