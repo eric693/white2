@@ -77,9 +77,17 @@ async function reapDeadTickets(client, gid, userId) {
       reaped++;
       continue;
     }
-    const ch = client.channels.cache.get(t.channel_id)
-      || await client.channels.fetch(t.channel_id).catch(() => null);
-    if (!ch) {
+    if (client.channels.cache.get(t.channel_id)) continue;
+    // 只有 Discord 明確回「Unknown Channel（10003）」才算真的被刪掉。
+    // 其他錯誤（暫時沒權限、網路中斷、被限流）不能當成已刪除，
+    // 否則會把還活著的客服單誤判結案，反而弄丟正在處理中的單。
+    let dead = false;
+    try {
+      await client.channels.fetch(t.channel_id);
+    } catch (e) {
+      if (e.code === 10003) dead = true;
+    }
+    if (dead) {
       db.prepare(`UPDATE tickets SET status='closed', closed_at=datetime('now','localtime'), closed_by='系統（頻道已刪除）' WHERE id=?`).run(t.id);
       reaped++;
     }
@@ -102,7 +110,7 @@ async function openTicket(i, subject, panelId) {
     // 頻道還在但使用者看不到（權限被覆寫改掉、退群重進等）→ 直接補回權限，不要叫他去點一條開不了的連結
     if (t && t.channel_id) {
       const ch = i.client.channels.cache.get(t.channel_id) || await i.client.channels.fetch(t.channel_id).catch(() => null);
-      if (ch) {
+      if (ch && ch.permissionOverwrites) {
         await ch.permissionOverwrites.edit(i.user.id, {
           ViewChannel: true, SendMessages: true, ReadMessageHistory: true, AttachFiles: true
         }).catch(() => {});
