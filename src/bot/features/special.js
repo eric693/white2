@@ -302,7 +302,7 @@ function init(client) {
         }
         const menu = new StringSelectMenuBuilder().setCustomId(`sqty:${shopId}:${item.id}`)
           .setPlaceholder('要兌換幾份？').setMinValues(1).setMaxValues(1).addOptions(opts);
-        const head = `${item.emoji || '🎁'} **${item.name}**　下一份 ${money(gc, unitPrice(c, item, already))}` +
+        const head = `${item.emoji || '🎁'} **${item.name}**　下一份（第 ${already + 1} 份）${money(gc, unitPrice(c, item, already))}　👉 你的 ${coins.toLocaleString('en-US')} ${gc.currency_name}可換 **${cap}** 份` +
           (item.stock < 0 ? '' : `　庫存 ${item.stock}`) +
           (limit > 0 ? `\n你這期已換 **${already}/${limit}** 份（${nextResetText(c)}）` : '') +
           (c.price_escalate ? `\n📈 這間店**越換越貴**：每多換一份，下一份價格 ×${Number(c.escalate_mult) || 2}` : '');
@@ -344,7 +344,13 @@ function init(client) {
         const w = wallet(gid, uid, uname);
         // 這位玩家「下一份」實際要付的價（含翻倍）：讓他不用點進去就知道
         const priceNow = (it) => c.price_escalate ? unitPrice(c, it, usedQty(gid, uid, it.id, periodStart(c))) : it.price;
-        const priceStr = (it) => { const p = priceNow(it); return `${money(gc, p)}${p !== it.price ? `（原價 ${money(gc, it.price)}）` : ''}`; };
+        // 用現在身上的錢還能換幾份（已扣掉庫存、每人上限、越換越貴的影響）
+        const affordable = (it) => qtyCap(gid, it, uid, uname).cap;
+        const priceStr = (it) => {
+          const p = priceNow(it), n = affordable(it);
+          return `${money(gc, p)}${p !== it.price ? `（原價 ${money(gc, it.price)}）` : ''}　` +
+            (n > 0 ? `👉 你的錢可換 **${n}** 份` : '👉 錢不夠');
+        };
         const embed = new EmbedBuilder().setColor(brandColor()).setTitle('🎁 特殊兌換商店')
           .setFooter({ text: `你的餘額：${w.coins.toLocaleString('en-US')} ${gc.currency_name}｜用 /兌換 商品名稱 兌換` });
         const blocks = [];
@@ -370,10 +376,10 @@ function init(client) {
         const rows = avail.length ? [new ActionRowBuilder().addComponents(
           new StringSelectMenuBuilder().setCustomId('sredeem:0').setPlaceholder('選擇要兌換的獎勵…')
             .addOptions(avail.slice(0, 25).map(({ it, shop }) => {
-              const p = priceNow(it);
+              const p = priceNow(it), n = affordable(it);
               return {
                 label: `${shop ? shop.name + '：' : ''}${it.name}`.slice(0, 100),
-                description: `你這份 ${p.toLocaleString('en-US')} ${gc.currency_name}${p !== it.price ? '（越換越貴）' : ''}${it.stock < 0 ? '' : `　庫存 ${it.stock}`}`.slice(0, 100),
+                description: `你這份 ${p.toLocaleString('en-US')} ${gc.currency_name}${p !== it.price ? '（越換越貴）' : ''}｜可換 ${n} 份${it.stock < 0 ? '' : `　庫存 ${it.stock}`}`.slice(0, 100),
                 value: String(it.id), emoji: it.emoji || '🎁'
               };
             }))) ] : [];
