@@ -66,6 +66,38 @@ App.page('charity', {
         </table></div>
       </div>
 
+      <div class="card" id="reliefwrap">
+        <h3>💸 手動普發（活動用）</h3>
+        <div class="hint" style="margin-bottom:10px">
+          跟稅金頁的自動普發不同：那個綁在結算流程、只發給餘額低於門檻的人。
+          這裡是活動用的一鍵普發（例如「全服普發一萬」），可以先<strong>試算</strong>再執行。
+        </div>
+        <div class="form-row">
+          <div class="field"><label>每人發多少</label><input name="amount" type="number" min="1" value="10000"></div>
+          <div class="field"><label>發給誰</label><select name="mode">
+            <option value="all">全部玩家</option>
+            <option value="below">只發給餘額低於門檻的人</option></select></div>
+          <div class="field"><label>門檻（上面選「低於門檻」才用）</label><input name="below" type="number" value="0"></div>
+        </div>
+        <div class="form-row">
+          <div class="field"><label>只發給最近幾天有活動的人（0＝不限）</label><input name="active_days" type="number" min="0" value="14"></div>
+          <div class="field"><label>財源</label><select name="source">
+            <option value="pool">基金會餘額（推薦）</option>
+            <option value="free">直接增發（憑空印錢，會通膨）</option></select></div>
+          <div class="field"><label>公告頻道（留空＝用捐款公告頻道）</label>${H.chanSelect('channel', '')}</div>
+        </div>
+        <div class="form-row">
+          <div class="field">${H.toggle('exclude_exempt', 1, '排除免稅名單（管理員／活動帳號）')}</div>
+          <div class="field">${H.toggle('exclude_debt', 0, '排除餘額為負的人（欠稅大戶）')}</div>
+          <div class="field"><label>公告理由（可留空）</label><input name="reason" placeholder="週年慶普發"></div>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:10px">
+          <button class="btn secondary" id="preview">🔍 試算</button>
+          <button class="btn" id="dorelief" disabled>💸 執行普發</button>
+        </div>
+        <div id="previewout" class="hint" style="margin-top:10px">先按「試算」看看會發給幾個人、總共多少。</div>
+      </div>
+
       <div class="card">
         <h3>撥款紀錄（給普發）</h3>
         <div class="table-wrap"><table class="list">
@@ -80,6 +112,35 @@ App.page('charity', {
       await PUT('/charity', H.collect(el.querySelector('#cfgwrap')));
       UI.ok('已儲存設定'); App.go('charity');
     };
+    // ---- 手動普發：先試算再執行，避免手滑把基金會發空 ----
+    const rw = el.querySelector('#reliefwrap');
+    const doBtn = el.querySelector('#dorelief');
+    const out = el.querySelector('#previewout');
+    let lastBody = null;
+    el.querySelector('#preview').onclick = async () => {
+      const b = H.collect(rw);
+      if (!(+b.amount > 0)) return UI.err('請填每人要發多少');
+      const r = await POST('/charity-relief-preview', b);
+      lastBody = b;
+      doBtn.disabled = r.people === 0 || !r.enough;
+      out.innerHTML = r.people === 0
+        ? '沒有符合條件的玩家。'
+        : `會發給 <b>${r.people}</b> 人，每人 ${coin(b.amount)}，總共 <b>${coin(r.total)}</b>。`
+        + (b.source === 'free'
+          ? '<br>財源＝直接增發（不動基金會餘額）。'
+          : `<br>基金會餘額 ${coin(r.pool)} → ${r.enough ? `發完剩 ${coin(r.pool - r.total)}` : '<b style="color:#ed4245">不夠，請降低金額或改用直接增發</b>'}`)
+        + `<br><span style="opacity:.7">例：${r.sample.map(x => UI.esc(x.username || x.user_id)).join('、')}${r.people > r.sample.length ? ' …' : ''}</span>`;
+    };
+    doBtn.onclick = async () => {
+      if (!lastBody) return UI.err('請先試算');
+      if (!await UI.confirm('確定執行普發？錢會立刻進入玩家錢包，不能復原。')) return;
+      try {
+        const r = await POST('/charity-relief', lastBody);
+        UI.ok(`已普發給 ${r.people} 人，共 ${r.total.toLocaleString('en-US')}`);
+        App.go('charity');
+      } catch (e) { UI.err(e.message); }
+    };
+
     el.querySelector('#adjust').onclick = async () => {
       const delta = +el.querySelector('#delta').value || 0;
       if (!delta) return UI.err('請填要增減的金額');

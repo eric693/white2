@@ -1779,3 +1779,64 @@ CREATE TABLE IF NOT EXISTS ach_stats (
   updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
   PRIMARY KEY (guild_id, user_id, metric)
 );
+
+-- ============================================================
+-- 基金會拍賣會：基金會定期推出限時競標（特殊家具／珍稀寵物／成就稱號／稀有物品）
+-- 設計重點：
+--   ① 出價即鎖款（當場扣星幣），被超越自動退回 —— 不會有得標不付錢的呆帳
+--   ② 手續費從成交價抽，直接進基金會池 → 拍賣本身就是回收星幣的水龍頭
+--   ③ 可設「材料附加成本」：得標時另外收指定材料，給只能賣錢的素材一個真正的出海口
+--   ④ 結束前有人出價就自動延長（防狙擊）
+-- ============================================================
+CREATE TABLE IF NOT EXISTS auction_config (
+  guild_id        TEXT PRIMARY KEY DEFAULT '',
+  enabled         INTEGER NOT NULL DEFAULT 0,
+  channel         TEXT NOT NULL DEFAULT '',      -- 拍賣公告頻道
+  fee_pct         REAL NOT NULL DEFAULT 5,       -- 成交手續費 %（進基金會）
+  min_inc_pct     INTEGER NOT NULL DEFAULT 5,    -- 每次至少要加價 %（與 min_inc 取大）
+  min_inc         INTEGER NOT NULL DEFAULT 100,  -- 每次至少要加價的絕對值
+  antisnipe_min   INTEGER NOT NULL DEFAULT 3,    -- 結束前這幾分鐘內有人出價就延長
+  extend_min      INTEGER NOT NULL DEFAULT 3,    -- 每次延長幾分鐘
+  max_bid_pct     INTEGER NOT NULL DEFAULT 0,    -- 單人出價上限＝餘額的 %（0＝不限）
+  to_pool         INTEGER NOT NULL DEFAULT 1     -- 1＝成交價（扣手續費後）也全數進基金會
+);
+
+CREATE TABLE IF NOT EXISTS auctions (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id     TEXT NOT NULL DEFAULT '',
+  kind         TEXT NOT NULL DEFAULT 'item',   -- furniture / pet / title / item
+  ref_id       INTEGER NOT NULL DEFAULT 0,     -- 對應 home_furniture / pet_defs / title_defs / gather_items 的 id
+  qty          INTEGER NOT NULL DEFAULT 1,     -- 只有 item 類用得到
+  title        TEXT NOT NULL DEFAULT '',       -- 顯示名稱（留空＝自動用標的物名稱）
+  emoji        TEXT NOT NULL DEFAULT '',
+  description  TEXT NOT NULL DEFAULT '',
+  image_url    TEXT NOT NULL DEFAULT '',
+  start_price  INTEGER NOT NULL DEFAULT 0,
+  buyout_price INTEGER NOT NULL DEFAULT 0,     -- 直接買下的價格（0＝不開放）
+  mats_cost    TEXT NOT NULL DEFAULT '[]',     -- 得標時另外要交的材料 [{item,count}]
+  start_ts     INTEGER NOT NULL DEFAULT 0,
+  end_ts       INTEGER NOT NULL DEFAULT 0,
+  status       TEXT NOT NULL DEFAULT 'scheduled', -- scheduled / live / ended / failed / cancelled
+  winner_id    TEXT NOT NULL DEFAULT '',
+  winner_name  TEXT NOT NULL DEFAULT '',
+  final_price  INTEGER NOT NULL DEFAULT 0,
+  fee          INTEGER NOT NULL DEFAULT 0,
+  bids         INTEGER NOT NULL DEFAULT 0,
+  created_by   TEXT NOT NULL DEFAULT '',
+  message_id   TEXT NOT NULL DEFAULT '',       -- 公告訊息（開標後編輯同一則）
+  created_at   TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_auctions ON auctions(guild_id, status, end_ts);
+
+-- 出價紀錄。active=1 代表這筆錢還被鎖著（目前最高價），被超越就退款並設為 0。
+CREATE TABLE IF NOT EXISTS auction_bids (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  auction_id INTEGER NOT NULL,
+  guild_id   TEXT NOT NULL DEFAULT '',
+  user_id    TEXT NOT NULL,
+  username   TEXT NOT NULL DEFAULT '',
+  amount     INTEGER NOT NULL DEFAULT 0,
+  active     INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_auction_bids ON auction_bids(auction_id, id);

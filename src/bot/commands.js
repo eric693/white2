@@ -193,6 +193,7 @@ const builders = [
 
   new SlashCommandBuilder().setName('捐款').setDescription('把星幣捐進慈善基金會（可折抵稅額，帳目全服公開）')
     .addIntegerOption(o => o.setName('金額').setDescription('要捐多少星幣').setRequired(true).setMinValue(1)),
+  new SlashCommandBuilder().setName('拍賣').setDescription('基金會拍賣會：限時競標特殊家具、珍稀寵物與成就稱號'),
   new SlashCommandBuilder().setName('基金會').setDescription('查看慈善基金會的帳目、捐款榜與抵稅比例'),
 
   new SlashCommandBuilder().setName('貸款').setDescription('用工具／作物／魚缸的魚當抵押品借星幣（不填金額＝查額度）')
