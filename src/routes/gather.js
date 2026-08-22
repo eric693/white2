@@ -160,6 +160,8 @@ router.get('/gather-players', (req, res) => {
   const fish = cnt('SELECT COUNT(*) n FROM aquarium_slots WHERE guild_id=? AND user_id=?');
   const home = cnt('SELECT level, kitchen_level FROM home_users WHERE guild_id=? AND user_id=?');
   const shares = cnt('SELECT COALESCE(SUM(shares),0) n FROM stock_holdings WHERE guild_id=? AND user_id=?');
+  const limits = db.prepare('SELECT stamina_bonus, note FROM player_limits WHERE guild_id=? AND user_id=?');
+  const partners = cnt('SELECT COUNT(*) n FROM home_partners WHERE guild_id=? AND user_id=?');
   res.json(rows.map(w => {
     const f = {};
     for (const r of fac.all(req.guildId, w.user_id)) f[r.type] = { tier: r.tier, slots: r.slots };
@@ -173,9 +175,25 @@ router.get('/gather-players', (req, res) => {
       fish: fish.get(req.guildId, w.user_id).n,
       home_level: h.level || 0,
       kitchen_level: h.kitchen_level || 0,
-      shares: shares.get(req.guildId, w.user_id).n
+      shares: shares.get(req.guildId, w.user_id).n,
+      stamina_bonus: (limits.get(req.guildId, w.user_id) || {}).stamina_bonus || 0,
+      stamina_note: (limits.get(req.guildId, w.user_id) || {}).note || '',
+      partners: partners.get(req.guildId, w.user_id).n
     };
   }));
+});
+
+// 個別玩家的每日體力上限（+N，永久）。有些玩家在別的活動達標，管理員給他多一點行動額度。
+router.post('/gather-players/:userId/stamina', (req, res) => {
+  const b = req.body || {};
+  const bonus = Math.max(-999, Math.min(999, parseInt(b.stamina_bonus, 10) || 0));
+  db.prepare(
+    `INSERT INTO player_limits (guild_id,user_id,stamina_bonus,note) VALUES (?,?,?,?)
+     ON CONFLICT(guild_id,user_id) DO UPDATE SET stamina_bonus=excluded.stamina_bonus,
+       note=excluded.note, updated_at=datetime('now','localtime')`
+  ).run(req.guildId, req.params.userId, bonus, String(b.note || '').slice(0, 100));
+  audit(req.user.name, `調整玩家 ${req.params.userId} 的每日體力上限 ${bonus >= 0 ? '+' : ''}${bonus}`, 'gather');
+  res.json({ ok: true, stamina_bonus: bonus });
 });
 
 router.post('/gather-players/:userId/coins', (req, res) => {

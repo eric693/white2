@@ -236,6 +236,27 @@ ensureColumns('title_defs', {
   hint: "TEXT NOT NULL DEFAULT ''"          // 顯示給玩家的任務提示
 });
 
+// 逛街名單：轉盤裡不是「角色」的項目（模擬器、活動介紹…）或不想參與的作者，可以排除
+ensureColumns('wheel_roles', { stroll_ok: 'INTEGER NOT NULL DEFAULT 1' });
+
+// 同居與伴侶稅
+ensureColumns('home_config', {
+  partner_enabled: 'INTEGER NOT NULL DEFAULT 1',
+  partner_slots:   'INTEGER NOT NULL DEFAULT 1',    // 最多同時跟幾位角色同居
+  partner_level:   'INTEGER NOT NULL DEFAULT 6',    // 好感度要到幾階才可能同居
+  partner_cool_d:  'INTEGER NOT NULL DEFAULT 3'     // 請他搬走後幾天內不能再抽
+});
+ensureColumns('home_partners', {
+  buff_type: "TEXT NOT NULL DEFAULT ''",     // 搬進來時隨機決定的能力
+  buff_pct:  'INTEGER NOT NULL DEFAULT 0',
+  skill:     "TEXT NOT NULL DEFAULT ''"      // harvest＝會幫忙收成
+});
+ensureColumns('tax_config', {
+  partner_enabled: 'INTEGER NOT NULL DEFAULT 1',
+  partner_base:    'INTEGER NOT NULL DEFAULT 5000', // 每位同居角色的基本伴侶稅
+  partner_per_lv:  'INTEGER NOT NULL DEFAULT 1500'  // 好感度每一階再加課
+});
+
 // 買來的體力：跟每日採集點數共用同一池（daily_points ＋ bonus − used）
 ensureColumns('gather_points', { bonus: 'INTEGER NOT NULL DEFAULT 0' });
 

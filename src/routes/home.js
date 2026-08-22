@@ -47,7 +47,8 @@ router.put('/home-config', (req, res) => {
        checkin_max=@checkin_max, checkin_week=@checkin_week, checkin_home_pct=@checkin_home_pct,
        buy_mats_enabled=@buy_mats_enabled, buy_mats_mult=@buy_mats_mult,
        stroll_enabled=@stroll_enabled, stroll_stamina=@stroll_stamina, stroll_cost=@stroll_cost,
-       stroll_points=@stroll_points
+       stroll_points=@stroll_points,
+       partner_enabled=@partner_enabled, partner_slots=@partner_slots, partner_level=@partner_level
      WHERE guild_id=@guild_id`
   ).run({
     enabled: b.enabled ? 1 : 0,
@@ -68,6 +69,9 @@ router.put('/home-config', (req, res) => {
     stroll_stamina: int(b.stroll_stamina, 10, 1),
     stroll_cost: int(b.stroll_cost, 1, 1),
     stroll_points: int(b.stroll_points, 3, 0),
+    partner_enabled: b.partner_enabled ? 1 : 0,
+    partner_slots: int(b.partner_slots, 1, 1),
+    partner_level: int(b.partner_level, 6, 0),
     guild_id: req.guildId
   });
   audit(req.user.name, '更新家園設定');
@@ -182,6 +186,30 @@ for (const [path, def] of Object.entries(TABLES)) {
     res.json({ ok: true });
   });
 }
+
+// ---------- 逛街角色名單 ----------
+// 轉盤裡不是「角色」的項目（模擬器、活動介紹）或不想出場的作者，可以整批排除。
+router.get('/stroll-roles', (req, res) => {
+  res.json(db.prepare(
+    'SELECT id, name, author, enabled, stroll_ok FROM wheel_roles WHERE guild_id=? ORDER BY author, name').all(req.guildId));
+});
+
+router.post('/stroll-roles', (req, res) => {
+  const b = req.body || {};
+  const on = b.stroll_ok ? 1 : 0;
+  let changed = 0;
+  if (Array.isArray(b.ids) && b.ids.length) {
+    const upd = db.prepare('UPDATE wheel_roles SET stroll_ok=? WHERE guild_id=? AND id=?');
+    db.transaction(() => { for (const id of b.ids) changed += upd.run(on, req.guildId, int(id, 0, 0)).changes; })();
+  } else if (b.author !== undefined && b.author !== null) {
+    changed = db.prepare('UPDATE wheel_roles SET stroll_ok=? WHERE guild_id=? AND trim(author)=trim(?)')
+      .run(on, req.guildId, String(b.author)).changes;
+  } else if (b.all) {
+    changed = db.prepare('UPDATE wheel_roles SET stroll_ok=? WHERE guild_id=?').run(on, req.guildId).changes;
+  }
+  audit(req.user.name, `${on ? '開放' : '排除'}逛街角色 ${changed} 位`);
+  res.json({ ok: true, changed });
+});
 
 // ---------- 玩家現況（看得到誰在玩、誰帶了什麼成就）----------
 router.get('/home-players', (req, res) => {

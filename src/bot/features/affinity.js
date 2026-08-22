@@ -183,6 +183,139 @@ function inviteRole(gid, uid, uname, rid) {
   return { role, gain, chance, ...lv };
 }
 
+
+// ================== 同居 ==================
+//
+// 「邀請來家裡」＝同居：角色搬進玩家家裡，每期要繳伴侶稅（在稅金那邊結算）。
+// 對象**隨機**：玩家不能挑要跟誰住，只能決定要不要請現在這位搬走、再抽一次 ——
+// 可以挑的話所有人都會選同一個最紅的角色，兩百多位角色等於白做。
+const partnersOf = (gid, uid) => db.prepare(
+  `SELECT p.*, r.name, r.image_url, r.ad_line, r.ad_line2, r.ad_line3,
+          (SELECT level FROM affinity a WHERE a.guild_id=p.guild_id AND a.user_id=p.user_id AND a.role_id=p.role_id) AS level
+     FROM home_partners p JOIN wheel_roles r ON r.id=p.role_id
+    WHERE p.guild_id=? AND p.user_id=? ORDER BY p.since`).all(gid, uid);
+
+const partnerSlots = (gid) => Math.max(1, hcfg(gid).partner_slots ?? 1);
+
+/** 隨機挑一位「願意跟你同居」的角色：好感度要達標，已經同居的不再抽 */
+function pickPartner(gid, uid) {
+  const need = Math.max(0, hcfg(gid).partner_level ?? 6);
+  const rows = db.prepare(
+    `SELECT a.role_id, a.level, r.name FROM affinity a JOIN wheel_roles r ON r.id=a.role_id
+      WHERE a.guild_id=? AND a.user_id=? AND a.level >= ? AND r.enabled=1 AND r.stroll_ok=1
+        AND a.role_id NOT IN (SELECT role_id FROM home_partners WHERE guild_id=? AND user_id=?)`)
+    .all(gid, uid, need, gid, uid);
+  if (!rows.length) return null;
+  // 好感度越高越容易被抽到，但不是保證 —— 保留一點「他自己也有想法」的隨機性
+  const weighted = rows.map(r => ({ r, w: Math.max(1, r.level - need + 1) }));
+  const total = weighted.reduce((a, x) => a + x.w, 0);
+  let n = Math.random() * total;
+  for (const x of weighted) { n -= x.w; if (n <= 0) return x.r; }
+  return weighted[weighted.length - 1].r;
+}
+
+// 同居能力池：[能力代碼, 顯示名, 基礎%]；skill='harvest' 是特殊能力，不是百分比加成
+const PARTNER_SKILLS = [
+  { skill: 'harvest', name: '🧺 幫忙收成', desc: '每天自動幫你把牧場產物收進背包' },
+  { buff_type: 'cook_perfect_pct', name: '👨‍🍳 廚藝指導', base: 4 },
+  { buff_type: 'cook_price_pct', name: '🍱 擺盤講究', base: 5 },
+  { buff_type: 'mine_rare_pct', name: '⛏️ 礦脈直覺', base: 4 },
+  { buff_type: 'mine_common_pct', name: '🪨 撿石頭高手', base: 8 },
+  { buff_type: 'fish_rare_pct', name: '🎣 看得懂潮汐', base: 4 },
+  { buff_type: 'mat_pct', name: '📦 收集癖', base: 6 },
+  { buff_type: 'sell_pct', name: '💰 會殺價', base: 4 },
+  { buff_type: 'speed_pct', name: '⏱️ 手腳很快', base: 5 },
+  { buff_type: 'luck_pct', name: '🍀 帶來好運', base: 4 },
+  { buff_type: 'steal_resist_pct', name: '🛡️ 睡得很淺', base: 8 },
+  { buff_type: 'energy_pct', name: '☕ 會泡咖啡', base: 5 }
+];
+
+/** 隨機決定同居角色的能力：好感度階級越高，加成越強（每階 +10%） */
+function rollPartnerSkill(level) {
+  const pick = PARTNER_SKILLS[Math.floor(Math.random() * PARTNER_SKILLS.length)];
+  if (pick.skill) return { skill: pick.skill, buff_type: '', buff_pct: 0, name: pick.name, desc: pick.desc };
+  const pct = Math.max(1, Math.round(pick.base * (1 + Math.max(0, level) * 0.1)));
+  return { skill: '', buff_type: pick.buff_type, buff_pct: pct, name: pick.name };
+}
+const partnerSkillText = (p) => {
+  if (p.skill === 'harvest') return '🧺 幫忙收成（每天自動收牧場產物）';
+  if (p.buff_type && p.buff_pct) {
+    const def = PARTNER_SKILLS.find(x => x.buff_type === p.buff_type);
+    return `${def ? def.name : p.buff_type} ＋${p.buff_pct}%`;
+  }
+  return '—';
+};
+
+/** 請一位角色搬進來（隨機決定是誰） */
+function moveIn(gid, uid, uname) {
+  const c = hcfg(gid);
+  if (!c.partner_enabled) return { error: '目前沒有開放同居。' };
+  const home = homeOf(gid, uid, uname);
+  const def = levelDef(gid, home.level);
+  if (!def || !def.visit_ok) return { error: `你的家還太簡陋，沒有人願意搬進來。需要家園 **Lv.6 花園別墅**（你現在 Lv.${home.level}）。` };
+
+  const cur = partnersOf(gid, uid);
+  const slots = partnerSlots(gid);
+  if (cur.length >= slots) {
+    return { error: `你家已經住滿了（${cur.length}/${slots} 位）。想換人要先請現在的搬走。` };
+  }
+  const need = Math.max(0, c.partner_level ?? 6);
+  const pick = pickPartner(gid, uid);
+  if (!pick) {
+    return { error: `目前沒有角色願意搬進來。\n同居需要好感度 **${levelName(gid, need)}（Lv.${need}）**以上 —— 先去 \`/送禮\`、🛍️ 逛街把關係養起來。` };
+  }
+  // 搬進來的角色會帶一個「隨機能力」：好感度越高給得越強。
+  // 有些會幫忙收成（harvest），有些是廚藝／礦石之類的加成 —— 這樣同居才有功能性，不只是繳稅。
+  const skillRoll = rollPartnerSkill(pick.level);
+  db.prepare('INSERT OR IGNORE INTO home_partners (guild_id,user_id,role_id,buff_type,buff_pct,skill) VALUES (?,?,?,?,?,?)')
+    .run(gid, uid, pick.role_id, skillRoll.buff_type, skillRoll.buff_pct, skillRoll.skill);
+  const role = roleOf(gid, pick.role_id);
+  return { moved: true, role, level: pick.level, slots, used: cur.length + 1, skill: skillRoll };
+}
+
+/** 請同居對象搬走（好感度不會歸零，但要等冷卻才能再抽） */
+function moveOut(gid, uid, roleId) {
+  const p = db.prepare('SELECT * FROM home_partners WHERE guild_id=? AND user_id=? AND role_id=?').get(gid, uid, roleId);
+  if (!p) return { error: '這位角色沒有住在你家。' };
+  const role = roleOf(gid, roleId);
+  db.prepare('DELETE FROM home_partners WHERE guild_id=? AND user_id=? AND role_id=?').run(gid, uid, roleId);
+  return { role, paid: p.paid_total };
+}
+
+function partnerPanel(gid, uid, uname) {
+  const c = hcfg(gid);
+  const list = partnersOf(gid, uid);
+  const slots = partnerSlots(gid);
+  const tc = guildConfig('tax_config', gid);
+  const need = Math.max(0, c.partner_level ?? 6);
+  const home = homeOf(gid, uid, uname);
+  const def = levelDef(gid, home.level);
+  const taxOf = (lv) => (tc.partner_base || 0) + (tc.partner_per_lv || 0) * Math.max(0, lv || 0);
+
+  const e = new EmbedBuilder().setColor(0xeb459e).setTitle('💞 同居')
+    .setDescription(
+      `請角色搬進你家一起住。**對象是隨機的** —— 你不能挑要跟誰住，`
+      + `只能決定要不要請他搬走、再碰一次運氣。\n`
+      + `條件：家園 **Lv.6** 以上 ＋ 該角色好感度 **${levelName(gid, need)}（Lv.${need}）** 以上。\n`
+      + `搬進來的角色會**隨機帶一個能力**（廚藝、礦脈直覺、幫忙收成…），好感度越高越強。\n`
+      + `⚠️ 同居要繳**伴侶稅**：每位每期 ${(tc.partner_base || 0).toLocaleString('en-US')} ＋ 好感度每階 ${(tc.partner_per_lv || 0).toLocaleString('en-US')}。`)
+    .addFields({ name: '目前同居', value: list.length
+      ? list.map(p => `💕 **${p.name}**　${levelName(gid, p.level)}（Lv.${p.level}）\n`
+        + `　能力：${partnerSkillText(p)}\n`
+        + `　每期伴侶稅 ${taxOf(p.level).toLocaleString('en-US')}`
+        + (p.paid_total ? `　已繳 ${p.paid_total.toLocaleString('en-US')}` : '')).join('\n')
+      : `還沒有人住進來（0/${slots}）` });
+
+  const rows = [NAV('love')];
+  const btns = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('partnerin').setLabel('💞 請角色搬進來（隨機）').setStyle(ButtonStyle.Success)
+      .setDisabled(list.length >= slots || !def || !def.visit_ok));
+  if (list.length) btns.addComponents(
+    new ButtonBuilder().setCustomId(`partnerout:${list[0].role_id}`).setLabel(`請 ${list[0].name} 搬走`).setStyle(ButtonStyle.Secondary));
+  rows.push(btns);
+  return { embeds: [e], components: rows };
+}
+
 // ---- 面板 ----
 function lovePanel(gid, uid, uname) {
   const home = homeOf(gid, uid, uname);
@@ -204,7 +337,8 @@ function lovePanel(gid, uid, uname) {
   return {
     embeds: [embed],
     components: [NAV('love'), new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId('strollpanel').setLabel('🛍️ 逛街（隨機遇到角色）').setStyle(ButtonStyle.Success))]
+      new ButtonBuilder().setCustomId('strollpanel').setLabel('🛍️ 逛街（隨機遇到角色）').setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId('partnerpanel').setLabel('💞 同居').setStyle(ButtonStyle.Primary))]
   };
 }
 
@@ -222,7 +356,9 @@ const { staminaState, bumpPoints } = require('./gather');
 
 /** 隨機挑一位角色：見過越多次的權重越低，讓沒遇過的優先出場 */
 function pickRole(gid, uid) {
-  const roles = db.prepare('SELECT id, name, image_url, intro, author, ad_line, ad_line2, ad_line3 FROM wheel_roles WHERE guild_id=? AND enabled=1').all(gid);
+  // stroll_ok=0 的不參與逛街（轉盤裡的模擬器、活動介紹，或不想出場的作者）
+  const roles = db.prepare(
+    'SELECT id, name, image_url, intro, author, ad_line, ad_line2, ad_line3 FROM wheel_roles WHERE guild_id=? AND enabled=1 AND stroll_ok=1').all(gid);
   if (!roles.length) return null;
   const met = new Map(db.prepare('SELECT role_id, points FROM affinity WHERE guild_id=? AND user_id=?').all(gid, uid)
     .map(r => [r.role_id, r.points]));
@@ -288,7 +424,7 @@ function strollEmbed(gid, uid, out) {
 /** 逛街面板：一顆按鈕連續逛，體力用完為止 */
 function strollPanel(gid, uid, uname) {
   const st = staminaState(gid, uid);
-  const total = db.prepare('SELECT COUNT(*) n FROM wheel_roles WHERE guild_id=? AND enabled=1').get(gid).n;
+  const total = db.prepare('SELECT COUNT(*) n FROM wheel_roles WHERE guild_id=? AND enabled=1 AND stroll_ok=1').get(gid).n;
   const seen = db.prepare('SELECT COUNT(*) n FROM affinity WHERE guild_id=? AND user_id=? AND points>0').get(gid, uid).n;
   const e = new EmbedBuilder().setColor(0xeb459e).setTitle('🛍️ 逛街')
     .setDescription(`出門走走，**隨機**遇到街上的角色 —— 遇到誰不能挑，這就是逛街的意義。\n`
@@ -359,6 +495,34 @@ function init(client) {
           return i.followUp({
             embeds: [strollEmbed(gid, uid, out)],
             content: out.lv && out.lv.up ? `🎉 **${out.role.name}** 的好感度升到 **${levelName(gid, out.lv.level)}**！` : '',
+            ...eph
+          }).catch(() => {});
+        }
+        // 同居：面板／搬進來／搬走
+        if (i.isButton() && (i.customId === 'partnerpanel' || i.customId === 'adv:partner')) {
+          seedAffinity(gid);
+          return i.reply({ ...partnerPanel(gid, uid, uname), ...eph }).catch(() => {});
+        }
+        if (i.isButton() && i.customId === 'partnerin') {
+          const out = moveIn(gid, uid, uname);
+          if (out.error) return i.reply({ content: out.error, ...eph }).catch(() => {});
+          await i.update(partnerPanel(gid, uid, uname)).catch(() => {});
+          const line = adLine(out.role);
+          const e = new EmbedBuilder().setColor(0xeb459e).setTitle(`💞 ${out.role.name} 搬進來了！`)
+            .setDescription((line ? `💬 **「${line}」**\n\n` : '')
+              + `從今天起 **${out.role.name}** 住在你家（${out.used}/${out.slots}）。\n`
+              + `✨ 他的能力：**${out.skill.name}**${out.skill.buff_pct ? ` ＋${out.skill.buff_pct}%` : ''}\n`
+              + `⚠️ 每期會多一筆**伴侶稅**，請確認你養得起 —— 養不起可以請他搬走。`);
+          if (out.role.image_url) e.setThumbnail(absUrl(out.role.image_url));
+          return i.followUp({ embeds: [e], ...eph }).catch(() => {});
+        }
+        if (i.isButton() && i.customId.startsWith('partnerout:')) {
+          const rid = parseInt(i.customId.split(':')[1], 10);
+          const out = moveOut(gid, uid, rid);
+          if (out.error) return i.reply({ content: out.error, ...eph }).catch(() => {});
+          await i.update(partnerPanel(gid, uid, uname)).catch(() => {});
+          return i.followUp({
+            content: `**${out.role.name}** 收拾東西搬走了。好感度不會消失，之後還可以再請人搬進來（一樣是隨機的）。`,
             ...eph
           }).catch(() => {});
         }
@@ -439,4 +603,4 @@ function init(client) {
   console.log('  ↳ 好感度模組已載入（接轉盤角色／名字搜尋邀請）');
 }
 
-module.exports = { init, seedAffinity, seedGiftPrefs, lovePanel, strollPanel, stroll, strollEmbed, searchRoles };
+module.exports = { init, seedAffinity, seedGiftPrefs, lovePanel, strollPanel, stroll, strollEmbed, partnerPanel, partnersOf, moveIn, moveOut, partnerSkillText, searchRoles };

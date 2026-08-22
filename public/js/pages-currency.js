@@ -46,7 +46,12 @@ App.page('currency', {
           </td>
           <td style="font-size:13px;white-space:nowrap">
             ${p.home_level ? `🏠Lv${p.home_level}` : ''}${p.kitchen_level ? ` 🍳Lv${p.kitchen_level}` : ''}
+            ${p.partners ? ` 💞${p.partners}` : ''}
             ${p.shares ? `<br>📈${Number(p.shares).toLocaleString('en-US')} 股` : ''}
+          </td>
+          <td style="white-space:nowrap">
+            ${p.stamina_bonus ? `<b>${p.stamina_bonus > 0 ? '+' : ''}${p.stamina_bonus}</b>` : '<span class="hint">—</span>'}
+            <button class="btn tiny secondary" data-stam="${p.user_id}" data-name="${UI.esc(p.username || '')}" data-cur="${p.stamina_bonus || 0}" data-note="${UI.esc(p.stamina_note || '')}">調整</button>
           </td>
           <td style="white-space:nowrap">
             <button class="btn tiny secondary" data-coins="${p.user_id}" data-name="${UI.esc(p.username || '')}" data-cur="${p.coins}">增減貨幣</button>
@@ -96,7 +101,8 @@ App.page('currency', {
         <div class="table-wrap"><table class="list">
           <thead><tr><th>#</th><th>玩家</th><th>持有</th><th>累計賺取</th><th>圖鑑</th>
             <th>設施等級<div class="hint" style="font-weight:400;font-size:11px">農地/溫室/牧場/魚缸/孵化</div></th>
-            <th>家園·股</th><th></th></tr></thead>
+            <th>家園·股</th>
+            <th>體力上限<div class="hint" style="font-weight:400;font-size:11px">個別加減</div></th><th></th></tr></thead>
           <tbody id="plist">${rowsHTML()}</tbody>
         </table></div>
         <div class="hint" style="margin-top:8px">
@@ -173,6 +179,25 @@ App.page('currency', {
             const r = await POST(`/gather-players/${b.dataset.coins}/coins`, { delta });
             UI.ok(`已調整，餘額 ${Number(r.coins).toLocaleString('en-US')}`);
             App.go('currency');
+          }
+        });
+      });
+      el.querySelectorAll('[data-stam]').forEach(b => b.onclick = () => {
+        UI.modal({
+          title: `調整「${b.dataset.name || b.dataset.stam}」的每日體力上限`,
+          bodyHTML: `
+            <div class="hint" style="margin-bottom:8px">
+              全服每日體力是 <b>${c.daily_points || 0}</b> 點（釣魚挖礦與逛街共用）。
+              這裡是<b>只對這位玩家</b>的永久加減，例如他在別的活動達標就多給幾點。
+            </div>
+            <div class="field"><label>體力上限 ±（目前 ${b.dataset.cur}）</label>
+              <input name="stamina_bonus" type="number" value="${b.dataset.cur}"></div>
+            <div class="field"><label>備註（給管理員自己看）</label>
+              <input name="note" value="${b.dataset.note}" placeholder="例如：完成另一個遊戲的挑戰"></div>`,
+          onOk: async (back) => {
+            const body = H.collect(back);
+            await POST(`/gather-players/${b.dataset.stam}/stamina`, body);
+            UI.ok('已調整'); App.go('currency');
           }
         });
       });

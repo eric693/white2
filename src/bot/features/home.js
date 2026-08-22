@@ -32,18 +32,28 @@ const SEED_LEVELS = [
   [9, '湖畔豪邸', '🏯', '第二寵物區、收藏室', 550000, [['紫檀木', 400], ['水晶', 120], ['綠寶石', 80]], 40, 4, 1, 1, 10],
   [10, '私人莊園', '🏛️', '大型收藏室、宴會廳', 900000, [['千年神木', 450], ['綠寶石', 150], ['鑽石', 30]], 45, 5, 1, 1, 12],
   [11, '星光城堡', '🏰', '特殊家具、角色專屬房', 1500000, [['世界樹枝', 300], ['龍血木', 200], ['鑽石', 60], ['星辰礦', 40]], 50, 6, 1, 1, 15],
-  [12, '星耀領地', '🌌', '全功能．最高家園加成', 2500000, [['月光木', 250], ['龍血木', 300], ['隕石', 30], ['星辰礦', 80], ['鑽石', 100]], 60, 8, 1, 1, 20]
+  [12, '星耀領地', '🌌', '全功能．最高家園加成', 2500000, [['月光木', 250], ['龍血木', 300], ['隕石', 30], ['星辰礦', 80], ['鑽石', 100]], 60, 8, 1, 1, 20],
+  // ---- 13～15 階：給已經蓋到頂的人繼續有目標（材料吃重、金幣天價）----
+  [13, '雲上行館', '☁️', '同居名額 ＋1、家具 ×70', 5000000,
+    [['月光木', 400], ['世界樹枝', 250], ['隕石', 60], ['鳳凰羽', 5], ['星辰礦', 150]], 70, 10, 1, 1, 24],
+  [14, '天空之城', '🌠', '寵物 ×12、大型宴會廳', 12000000,
+    [['月光木', 600], ['龍血木', 500], ['隕石', 120], ['獨角獸', 3], ['鑽石', 250]], 85, 12, 1, 1, 28],
+  [15, '永恆星域', '✨', '全解鎖．家園加成上限', 30000000,
+    [['月光木', 900], ['世界樹枝', 600], ['龍血木', 600], ['隕石', 250], ['幼龍', 5], ['星辰礦', 400]], 100, 15, 1, 1, 35]
 ];
 
 function seedHome(gid) {
   hcfg(gid);
   try {
-    if (db.prepare('SELECT 1 FROM home_levels WHERE guild_id=? LIMIT 1').get(gid)) return;
+    // 逐階補齊（不是「有資料就整批跳過」）：之後加新階級時，既有伺服器也會自動拿到，
+    // 而且管理員改過的階級不會被蓋掉。
+    const has = db.prepare('SELECT 1 FROM home_levels WHERE guild_id=? AND level=?');
     const ins = db.prepare(`INSERT INTO home_levels
       (guild_id,level,name,emoji,unlocks,coins,materials,furniture_cap,pet_cap,kitchen_ok,visit_ok,home_buff_pct)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`);
     db.transaction(() => {
       for (const [lv, name, emoji, unlocks, coins, mats, fcap, pcap, kok, vok, buff] of SEED_LEVELS) {
+        if (has.get(gid, lv)) continue;
         ins.run(gid, lv, name, emoji, unlocks, coins,
           JSON.stringify(mats.map(([item, count]) => ({ item, count }))), fcap, pcap, kok, vok, buff);
       }

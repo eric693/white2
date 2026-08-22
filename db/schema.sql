@@ -1902,3 +1902,24 @@ CREATE TABLE IF NOT EXISTS stroll_stamina (
   met      INTEGER NOT NULL DEFAULT 0,   -- 今天遇到幾位角色（顯示用）
   PRIMARY KEY (guild_id, user_id)
 );
+
+-- 同居（原本的「邀請來家裡」升級版）：角色住進玩家家裡，每期要繳伴侶稅。
+-- 對象是隨機指定的 —— 玩家不能挑，只能決定要不要請他搬走再抽一次。
+CREATE TABLE IF NOT EXISTS home_partners (
+  guild_id   TEXT NOT NULL DEFAULT '',
+  user_id    TEXT NOT NULL,
+  role_id    INTEGER NOT NULL,
+  since      TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  paid_total INTEGER NOT NULL DEFAULT 0,   -- 累計繳過的伴侶稅
+  PRIMARY KEY (guild_id, user_id, role_id)
+);
+
+-- 個別玩家的體力上限調整：有些玩家在別的活動達標，管理員給他多一點每日體力
+CREATE TABLE IF NOT EXISTS player_limits (
+  guild_id       TEXT NOT NULL DEFAULT '',
+  user_id        TEXT NOT NULL,
+  stamina_bonus  INTEGER NOT NULL DEFAULT 0,   -- 每日體力上限 +N（永久，跟買來的當日體力不同）
+  note           TEXT NOT NULL DEFAULT '',
+  updated_at     TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  PRIMARY KEY (guild_id, user_id)
+);

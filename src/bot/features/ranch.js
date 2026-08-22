@@ -11,6 +11,7 @@ const { wallet, addCoins, addToBag, menuResult, safeMenu } = require('./gather')
 const { facilitySlots, facilityBonus, applySpeed } = require('./facility');
 const { logSteal, stealChannel } = require('../../util/steal');
 const { buffPct } = require('../../util/buffs');
+const cron = require('node-cron');
 
 const rcfg = (gid) => guildConfig('ranch_config', gid);
 const gcfg = (gid) => guildConfig('gather_config', gid);
@@ -265,7 +266,52 @@ function hatchEgg(gid, uid, uname, eggItemId) {
       `孵化室：**${used}/${hMax} 格**已使用\n時間到用 \`/孵化室\` 領取，會直接住進牧場空格。`) };
 }
 
+
+// ---- 同居角色幫忙收成 ----
+// 有「幫忙收成」能力的同居角色，每天早上會自動把成熟的牧場產物收進背包。
+// 收成本來就是純手動的例行公事，這是同居真正有感的功能性（也讓伴侶稅繳得比較甘願）。
+function partnerHarvest(gid) {
+  const helpers = db.prepare(
+    `SELECT p.user_id, r.name FROM home_partners p JOIN wheel_roles r ON r.id=p.role_id
+      WHERE p.guild_id=? AND p.skill='harvest'`).all(gid);
+  const out = [];
+  for (const h of helpers) {
+    try {
+      accrue(gid, h.user_id);
+      const slots = db.prepare('SELECT * FROM ranch_slots WHERE guild_id=? AND user_id=? AND pending > 0').all(gid, h.user_id);
+      if (!slots.length) continue;
+      const gained = new Map();
+      db.transaction(() => {
+        for (const s of slots) {
+          const a = animalById(gid, s.animal_id);
+          if (!a || !a.product_item_id) continue;
+          addToBag(gid, h.user_id, a.product_item_id, s.pending);
+          gained.set(a.product_item_id, (gained.get(a.product_item_id) || 0) + s.pending);
+          db.prepare('UPDATE ranch_slots SET pending=0 WHERE guild_id=? AND user_id=? AND slot=?').run(gid, h.user_id, s.slot);
+        }
+      })();
+      if (gained.size) out.push({ user_id: h.user_id, role: h.name, items: [...gained.entries()] });
+    } catch (e) { logError(gid, '同居協助收成失敗：', e.message); }
+  }
+  return out;
+}
+
 function init(client) {
+  // 每天早上 8:30 讓「會幫忙收成」的同居角色代收一次
+  cron.schedule('30 8 * * *', () => {
+    for (const [gid] of client.guilds.cache) {
+      try {
+        for (const r of partnerHarvest(gid)) {
+          client.users.fetch(r.user_id).then(u => u.send(
+            `🧺 **${r.role}** 幫你把牧場的產物收好了：\n`
+            + r.items.map(([id, n]) => { const p = productOf(id); return `　${p ? (p.emoji || '') + p.name : '產物'} ×${n}`; }).join('\n')
+            + '\n\n已經放進你的背包了。'
+          )).catch(() => {});
+        }
+      } catch (e) { logError(gid, '同居協助收成排程失敗：', e.message); }
+    }
+  }, { timezone: 'Asia/Taipei' });
+
   for (const [gid] of client.guilds.cache) {
     try { seedRanch(gid); } catch (e) { logError(gid, '牧場初始化失敗：', e.message); }
   }

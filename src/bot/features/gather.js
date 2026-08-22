@@ -510,9 +510,12 @@ function addPointsBonus(gid, uid, n) {
 function staminaState(gid, uid) {
   const c = cfg(gid);
   const base = Math.max(0, c.daily_points || 0);
-  const bonus = pointsBonusToday(gid, uid);
+  // 個別調整：管理員可以針對單一玩家永久 +N 點（例如他在別的活動達標）
+  const extra = (db.prepare('SELECT stamina_bonus FROM player_limits WHERE guild_id=? AND user_id=?').get(gid, uid) || {}).stamina_bonus || 0;
+  const bonus = pointsBonusToday(gid, uid);   // 今天買來的，明天就沒了
   const used = pointsUsedToday(gid, uid);
-  return { base, bonus, used, max: base + bonus, left: Math.max(0, base + bonus - used) };
+  const max = Math.max(0, base + extra + bonus);
+  return { base, extra, bonus, used, max, left: Math.max(0, max - used) };
 }
 const mapCost = (map) => Math.max(1, (map && map.cost) || 1);
 

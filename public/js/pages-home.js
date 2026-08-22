@@ -14,7 +14,7 @@ App.page('home', {
     const TABS = [
       ['config', '⚙️ 總設定'], ['levels', '🏠 房屋階級'], ['furniture', '🛋️ 家具'],
       ['kitchen', '🍳 廚房與料理'], ['pets', '🐾 寵物'], ['ach', '🏅 成就'],
-      ['affinity', '💕 好感度'], ['players', '👥 玩家現況']
+      ['affinity', '💕 好感度'], ['stroll', '🛍️ 逛街角色'], ['players', '👥 玩家現況']
     ];
     let tab = sessionStorage.getItem('w2_home_tab') || 'config';
     if (!TABS.some(t => t[0] === tab)) tab = 'config';
@@ -86,6 +86,25 @@ App.page('home', {
       body.querySelectorAll('[data-del]').forEach(b => b.onclick = () => c.del(rows.find(x => x.id == b.dataset.del)));
     };
 
+    const roleRows = (roles, kw) => {
+      const k = (kw || '').trim().toLowerCase();
+      const list = roles.filter(r => !k || String(r.name).toLowerCase().includes(k));
+      return list.map(r => `<tr>
+        <td>${UI.esc(r.name)}</td>
+        <td style="font-size:13px">${UI.esc(r.author || '')}</td>
+        <td>${r.enabled ? '✅' : '<span class="hint">停用</span>'}</td>
+        <td><label class="switch"><input type="checkbox" data-role="${r.id}" ${r.stroll_ok ? 'checked' : ''}> ${r.stroll_ok ? '會出現' : '不出現'}</label></td>
+      </tr>`).join('') || '<tr><td colspan="4" class="hint">找不到符合的角色</td></tr>';
+    };
+    const bindRoleToggles = (body) => {
+      body.querySelectorAll('[data-role]').forEach(cb => cb.onchange = async () => {
+        try {
+          await POST('/stroll-roles', { ids: [Number(cb.dataset.role)], stroll_ok: cb.checked });
+          cb.parentElement.lastChild.textContent = cb.checked ? ' 會出現' : ' 不出現';
+        } catch (e) { UI.err(e.message); cb.checked = !cb.checked; }
+      });
+    };
+
     // ---------- 各分頁 ----------
     const draw = async () => {
       const body = el.querySelector('#tabbody');
@@ -138,6 +157,17 @@ App.page('home', {
             <div class="hint" style="margin-bottom:10px">
               遇到誰是隨機的（玩家不能挑）；沒遇過的角色權重比較高，兩百多位角色才會輪流出場。
               角色會講的台詞在「角色轉盤」那一頁每位角色各自設定。
+            </div>
+
+            <h3 style="margin-top:18px">💞 同居</h3>
+            <div class="field">${H.toggle('partner_enabled', c.partner_enabled ?? 1, '開放同居（角色搬進玩家家裡，每期課伴侶稅）')}</div>
+            <div class="form-row">
+              <div class="field"><label>最多同時跟幾位同居</label><input name="partner_slots" type="number" min="1" value="${c.partner_slots ?? 1}"></div>
+              <div class="field"><label>好感度要到第幾階才可能同居</label><input name="partner_level" type="number" min="0" value="${c.partner_level ?? 6}"></div>
+            </div>
+            <div class="hint" style="margin-bottom:10px">
+              對象是<b>隨機</b>的（玩家不能挑要跟誰住，只能請他搬走再抽一次）—— 可以挑的話所有人都會選同一位。
+              伴侶稅的金額在「稅金」那一頁設定。
             </div>
 
             <h3 style="margin-top:18px">💸 用金幣代替材料</h3>
@@ -456,6 +486,44 @@ App.page('home', {
             </tbody></table></div>`;
         body.querySelector('#add').onclick = () => c.open();
         bindRows(body, c, rows);
+        return;
+      }
+
+      if (tab === 'stroll') {
+        const roles = await GET('/stroll-roles');
+        const authors = [...new Set(roles.map(r => (r.author || '').trim()))].sort();
+        const onCount = roles.filter(r => r.stroll_ok && r.enabled).length;
+        body.innerHTML = `
+          <div class="card">
+            <h3>🛍️ 誰會在逛街時出現</h3>
+            <div class="hint" style="margin-bottom:10px">
+              轉盤裡不是「角色」的項目（模擬器、活動介紹…），或不想讓他參與逛街的作者，可以在這裡排除。
+              目前<b>${onCount}</b> 位角色會在逛街時出現（同居對象也只從這份名單裡抽）。
+            </div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">
+              <div class="field" style="max-width:220px;margin:0"><label>依作者批次設定</label>
+                <select id="author">${authors.map(a => `<option value="${UI.esc(a)}">${UI.esc(a || '（沒有作者）')}（${roles.filter(r => (r.author || '').trim() === a).length}）</option>`).join('')}</select></div>
+              <button class="btn small" id="aon">整個作者開放</button>
+              <button class="btn small secondary" id="aoff">整個作者排除</button>
+              <div class="spacer" style="flex:1"></div>
+              <input id="kw" placeholder="搜尋角色名字" style="max-width:180px">
+            </div>
+            <div class="table-wrap" style="max-height:480px;overflow:auto"><table class="list">
+              <thead><tr><th>角色</th><th>作者</th><th>轉盤啟用</th><th>逛街出現</th></tr></thead>
+              <tbody id="rlist">${roleRows(roles, '')}</tbody>
+            </table></div>
+          </div>`;
+        const repaint = (kw) => { body.querySelector('#rlist').innerHTML = roleRows(roles, kw); bindRoleToggles(body); };
+        body.querySelector('#kw').oninput = (e) => repaint(e.target.value);
+        body.querySelector('#aon').onclick = async () => {
+          await POST('/stroll-roles', { author: body.querySelector('#author').value, stroll_ok: true });
+          UI.ok('已開放'); draw();
+        };
+        body.querySelector('#aoff').onclick = async () => {
+          await POST('/stroll-roles', { author: body.querySelector('#author').value, stroll_ok: false });
+          UI.ok('已排除'); draw();
+        };
+        bindRoleToggles(body);
         return;
       }
 

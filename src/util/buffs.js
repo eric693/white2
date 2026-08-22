@@ -86,13 +86,19 @@ function userBuffs(gid, uid, detail = false) {
     add(t.buff2_type, t.buff2_pct, `成就：${t.emoji || ''}${t.name}`);
   }
 
-  // ⑤ 料理等暫時性加成（過期的順手清掉，不必另外排程）
+  // ⑤ 同居角色的能力：搬進來時隨機決定的加成（要繳伴侶稅，所以這是付費換來的）
+  const partners = db.prepare(
+    `SELECT p.buff_type, p.buff_pct, r.name FROM home_partners p JOIN wheel_roles r ON r.id = p.role_id
+      WHERE p.guild_id=? AND p.user_id=? AND p.buff_pct > 0`).all(gid, uid);
+  for (const p of partners) add(p.buff_type, p.buff_pct, `同居：💞${p.name}`);
+
+  // ⑥ 料理等暫時性加成（過期的順手清掉，不必另外排程）
   const now = Date.now();
   db.prepare('DELETE FROM home_buffs WHERE guild_id=? AND user_id=? AND expire_ms <= ?').run(gid, uid, now);
   const temps = db.prepare('SELECT buff_type, buff_pct, source FROM home_buffs WHERE guild_id=? AND user_id=? AND expire_ms > ?').all(gid, uid, now);
   for (const t of temps) add(t.buff_type, t.buff_pct, `料理：${t.source}`);
 
-  // ⑥ 封頂：每一種加成各自壓在 buff_cap_pct 以內
+  // ⑦ 封頂：每一種加成各自壓在 buff_cap_pct 以內
   const cap = Math.max(0, hcfg(gid).buff_cap_pct ?? 30);
   const capped = {};
   for (const [type, pct] of Object.entries(total)) capped[type] = Math.min(cap, pct);

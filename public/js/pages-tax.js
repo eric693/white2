@@ -92,6 +92,21 @@ App.page('tax', {
           <div class="field"><label>前幾隻／條免稅</label><input name="breed_free" type="number" min="0" value="${c.breed_free ?? 1}"></div>
         </div>
 
+      <div class="card" style="max-width:820px">
+        <h3>💞 伴侶稅</h3>
+        <div class="field">${H.toggle('partner_enabled', c.partner_enabled ?? 1, '課伴侶稅（角色搬進家裡就要養）')}</div>
+        <div class="form-row">
+          <div class="field"><label>每位同居角色的基本額</label><input name="partner_base" type="number" min="0" value="${c.partner_base ?? 5000}"></div>
+          <div class="field"><label>好感度每一階再加課</label><input name="partner_per_lv" type="number" min="0" value="${c.partner_per_lv ?? 1500}"></div>
+        </div>
+        <div class="hint">例：基本 5,000 ＋ 每階 1,500，好感度 Lv.8 的同居對象每期就是 17,000。
+          關係越深越花錢，這是刻意的 —— 同居名額在「家園與成就」那頁設定。</div>
+
+        <h3 style="margin-top:18px">🌾 土地稅的等級加成</h3>
+        <div class="field"><label>設施每高一階，土地稅 +N%</label><input name="land_tier_pct" type="number" min="0" value="${c.land_tier_pct ?? 20}">
+          <div class="hint">12 階的大農場產量是入門田的好幾倍，稅不該一樣。0＝只按格數課稅（舊行為）。</div></div>
+      </div>
+
 
 
         <hr style="border:none;border-top:1px solid var(--border);margin:16px 0">

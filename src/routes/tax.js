@@ -39,6 +39,8 @@ router.put('/tax', (req, res) => {
        income_max_pct=@income_max_pct, income_flat=@income_flat, income_base=@income_base,
        land_enabled=@land_enabled, land_field=@land_field, land_greenhouse=@land_greenhouse, land_free=@land_free,
        breed_enabled=@breed_enabled, breed_animal=@breed_animal, breed_fish=@breed_fish, breed_free=@breed_free,
+       partner_enabled=@partner_enabled, partner_base=@partner_base, partner_per_lv=@partner_per_lv,
+       land_tier_pct=@land_tier_pct,
        stock_enabled=@stock_enabled, stock_pct=@stock_pct, stock_free=@stock_free,
        spend_enabled=@spend_enabled, spend_pct=@spend_pct, spend_free=@spend_free,
        liquidate_enabled=@liquidate_enabled, liquidate_order=@liquidate_order, no_debt=@no_debt,
@@ -71,6 +73,12 @@ router.put('/tax', (req, res) => {
     breed_animal: keep(b.breed_animal, 'breed_animal', v => int(v, 80, 0)),
     breed_fish: keep(b.breed_fish, 'breed_fish', v => int(v, 200, 0)),
     breed_free: keep(b.breed_free, 'breed_free', v => int(v, 1, 0)),
+    // 伴侶稅：同居角色每位的基本額 ＋ 好感度每階加課
+    partner_enabled: bool(b.partner_enabled, 'partner_enabled'),
+    partner_base: keep(b.partner_base, 'partner_base', v => int(v, 5000, 0)),
+    partner_per_lv: keep(b.partner_per_lv, 'partner_per_lv', v => int(v, 1500, 0)),
+    // 土地稅依設施等級加成（每階 +N%）
+    land_tier_pct: keep(b.land_tier_pct, 'land_tier_pct', v => int(v, 20, 0)),
     // 證券稅：按持股市值課
     stock_enabled: bool(b.stock_enabled, 'stock_enabled'),
     stock_pct: keep(b.stock_pct, 'stock_pct', v => Math.max(0, Math.min(100, Math.round(parseFloat(v) * 100) / 100 || 0))),
