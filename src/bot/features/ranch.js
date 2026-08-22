@@ -837,13 +837,27 @@ function init(client) {
         embed.setFooter({ text: defs.length
           ? `可孵化：${defs.map(d => `${d.egg_name}→${d.animal_name}`).join('、')}`
           : '目前沒有設定任何可孵化的蛋' });
-        const rows2 = (owned.length && hMaxNow > 0) ? [new ActionRowBuilder().addComponents(
-          new StringSelectMenuBuilder().setCustomId('hatchput').setPlaceholder('選要孵的蛋（下一步選數量）')
-            .addOptions(owned.slice(0, 25).map(d => ({
-              label: `${d.egg_name} → ${d.animal_name}`.slice(0, 100),
-              description: `${d.hatch_minutes} 分孵化${d.fail_pct ? `　失敗率 ${d.fail_pct}%` : ''}`.slice(0, 100),
-              value: String(d.egg_item_id), emoji: d.egg_emoji || '🥚'
-            })))) ] : [];
+        // 滿了就直接講清楚（以前選單照樣顯示，點下去才說滿了，看起來就像「沒有數量可選」）
+        const usedNow = remain.length;
+        const freeNow = Math.max(0, hMaxNow - usedNow);
+        if (hMaxNow > 0 && freeNow <= 0) {
+          embed.addFields({
+            name: '⚠️ 孵化室已滿',
+            value: `${usedNow}/${hMaxNow} 格都佔著，放不進新的蛋。\n`
+              + '先把孵好的領走（牧場要有空格），或用上面的選單直接賣掉，也可以去 `/設施商店` 升級孵化室。'
+          });
+        }
+        const rows2 = (owned.length && hMaxNow > 0 && freeNow > 0) ? [new ActionRowBuilder().addComponents(
+          new StringSelectMenuBuilder().setCustomId('hatchput').setPlaceholder(`選要孵的蛋（下一步選數量，還有 ${freeNow} 格）`)
+            .addOptions(owned.slice(0, 25).map(d => {
+              const have = (db.prepare('SELECT count FROM gather_inventory WHERE guild_id=? AND user_id=? AND item_id=?')
+                .get(gid, uid, d.egg_item_id) || {}).count || 0;
+              return {
+                label: `${d.egg_name} → ${d.animal_name}`.slice(0, 100),
+                description: `背包 ${have} 顆｜${d.hatch_minutes} 分／顆${d.fail_pct ? `　失敗率 ${d.fail_pct}%` : ''}`.slice(0, 100),
+                value: String(d.egg_item_id), emoji: d.egg_emoji || '🥚'
+              };
+            }))) ] : [];
         if (!owned.length && hMaxNow > 0) {
           embed.addFields({ name: '🥚 放蛋', value: '你背包裡目前沒有可孵化的蛋。養雞鴨鵝鵪鶉會生蛋，狩獵也可能撿到野鳥蛋。' });
         }
@@ -872,4 +886,4 @@ function init(client) {
   console.log('  ↳ 牧場經營模組已載入（養動物/每日產出/收成/偷偷樂/孵化室）');
 }
 
-module.exports = { init, seedRanch };
+module.exports = { init, seedRanch, hatchEgg, partnerHarvest };
