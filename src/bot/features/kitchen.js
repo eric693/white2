@@ -169,6 +169,45 @@ function upgradeKitchen(gid, uid, uname) {
   return { upgraded: k };
 }
 
+
+/** 廚房升級也開一條「材料折現」的天價捷徑（跟家園同一套倍率） */
+function kitchenBuyQuote(gid, uid, uname) {
+  const c = guildConfig('home_config', gid);
+  if (!c.buy_mats_enabled) return null;
+  const home = homeOf(gid, uid, uname);
+  if (!home.kitchen_built || home.kitchen_level >= kMax(gid)) return null;
+  const k = kLevel(gid, home.kitchen_level + 1);
+  if (!k) return null;
+  const mult = Math.max(100, c.buy_mats_mult || 5000) / 100;
+  let cost = 0; const short = [];
+  for (const m of parseMats(k.materials)) {
+    const lack = Math.max(0, m.count - bagCount(gid, uid, m.item));
+    if (!lack) continue;
+    const it = db.prepare('SELECT price FROM gather_items WHERE guild_id=? AND name=?').get(gid, m.item);
+    const unit = Math.max(1, (it ? it.price : 100));
+    cost += Math.ceil(unit * mult) * lack;
+    short.push({ item: m.item, lack, unit });
+  }
+  return { k, cost, short, mult, total: cost + k.coins };
+}
+
+function upgradeKitchenWithCoins(gid, uid, uname) {
+  const q = kitchenBuyQuote(gid, uid, uname);
+  if (!q) return { error: '目前沒有開放用金幣代替材料，或你的廚房已經滿級。' };
+  if (!q.short.length) return { error: '材料已經夠了，直接升級就好，不用多花錢。' };
+  const coins = wallet(gid, uid, uname).coins;
+  if (coins < q.total) return { error: `這條路很貴：合計 ${money(gcfg(gid), q.total)}，你還差 ${money(gcfg(gid), q.total - coins)}。` };
+  db.transaction(() => {
+    addCoins(gid, uid, uname, -q.total);
+    const partial = parseMats(q.k.materials)
+      .map(m => ({ item: m.item, count: Math.min(m.count, bagCount(gid, uid, m.item)) }))
+      .filter(m => m.count > 0);
+    if (partial.length) takeItems(gid, uid, partial);
+    db.prepare('UPDATE home_users SET kitchen_level=? WHERE guild_id=? AND user_id=?').run(q.k.level, gid, uid);
+  })();
+  return { upgraded: q.k, spent: q.total };
+}
+
 /** 下鍋 */
 function startCook(gid, uid, uname, recipeId) {
   const home = homeOf(gid, uid, uname);
@@ -297,6 +336,10 @@ function kitchenPanel(gid, uid, uname) {
   const btns = new ActionRowBuilder();
   if (ready) btns.addComponents(new ButtonBuilder().setCustomId('kcollect').setLabel(`✅ 領取 ${ready} 道`).setStyle(ButtonStyle.Success));
   btns.addComponents(new ButtonBuilder().setCustomId('kup').setLabel('⬆️ 升級廚房').setStyle(ButtonStyle.Secondary));
+  // 材料不夠但錢多的人：用天價金幣硬升
+  const kq = kitchenBuyQuote(gid, uid, uname);
+  if (kq && kq.short.length) btns.addComponents(
+    new ButtonBuilder().setCustomId('kbuy').setLabel(`💸 用金幣硬升（${kq.total.toLocaleString('en-US')}）`).setStyle(ButtonStyle.Secondary));
   rows.push(btns);
 
   const avail = recipesOf(gid).filter(r => r.min_kitchen <= home.kitchen_level).slice(0, 25);
@@ -339,6 +382,25 @@ function init(client) {
         if (out.error) return i.reply({ content: out.error, ...eph }).catch(() => {});
         await refresh();
         return i.followUp({ content: `🎉 廚房升級成 **Lv.${out.upgraded.level} ${out.upgraded.emoji || ''}${out.upgraded.name}**！\n完美料理機率 +${out.upgraded.perfect_pct}%，同時可烹飪 ${out.upgraded.level} 鍋。`, ...eph }).catch(() => {});
+      }
+      if (i.isButton() && i.customId === 'kbuy') {
+        const q = kitchenBuyQuote(gid, uid, uname);
+        if (!q || !q.short.length) return i.reply({ content: '材料已經夠了，直接按「升級廚房」就好。', ...eph }).catch(() => {});
+        const gc2 = gcfg(gid);
+        return i.reply({
+          content: `💸 **用金幣硬升廚房 Lv.${q.k.level}**\n`
+            + q.short.map(x => `　${x.item} ×${x.lack}　${money(gc2, Math.ceil(x.unit * q.mult) * x.lack)}`).join('\n')
+            + `\n　升級費　${money(gc2, q.k.coins)}\n**合計 ${money(gc2, q.total)}**`
+            + `\n\n⚠️ 材料照市價的 **${q.mult} 倍**收費，自己去挖永遠比較划算。`,
+          ...eph,
+          components: [new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId('kbuyok').setLabel('確定，錢不是問題').setStyle(ButtonStyle.Danger))]
+        }).catch(() => {});
+      }
+      if (i.isButton() && i.customId === 'kbuyok') {
+        const out = upgradeKitchenWithCoins(gid, uid, uname);
+        if (out.error) return i.update({ content: out.error, components: [] }).catch(() => {});
+        return i.update({ content: `🎉 花了 **${money(gcfg(gid), out.spent)}**，廚房直接升級成 **Lv.${out.upgraded.level} ${out.upgraded.emoji || ''}${out.upgraded.name}**！`, components: [] }).catch(() => {});
       }
       if (i.isButton() && i.customId === 'kcollect') {
         const out = collectCooked(gid, uid);

@@ -201,6 +201,83 @@ function seedMaterials(gid) {
   } catch (e) { logError(gid, '基礎素材補齊失敗：', e.message); }
 }
 
+
+// ---- 大師級工具（T4）與禮物工藝品 ----
+// 動機：中高階木材（楓木／櫻花木／檜木／黑檀木…）以前只有蓋房子跟少數家具會用，
+// 中期玩家囤一堆只能賣掉。這裡開兩條出海口：
+//   ① T4 工具：稀有度加成 100%、冷卻縮短 40%，材料吃高階木＋高階礦
+//   ② 禮物工藝品：木雕與花束，專門拿去送角色（好感度給得比一般物品高很多）
+// [kind, 名稱, emoji, tier, 售價(未除 PRICE_DIV), luck, cooldown_cut, 說明]
+const SEED_TOOLS_T4 = [
+  ['fish', '深海王者竿', '🔱', 4, 60000, 100, 40, '稀有度加成 100%、冷卻縮短 40%'],
+  ['mine', '星辰礦鎬', '🌠', 4, 60000, 100, 40, '稀有度加成 100%、冷卻縮短 40%'],
+  ['wood', '神木伐斧', '🌳', 4, 60000, 100, 40, '稀有度加成 100%、冷卻縮短 40%'],
+  ['forage', '月光提籃', '🌙', 4, 60000, 100, 40, '稀有度加成 100%、冷卻縮短 40%'],
+  ['hunt', '龍骨獵弓', '🐉', 4, 60000, 100, 40, '稀有度加成 100%、冷卻縮短 40%']
+];
+// T4 的鍛造材料：每一把都吃大量高階木材（這才是重點），再配該類的 SSR 素材
+const T4_MATS = {
+  fish:   [['檜木', 40], ['黑檀木', 20], ['水晶', 10], ['鯨魚', 2]],
+  mine:   [['楓木', 40], ['紫檀木', 20], ['鑽石', 5], ['星辰礦', 5]],
+  wood:   [['千年神木', 25], ['櫻花木', 40], ['金礦', 15], ['世界樹枝', 3]],
+  forage: [['櫻花木', 40], ['檜木', 25], ['靈芝', 10], ['四葉幸運草', 2]],
+  hunt:   [['黑檀木', 35], ['楓木', 30], ['銀礦', 20], ['幼龍', 2]]
+};
+// 禮物工藝品：[名稱, emoji, 售價(未除 PRICE_DIV), 材料, 說明]
+const SEED_GIFTS = [
+  ['木雕小鹿', '🦌', 900, [['楓木', 15], ['樹皮', 10]], '手工木雕，角色收到都會愣一下'],
+  ['櫻花木梳', '🌸', 1400, [['櫻花木', 12], ['松脂', 6]], '梳齒磨得很細，帶著淡淡花香'],
+  ['檜木香盒', '🪵', 2000, [['檜木', 15], ['松脂', 10], ['蜂蜜', 5]], '打開就是一整座山的味道'],
+  ['四季花束', '💐', 2600, [['玫瑰', 5], ['百合', 4], ['鬱金香', 4], ['藤蔓', 6]], '沒有人收到花束會不開心'],
+  ['星光花冠', '👑', 6000, [['月光花', 3], ['星辰花', 2], ['櫻花', 6], ['銀礦', 10]], '戴上去的人會發光（真的）'],
+  ['神木護符', '🧿', 12000, [['世界樹枝', 3], ['千年神木', 10], ['水晶', 8]], '據說能擋一次災厄']
+];
+
+function seedToolsT4AndGifts(gid) {
+  try {
+    const itemId = (name) => (db.prepare('SELECT id FROM gather_items WHERE guild_id=? AND name=?').get(gid, name) || {}).id;
+    const toMats = (list) => list.map(([item, count]) => ({ item_id: itemId(item), count })).filter(m => m.item_id);
+
+    db.transaction(() => {
+      // ① T4 工具（逐把補齊，既有伺服器也拿得到）
+      const hasTool = db.prepare('SELECT id FROM gather_tools WHERE guild_id=? AND kind=? AND name=?');
+      const insTool = db.prepare('INSERT INTO gather_tools (guild_id,kind,name,emoji,tier,price,luck,cooldown_cut,description) VALUES (?,?,?,?,?,?,?,?,?)');
+      const insRec = db.prepare(
+        `INSERT INTO gather_recipes (guild_id,kind,name,emoji,result_type,result_id,result_count,materials,cost,success_rate,fail_keep,description,enabled)
+         VALUES (?, 'craft', ?, ?, ?, ?, 1, ?, ?, ?, 0, ?, 1)`);
+      for (const [kind, name, emoji, tier, price, luck, cut, desc] of SEED_TOOLS_T4) {
+        let row = hasTool.get(gid, kind, name);
+        if (!row) {
+          const r = insTool.run(gid, kind, name, emoji, tier, Math.max(1, Math.round(price / PRICE_DIV)), luck, cut, desc);
+          row = { id: r.lastInsertRowid };
+        }
+        const hasRec = db.prepare("SELECT 1 FROM gather_recipes WHERE guild_id=? AND result_type='tool' AND result_id=?").get(gid, row.id);
+        const mats = toMats(T4_MATS[kind] || []);
+        if (!hasRec && mats.length >= 3) {
+          insRec.run(gid, name, emoji, 'tool', row.id, JSON.stringify(mats), 5000, 60,
+            `大師級工具：材料吃重（大量高階木材），有 40% 失敗率，但一把抵三把`);
+        }
+      }
+
+      // ② 禮物工藝品：先建物品（kind='craft'，不會出現在採集掉落池），再建製作配方
+      const hasItem = db.prepare('SELECT id FROM gather_items WHERE guild_id=? AND name=?');
+      const insItem = db.prepare("INSERT INTO gather_items (guild_id,kind,name,emoji,rarity,weight,price) VALUES (?,'craft',?,?,'SR',0,?)");
+      for (const [name, emoji, price, matList, desc] of SEED_GIFTS) {
+        let it = hasItem.get(gid, name);
+        if (!it) {
+          const r = insItem.run(gid, name, emoji, Math.max(1, Math.round(price / PRICE_DIV)));
+          it = { id: r.lastInsertRowid };
+        }
+        const hasRec = db.prepare("SELECT 1 FROM gather_recipes WHERE guild_id=? AND result_type='item' AND result_id=?").get(gid, it.id);
+        const mats = toMats(matList);
+        if (!hasRec && mats.length) {
+          insRec.run(gid, name, emoji, 'item', it.id, JSON.stringify(mats), 0, 100, `${desc}（拿去 \`/送禮\` 給角色，好感度加得特別多）`);
+        }
+      }
+    })();
+  } catch (e) { logError(gid, '大師工具／禮物工藝品建立失敗：', e.message); }
+}
+
 function seedGuild(gid) {
   cfg(gid);
   seedMaps(gid);
@@ -229,6 +306,7 @@ function seedGuild(gid) {
   try { tx(); } catch (e) { logError(gid, '釣魚挖礦預設內容建立失敗：', e.message); }
   seedMaterials(gid);
   seedRecipesAndQuests(gid);
+  seedToolsT4AndGifts(gid);   // 要在 seedToolRecipes 之前：T4 用專屬的高階木材配方，不要被通用配方蓋過去
   seedToolRecipes(gid);   // 每把 T2/T3 工具都自動有鍛造配方
 }
 

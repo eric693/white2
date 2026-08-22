@@ -236,6 +236,16 @@ ensureColumns('title_defs', {
   hint: "TEXT NOT NULL DEFAULT ''"          // 顯示給玩家的任務提示
 });
 
+// 設施等級再加一條「產量加成」：升級除了縮短時間，也能直接多產（牧場多產蛋、魚缸多產星幣）
+ensureColumns('facility_defs',  { yield_pct: 'INTEGER NOT NULL DEFAULT 0' });
+ensureColumns('facility_owned', { yield_pct: 'INTEGER NOT NULL DEFAULT 0' });
+
+// 「用金幣代替材料」：給錢多到沒地方花的人一個出海口，但價格是天價（材料市價 × 倍率）
+ensureColumns('home_config', {
+  buy_mats_enabled: 'INTEGER NOT NULL DEFAULT 1',
+  buy_mats_mult:    'INTEGER NOT NULL DEFAULT 5000'   // 5000＝材料市價的 50 倍
+});
+
 // 家園簽到設定：基礎金幣、連續加碼、滿週獎勵
 ensureColumns('home_config', {
   checkin_enabled: 'INTEGER NOT NULL DEFAULT 1',

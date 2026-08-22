@@ -40,6 +40,30 @@ function seedAffinity(gid) {
   } catch (e) { logError(gid, '好感度階級建立失敗：', e.message); }
 }
 
+
+// 工藝禮物的預設喜好：木雕與花束是「專門做來送人的東西」，所以每位角色都特別喜歡。
+// 走逐筆補齊（新角色加進轉盤後也會自動有），管理員之後想單獨調某個角色照樣蓋得過去。
+const CRAFT_GIFTS = [
+  ['木雕小鹿', 200], ['櫻花木梳', 220], ['檜木香盒', 240],
+  ['四季花束', 260], ['星光花冠', 300], ['神木護符', 300]
+];
+function seedGiftPrefs(gid) {
+  try {
+    const roles = db.prepare('SELECT id FROM wheel_roles WHERE guild_id=? AND enabled=1').all(gid);
+    if (!roles.length) return;
+    const has = db.prepare('SELECT 1 FROM affinity_prefs WHERE guild_id=? AND role_id=? AND item=?');
+    const ins = db.prepare('INSERT INTO affinity_prefs (guild_id,role_id,item,weight) VALUES (?,?,?,?)');
+    db.transaction(() => {
+      for (const r of roles) {
+        for (const [item, weight] of CRAFT_GIFTS) {
+          if (has.get(gid, r.id, item)) continue;
+          ins.run(gid, r.id, item, weight);
+        }
+      }
+    })();
+  } catch (e) { logError(gid, '禮物喜好建立失敗：', e.message); }
+}
+
 const levelsOf = (gid) => db.prepare('SELECT * FROM affinity_levels WHERE guild_id=? ORDER BY level').all(gid);
 const levelName = (gid, lv) => (db.prepare('SELECT name FROM affinity_levels WHERE guild_id=? AND level=?').get(gid, lv) || {}).name || '陌生人';
 const roleOf = (gid, rid) => db.prepare('SELECT * FROM wheel_roles WHERE guild_id=? AND id=? AND enabled=1').get(gid, rid);
@@ -205,6 +229,7 @@ function roleCard(gid, uid, role, extra) {
 }
 
 function init(client) {
+  for (const [gid] of client.guilds.cache) { try { seedGiftPrefs(gid); } catch {} }
   for (const [gid] of client.guilds.cache) {
     try { seedHome(gid); seedAffinity(gid); } catch (e) { logError(gid, '好感度初始化失敗：', e.message); }
   }

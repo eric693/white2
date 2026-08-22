@@ -72,6 +72,8 @@ function accrue(gid, uid) {
   const upd = db.prepare('UPDATE aquarium_slots SET pending=?, last_produce_ms=? WHERE guild_id=? AND user_id=? AND slot=?');
   const del = db.prepare('DELETE FROM aquarium_slots WHERE guild_id=? AND user_id=? AND slot=?');
   const alive = []; const died = [];
+  // 魚缸等級的「產量加成」：升級不只多格子，產出的星幣也變多
+  const yieldPct = facilityBonus(gid, uid, 'aquarium').yield || 0;
   for (const s of rows) {
     const f = fishById(gid, s.fish_id);
     if (!f) { del.run(gid, uid, s.slot); continue; }
@@ -80,8 +82,9 @@ function accrue(gid, uid) {
     const from = s.last_produce_ms || now;
     const to = Math.min(now, fed);
     if (to > from) {
-      const cap = Math.max(1, f.coin_per_day) * Math.max(1, c.max_accrue_days);
-      const earned = Math.floor((to - from) * Math.max(0, f.coin_per_day) / 86400000);
+      const cap = Math.max(1, Math.floor(f.coin_per_day * (1 + yieldPct / 100))) * Math.max(1, c.max_accrue_days);
+      const perDay = Math.floor(Math.max(0, f.coin_per_day) * (1 + yieldPct / 100));
+      const earned = Math.floor((to - from) * perDay / 86400000);
       const pending = Math.min(cap, s.pending + earned);
       // 產滿上限就停產（跟牧場一樣，逼玩家回來領），時間指標推到已結算的位置
       s.pending = pending;

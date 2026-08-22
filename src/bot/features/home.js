@@ -117,6 +117,55 @@ function doUpgrade(gid, uid, uname) {
   return { upgraded: chk.next };
 }
 
+
+/**
+ * 「缺的材料直接用金幣買」的價格。
+ * 刻意設計成天價（預設材料市價的 50 倍）：這是給身家幾千萬、東西買不完的人用的星幣出海口，
+ * 不是給一般玩家跳過採集的捷徑 —— 自己去挖永遠比較划算。
+ */
+function buyMatsQuote(gid, uid, uname) {
+  const c = hcfg(gid);
+  if (!c.buy_mats_enabled) return null;
+  const chk = upgradeCheck(gid, uid, uname);
+  if (chk.maxed) return null;
+  const mult = Math.max(100, c.buy_mats_mult || 5000) / 100;
+  let cost = 0;
+  const short = [];
+  for (const m of chk.mats) {
+    const have = bagCount(gid, uid, m.item);
+    const lack = Math.max(0, m.count - have);
+    if (!lack) continue;
+    const it = db.prepare('SELECT price FROM gather_items WHERE guild_id=? AND name=?').get(gid, m.item);
+    const unit = Math.max(1, (it ? it.price : 100));
+    cost += Math.ceil(unit * mult) * lack;
+    short.push({ item: m.item, lack, unit });
+  }
+  return { chk, cost, short, mult };
+}
+
+/** 直接用金幣補齊缺的材料並升級（一次扣掉升級金幣＋材料折現） */
+function upgradeWithCoins(gid, uid, uname) {
+  const q = buyMatsQuote(gid, uid, uname);
+  if (!q) return { error: '目前沒有開放用金幣代替材料。' };
+  if (q.chk.maxed) return { error: '你的家園已經是最高階了。' };
+  if (!q.short.length) return { error: '你的材料已經夠了，直接按「升級家園」就好，不用多花錢。' };
+  const total = q.cost + q.chk.next.coins;
+  const coins = wallet(gid, uid, uname).coins;
+  if (coins < total) return { error: `這條路很貴：材料折現 ${money(gcfg(gid), q.cost)} ＋ 升級費 ${money(gcfg(gid), q.chk.next.coins)}，總共 ${money(gcfg(gid), total)}，你還差 ${money(gcfg(gid), total - coins)}。` };
+  try {
+    db.transaction(() => {
+      addCoins(gid, uid, uname, -total);
+      // 有的材料就照收，缺的部分是花錢買掉的
+      const partial = q.chk.mats
+        .map(m => ({ item: m.item, count: Math.min(m.count, bagCount(gid, uid, m.item)) }))
+        .filter(m => m.count > 0);
+      if (partial.length) takeItems(gid, uid, partial);
+      db.prepare('UPDATE home_users SET level=? WHERE guild_id=? AND user_id=?').run(q.chk.next.level, gid, uid);
+    })();
+  } catch (e) { return { error: `升級失敗：${e.message}` }; }
+  return { upgraded: q.chk.next, spent: total, bought: q.short };
+}
+
 // ---- /我的家 主面板：按鈕分頁，切換時直接改同一則訊息，不用重打指令 ----
 const NAV = (active) => new ActionRowBuilder().addComponents(
   ...[['home', '🏠 房屋'], ['kitchen', '🍳 廚房'], ['furn', '🛋️ 家具'], ['pet', '🐾 寵物'], ['love', '💕 約會']]
@@ -153,6 +202,12 @@ function homePanel(gid, uid, uname, displayName) {
   if (!chk.maxed) btns.addComponents(
     new ButtonBuilder().setCustomId('homeup').setLabel(`升級家園（Lv.${chk.next.level}）`)
       .setStyle(ButtonStyle.Success).setDisabled(!chk.ok));
+  // 「用金幣硬升」：材料不夠但錢多到沒地方花的人專用，價格是天價
+  const quote = chk.maxed ? null : buyMatsQuote(gid, uid, uname);
+  if (quote && quote.short.length) btns.addComponents(
+    new ButtonBuilder().setCustomId('homebuy')
+      .setLabel(`💸 用金幣硬升（${(quote.cost + chk.next.coins).toLocaleString('en-US')}）`)
+      .setStyle(ButtonStyle.Secondary));
   btns.addComponents(
     new ButtonBuilder().setCustomId('homecard').setLabel('🖼️ 家園狀態卡').setStyle(ButtonStyle.Primary),
     new ButtonBuilder().setCustomId('homenav:checkin').setLabel('📅 簽到').setStyle(ButtonStyle.Secondary));
@@ -405,6 +460,32 @@ function init(client) {
             + `　房屋 Lv.${out.home.level} +${out.homeBonus.toLocaleString('en-US')}`
             + (out.full ? `\n🎉 本週七天全勤！額外 +${out.weekBonus.toLocaleString('en-US')}` : ''),
           flags: MessageFlags.Ephemeral
+        }).catch(() => {});
+      }
+
+      // 用金幣硬升（材料折現，天價）——先問一次，避免手滑噴掉幾千萬
+      if (i.isButton() && i.customId === 'homebuy') {
+        seedHome(gid);
+        const q = buyMatsQuote(gid, uid, uname);
+        if (!q || !q.short.length) return i.reply({ content: '你的材料已經夠了，直接按「升級家園」就好。', flags: MessageFlags.Ephemeral }).catch(() => {});
+        const gc2 = gcfg(gid);
+        return i.reply({
+          content: `💸 **用金幣硬升 Lv.${q.chk.next.level}**\n`
+            + q.short.map(x => `　${x.item} ×${x.lack}　${money(gc2, Math.ceil(x.unit * q.mult) * x.lack)}`).join('\n')
+            + `\n　升級費　${money(gc2, q.chk.next.coins)}`
+            + `\n**合計 ${money(gc2, q.cost + q.chk.next.coins)}**`
+            + `\n\n⚠️ 材料是照市價的 **${q.mult} 倍**收費 —— 自己去挖永遠比較划算，這是給錢多到沒地方花的人用的。`,
+          flags: MessageFlags.Ephemeral,
+          components: [new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId('homebuyok').setLabel('確定，錢不是問題').setStyle(ButtonStyle.Danger))]
+        }).catch(() => {});
+      }
+      if (i.isButton() && i.customId === 'homebuyok') {
+        const out = upgradeWithCoins(gid, uid, uname);
+        if (out.error) return i.update({ content: out.error, components: [] }).catch(() => {});
+        return i.update({
+          content: `🎉 花了 **${money(gcfg(gid), out.spent)}**，你的家園直接升級成 **Lv.${out.upgraded.level} ${out.upgraded.emoji || ''}${out.upgraded.name}**\n解鎖：${out.upgraded.unlocks || '—'}`,
+          components: []
         }).catch(() => {});
       }
 

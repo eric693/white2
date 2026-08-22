@@ -119,7 +119,9 @@ function intervalMs(a) {
 function accrue(gid, uid) {
   const c = rcfg(gid);
   const now = Date.now();
-  const speed = facilityBonus(gid, uid, 'ranch').speed;   // 牧場等級 → 產出時間縮短 %
+  const fb = facilityBonus(gid, uid, 'ranch');
+  const speed = fb.speed;                                  // 牧場等級 → 產出時間縮短 %
+  const yieldPct = fb.yield || 0;                          // 牧場等級 → 每次產出的量變多
   const slots = db.prepare('SELECT * FROM ranch_slots WHERE guild_id=? AND user_id=?').all(gid, uid);
   const upd = db.prepare('UPDATE ranch_slots SET pending=?, last_produce_ms=? WHERE guild_id=? AND user_id=? AND slot=?');
   for (const s of slots) {
@@ -129,11 +131,13 @@ function accrue(gid, uid) {
     const iv = applySpeed(intervalMs(a), speed);
     const units = Math.floor((now - s.last_produce_ms) / iv);
     if (units <= 0) continue;
-    const cap = Math.max(1, a.produce_per_day) * Math.max(1, c.max_accrue_days);
-    const pending = Math.min(cap, s.pending + units);
+    // 產量加成：每一單位產出乘上倍率（無條件捨去，但至少 1）
+    const gained = Math.max(units, Math.floor(units * (1 + yieldPct / 100)));
+    const cap = Math.max(1, Math.floor(a.produce_per_day * (1 + yieldPct / 100))) * Math.max(1, c.max_accrue_days);
+    const pending = Math.min(cap, s.pending + gained);
     const added = pending - s.pending;
     // 未滿：時間往前推 added 個間隔（餘數保留）；已滿：計時暫停到現在，收成後才重新開始
-    const nextMs = pending >= cap ? now : s.last_produce_ms + added * iv;
+    const nextMs = pending >= cap ? now : s.last_produce_ms + units * iv;
     upd.run(pending, nextMs, gid, uid, s.slot);
     s.pending = pending; s.last_produce_ms = nextMs;
   }

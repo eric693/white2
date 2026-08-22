@@ -43,16 +43,50 @@ const SEED_FACILITIES = [
   ['aquarium', 3, '大型水族館', '🐋', 50000, 8, '八格，被偷魚成功率 -25%', 0, 25]
 ];
 
+
+// ---- 4～12 階：讓玩家有得慢慢升 ----
+// 玩家反應「三階太快就頂了」，所以每種設施補到 12 階。每一階都同時給三件事的其中兩件：
+// 更多格子、產出更快（speed）、產量更多（yield）；牧場與魚缸另外加防竊。
+// 價格是等比成長（× 2.4／階），頂階要幾千萬 —— 那是給後期玩家長期投資用的星幣出海口。
+const TIER_NAMES = {
+  field:      ['', '', '', '梯田農場', '灌溉農場', '有機農場', '智慧農場', '大型農業區', '穀倉帝國', '雲頂梯田', '豐饒聖地', '大地之心'],
+  greenhouse: ['', '', '', '雙層溫室', '恆溫花房', '香草莊園', '蘭花館', '空中花園', '四季花都', '琉璃花宮', '花神殿堂', '永春之庭'],
+  ranch:      ['', '', '', '山谷牧場', '高原牧場', '牧業合作社', '現代畜牧場', '牧業集團', '大草原領地', '雲頂牧野', '牧神之地', '豐牧聖域'],
+  hatch:      ['', '', '', '孵育工坊', '恆溫孵化室', '育種研究所', '基因實驗室', '生命方舟', '孵化聖殿', '龍蛋巢穴', '創生之室', '生命樹洞'],
+  aquarium:   ['', '', '', '深海觀景箱', '珊瑚礁生態缸', '海洋展示館', '深海研究站', '海底圓頂', '藍色殿堂', '深淵之窗', '海神水域', '龍宮']
+};
+const TIER_EMOJI = { field: '🌾', greenhouse: '🌸', ranch: '🐄', hatch: '🥚', aquarium: '🐳' };
+
+function highTiers() {
+  const out = [];
+  for (const type of Object.keys(TIER_NAMES)) {
+    for (let tier = 4; tier <= 12; tier++) {
+      const step = tier - 3;                                  // 1..9
+      const price = Math.round(50000 * Math.pow(2.4, step));   // 12 萬 → 約 6,600 萬
+      const slots = 8 + step * 2;                              // 10 → 26 格
+      const speed = ['aquarium'].includes(type) ? 0 : Math.min(70, 25 + step * 5);
+      const yieldPct = Math.min(80, step * 7);                 // 產量 +7% ～ +63%
+      const resist = ['ranch', 'aquarium'].includes(type) ? Math.min(60, 25 + step * 4) : 0;
+      const bits = [`${slots} 格`];
+      if (speed) bits.push(`產出快 ${speed}%`);
+      bits.push(`產量 +${yieldPct}%`);
+      if (resist) bits.push(`被偷成功率 -${resist}%`);
+      out.push([type, tier, TIER_NAMES[type][tier - 1], TIER_EMOJI[type], price, slots, bits.join('、'), speed, resist, yieldPct]);
+    }
+  }
+  return out;
+}
+
 function seedFacilities(gid) {
   try {
     const has = db.prepare('SELECT 1 FROM facility_defs WHERE guild_id=? AND type=? AND tier=?');
     const ins = db.prepare(
-      'INSERT INTO facility_defs (guild_id,type,tier,name,emoji,price,slots,description,sort,speed_pct,resist_pct) VALUES (?,?,?,?,?,?,?,?,?,?,?)');
+      'INSERT INTO facility_defs (guild_id,type,tier,name,emoji,price,slots,description,sort,speed_pct,resist_pct,yield_pct) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)');
     const tx = db.transaction(() => {
-      SEED_FACILITIES.forEach((f, idx) => {
-        const [type, tier, name, emoji, price, slots, desc, speed = 0, resist = 0] = f;
+      [...SEED_FACILITIES, ...highTiers()].forEach((f, idx) => {
+        const [type, tier, name, emoji, price, slots, desc, speed = 0, resist = 0, yieldPct = 0] = f;
         if (has.get(gid, type, tier)) return;
-        ins.run(gid, type, tier, name, emoji, price, slots, desc, idx, speed, resist);
+        ins.run(gid, type, tier, name, emoji, price, slots, desc, idx, speed, resist, yieldPct);
       });
     });
     tx();
@@ -66,8 +100,8 @@ function facilitySlots(gid, uid, type) {
 }
 // 玩家目前設施提供的加成：{ speed, resist }（沒買回 0）
 function facilityBonus(gid, uid, type) {
-  const row = db.prepare('SELECT speed_pct, resist_pct FROM facility_owned WHERE guild_id=? AND user_id=? AND type=?').get(gid, uid, type);
-  return { speed: row ? row.speed_pct : 0, resist: row ? row.resist_pct : 0 };
+  const row = db.prepare('SELECT speed_pct, resist_pct, yield_pct FROM facility_owned WHERE guild_id=? AND user_id=? AND type=?').get(gid, uid, type);
+  return { speed: row ? row.speed_pct : 0, resist: row ? row.resist_pct : 0, yield: row ? (row.yield_pct || 0) : 0 };
 }
 // 把一段時間套上加速％（最多縮到 10%，避免設成 100% 直接變 0 秒）
 const applySpeed = (ms, speedPct) => Math.max(Math.round(ms * 0.1), Math.round(ms * (1 - Math.min(90, Math.max(0, speedPct)) / 100)));
@@ -134,10 +168,11 @@ function buy(gid, uid, uname, defId) {
   const tx = db.transaction(() => {
     db.prepare('UPDATE econ_wallets SET coins = coins - ? WHERE guild_id=? AND user_id=?').run(d.price, gid, uid);
     db.prepare(
-      `INSERT INTO facility_owned (guild_id,user_id,type,tier,slots,speed_pct,resist_pct) VALUES (?,?,?,?,?,?,?)
+      `INSERT INTO facility_owned (guild_id,user_id,type,tier,slots,speed_pct,resist_pct,yield_pct) VALUES (?,?,?,?,?,?,?,?)
        ON CONFLICT(guild_id,user_id,type) DO UPDATE SET tier=excluded.tier, slots=excluded.slots,
-         speed_pct=excluded.speed_pct, resist_pct=excluded.resist_pct, bought_at=datetime('now','localtime')`
-    ).run(gid, uid, d.type, d.tier, d.slots, d.speed_pct, d.resist_pct);
+         speed_pct=excluded.speed_pct, resist_pct=excluded.resist_pct, yield_pct=excluded.yield_pct,
+         bought_at=datetime('now','localtime')`
+    ).run(gid, uid, d.type, d.tier, d.slots, d.speed_pct, d.resist_pct, d.yield_pct || 0);
   });
   tx();
   return { def: d, prevTier: cur, coins: wallet(gid, uid, uname).coins };
