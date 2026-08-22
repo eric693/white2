@@ -137,7 +137,9 @@ App.page('news', {
           <div class="field"><label>標題</label><input name="headline" placeholder="🥚 蛋雞流感席捲南區牧場"></div>
           <div class="field"><label>內文</label><textarea name="body" rows="3" placeholder="產蛋量預估下滑三成，蛋商已開始搶貨。"></textarea></div>
           <div class="form-row">
-            <div class="field"><label>開始時間（幾點播報，留空＝馬上）</label><input name="start_at" type="datetime-local"></div>
+            <div class="field"><label>開始時間（只到整點，留空＝馬上）</label>
+              <input name="start_at" type="datetime-local" step="3600">
+              <div class="hint">分鐘會自動歸零 —— 快報本來就是整點結算的，填 14:37 也只會在 14:00 那一輪生效。</div></div>
             <div class="field"><label>持續（小時）</label><input name="duration_h" type="number" min="1" max="168" value="3"></div>
           </div>
           <div class="hint">例：開始 12:00、持續 3 小時 → 12:00～15:00 這段時間，選的股票<strong>每小時都朝設定方向漲/跌</strong>，物價倍率也維持。</div>
@@ -168,7 +170,13 @@ App.page('news', {
           if (!effects.length && !stock_fx.length) { UI.err('至少要加一條影響'); return false; }
           try {
             const startAt = v('start_at');
-            const effect_ts = startAt ? new Date(startAt).getTime() : 0;
+            // 一律對齊整點：股價與物價都是整點結算，分鐘填了也沒有意義
+            let effect_ts = 0;
+            if (startAt) {
+              const d = new Date(startAt);
+              d.setMinutes(0, 0, 0);
+              effect_ts = d.getTime();
+            }
             await POST('/market-news', {
               headline: v('headline'), body: v('body'), image_url: v('image_url'),
               duration_h: parseInt(v('duration_h'), 10) || 3, effects, stock_fx, effect_ts

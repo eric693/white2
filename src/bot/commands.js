@@ -1,4 +1,8 @@
 // 全部 slash 指令定義（共用）。bot/index.js 進伺服器時即時註冊、scripts/register-commands.js 手動註冊都用這份。
+//
+// 遊戲指令的說明一律加上「【遊戲】」前綴：玩家在指令列表看到的是說明文字，
+// 沒有前綴時分不出哪些是遊戲、哪些是管理功能，常常亂按。前綴在最後統一套用（見檔案結尾），
+// 不用每一行手動加，之後新增遊戲指令也只要把名字加進 GAME_COMMANDS 就好。
 const { SlashCommandBuilder, ChannelType, PermissionFlagsBits } = require('discord.js');
 
 const builders = [
@@ -240,6 +244,30 @@ const builders = [
 
 
 
+// ---- 遊戲指令：說明統一加上「【遊戲】」前綴 ----
+// 冒險經濟那一整套都算遊戲；音樂、抽獎、警告、客服單這些管理／互動功能不加。
+const GAME_COMMANDS = new Set([
+  '釣魚', '挖礦', '伐木', '採集', '狩獵', '錢包', '背包', '賣出', '商店', '購買', '圖鑑', '富豪榜',
+  '轉帳', '製作', '鍛造', '配方', '任務', '抽籤', '狀態', '修理', '地圖', '交易',
+  '牧場', '畜牧商店', '飼養', '收成', '放生', '偷', '孵化', '孵化室',
+  '魚缸', '水族商店', '養魚', '餵魚', '撈金', '賣魚', '偷魚',
+  '我的家', '升級家園', '家園卡', '簽到', '家園網頁', '家具', '廚房', '烹飪', '寵物', '寵物改名',
+  '成就', '送禮', '邀請', '好感度', '設施商店', '稅單', '捐款', '基金會', '拍賣',
+  '貸款', '信用貸款', '還款', '幫助', '冒險面板',
+  '種子商店', '種植', '農地', '溫室', '採收', '特殊商店', '兌換',
+  '行情', '股市', '個股', '買股', '賣股', '持股', '股神榜'
+]);
+const GAME_PREFIX = '【遊戲】';
+for (const cmd of builders) {
+  const json = typeof cmd.toJSON === 'function' ? cmd.toJSON() : cmd;
+  if (!GAME_COMMANDS.has(json.name)) continue;
+  const desc = json.description || '';
+  if (desc.startsWith(GAME_PREFIX)) continue;
+  // Discord 的說明上限是 100 字，加了前綴超過就截掉尾巴（現況最長 33 字，實務上不會發生）
+  cmd.setDescription((GAME_PREFIX + desc).slice(0, 100));
+}
+
 const commands = builders.map(c => c.toJSON());
+
 
 module.exports = { builders, commands };

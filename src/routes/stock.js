@@ -175,7 +175,7 @@ router.post('/market-news', guardModule('news'), (req, res) => {
      VALUES (?,?,?,?,?,?,?,?,?)`
   ).run(req.guildId, String(b.headline), String(b.body || ''), String(b.image_url || ''),
     int(b.duration_h, 6, 1), JSON.stringify(effects), JSON.stringify(stockFx),
-    b.effect_ts ? int(b.effect_ts, 0, 0) : 0, req.user.name);
+    b.effect_ts ? Math.floor(int(b.effect_ts, 0, 0) / 3600000) * 3600000 : 0, req.user.name);
   audit(req.user.name, `發布財經快報：${b.headline}`);
   res.json({ id: r.lastInsertRowid });
 });
