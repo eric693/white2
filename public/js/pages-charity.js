@@ -1,6 +1,6 @@
 // ===== 慈善基金會：捐款抵稅、餘額公開、自動撥進普發池 =====
 App.page('charity', {
-  title: '基金會', sub: '玩家 /捐款 進公開帳戶，可折抵稅額，餘額自動變成普發救濟金', module: 'gather',
+  title: '基金會', sub: '玩家 /捐款 進公開帳戶，可折抵稅額，餘額自動變成普發救濟金', module: 'charity',
 
   async render(el) {
     await H.loadMeta();

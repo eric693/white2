@@ -5,7 +5,7 @@ const { requireAuth, requireModule, guardModule } = require('../auth');
 
 const router = express.Router();
 // 沿用冒險系統的模組權限（牧場屬於同一套冒險經濟）
-router.use(requireAuth(), guardModule('gather'));
+router.use(requireAuth(), guardModule('ranch'));
 
 const int = (v, d = 0, min = 0) => { const n = parseInt(v, 10); return Number.isFinite(n) ? Math.max(min, n) : d; };
 const pct = (v, d) => Math.min(100, Math.max(0, int(v, d)));
@@ -190,7 +190,7 @@ router.delete('/ranch-steal-routes/:id', (req, res) => {
 
 // ---- 偷竊紀錄：前台公告匿名，管理員在這裡查得到真兇 ----
 // 支援用小偷／被害者／關鍵字篩選，預設只列最近 300 筆。
-router.get('/ranch/steal-logs', requireModule('gather'), (req, res) => {
+router.get('/ranch/steal-logs', requireModule('ranch'), (req, res) => {
   const kw = String(req.query.q || '').trim();
   const kind = String(req.query.kind || '').trim();     // ranch / aquarium
   const result = String(req.query.result || '').trim(); // success / miss / caught
@@ -205,7 +205,7 @@ router.get('/ranch/steal-logs', requireModule('gather'), (req, res) => {
 });
 
 // 排行：誰偷最多、誰被偷最慘（處理糾紛時最常看的兩張表）
-router.get('/ranch/steal-stats', requireModule('gather'), (req, res) => {
+router.get('/ranch/steal-stats', requireModule('ranch'), (req, res) => {
   const days = int(req.query.days, 7, 1);
   const since = `-${days} days`;
   const q = (col, nameCol) => db.prepare(

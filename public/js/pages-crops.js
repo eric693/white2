@@ -1,6 +1,6 @@
 // ===== 種植系統：農地 / 溫室 =====
 App.page('crops', {
-  title: '農地溫室', sub: '種作物、種花卉、成熟採收賣 NPC', module: 'gather',
+  title: '農地溫室', sub: '種作物、種花卉、成熟採收賣 NPC', module: 'crops',
 
   async render(el) {
     await H.loadMeta();

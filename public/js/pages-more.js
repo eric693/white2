@@ -442,10 +442,42 @@ App.page('users', {
                 ${u.id !== me.id ? `<button class="btn tiny danger" data-del="${u.id}">刪除</button>` : ''}</td></tr>`).join('')}
         </tbody></table></div>`;
 
-    const permBox = (sel = []) => `<div class="field"><label>可用功能（管理員角色會全開）</label>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px">
-        ${mods.map(m => `<label class="switch"><input type="checkbox" data-perm value="${m.key}" ${sel.includes(m.key) ? 'checked' : ''}> ${UI.esc(m.label)}</label>`).join('')}
-      </div></div>`;
+    // 權限依分區列出（總覽／互動／活動／遊戲區／設定），每區有「全選」——
+    // 要把整個遊戲區交給某個人，勾一次就好；只想給他新聞，也只勾那一個。
+    const permBox = (sel = []) => {
+      const order = ['', '互動', '活動', '遊戲區', '設定'];
+      const groups = order
+        .map(g => ({ name: g, items: mods.filter(m => (m.group || '') === g) }))
+        .filter(g => g.items.length);
+      // 舊版的模組沒有 group 欄位，別讓它們消失
+      const known = new Set(groups.flatMap(g => g.items.map(m => m.key)));
+      const rest = mods.filter(m => !known.has(m.key));
+      if (rest.length) groups.push({ name: '其他', items: rest });
+      return `<div class="field"><label>可用功能（總管理員角色會全開）</label>
+        ${groups.map(g => `
+          <div style="margin:10px 0 4px;display:flex;align-items:center;gap:8px">
+            <b style="font-size:13px;color:var(--muted)">${UI.esc(g.name || '總覽')}</b>
+            <button type="button" class="btn tiny secondary" data-permall="${UI.esc(g.name)}">全選／全不選</button>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px" data-permgroup="${UI.esc(g.name)}">
+            ${g.items.map(m => `<label class="switch"><input type="checkbox" data-perm value="${m.key}" ${sel.includes(m.key) ? 'checked' : ''}> ${UI.esc(m.label)}</label>`).join('')}
+          </div>`).join('')}
+      </div>`;
+    };
+    // modal 內的「全選」要在開啟後才綁得到，統一用事件委派；只綁一次，不然重進頁面會疊上去
+    if (!window.__permAllBound) {
+      window.__permAllBound = true;
+      document.addEventListener('click', (ev) => {
+      const btn = ev.target.closest('[data-permall]');
+      if (!btn) return;
+      const wrap = btn.closest('.modal-back') || document;
+      const box = wrap.querySelector(`[data-permgroup="${btn.dataset.permall}"]`);
+      if (!box) return;
+      const boxes = box.querySelectorAll('[data-perm]');
+      const allOn = Array.from(boxes).every(x => x.checked);
+      boxes.forEach(x => { x.checked = !allOn; });
+      });
+    }
     const collectPerms = back => Array.from(back.querySelectorAll('[data-perm]:checked')).map(x => x.value);
     const guildBox = (sel = []) => `<div class="field"><label>可管理的伺服器（此帳號只看得到勾選的伺服器；不勾＝僅主伺服器。總管理員不受此限制）</label>
       <div style="display:grid;gap:4px">

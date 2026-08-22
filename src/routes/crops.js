@@ -4,7 +4,7 @@ const { db, audit, guildConfig } = require('../db');
 const { requireAuth, requireModule, guardModule } = require('../auth');
 
 const router = express.Router();
-router.use(requireAuth(), guardModule('gather'));
+router.use(requireAuth(), guardModule('crops'));
 
 const int = (v, d = 0, min = 0) => { const n = parseInt(v, 10); return Number.isFinite(n) ? Math.max(min, n) : d; };
 const plotOf = (v) => v === 'greenhouse' ? 'greenhouse' : 'field';

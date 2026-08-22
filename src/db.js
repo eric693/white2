@@ -131,6 +131,29 @@ ensureColumns('admin_users', {
   guild_ids: "TEXT NOT NULL DEFAULT ''"
 });
 
+// 遊戲區權限拆細（原本十幾個遊戲頁面共用一把 gather 鑰匙，沒辦法只把牧場交給某個人）。
+// 一次性遷移：本來有 gather 的人自動拿到拆出來的每一把，不會有人在改版後突然少了頁面；
+// 本來有 stock 的人自動拿到獨立出來的 news。之後要收回哪一把，在「帳號權限」頁取消勾選即可。
+try {
+  // 這段跑在 getSetting/setSetting 定義之前，所以直接下 SQL 讀寫旗標
+  const flag = db.prepare("SELECT value FROM settings WHERE key='perm_split_v1'").get();
+  if (!flag || flag.value !== '1') {
+    const GAME_KEYS = ['ranch', 'aquarium', 'crops', 'special', 'tax', 'charity', 'loans'];
+    const rows = db.prepare("SELECT id, permissions FROM admin_users WHERE role <> 'admin'").all();
+    const upd = db.prepare('UPDATE admin_users SET permissions=? WHERE id=?');
+    for (const r of rows) {
+      const has = String(r.permissions || '').split(',').map(x => x.trim()).filter(Boolean);
+      if (!has.length) continue;
+      const add = [];
+      if (has.includes('gather')) add.push(...GAME_KEYS);
+      if (has.includes('stock')) add.push('news');
+      const next = [...new Set([...has, ...add])];
+      if (next.length !== has.length) upd.run(next.join(','), r.id);
+    }
+    db.prepare("INSERT INTO settings (key,value) VALUES ('perm_split_v1','1') ON CONFLICT(key) DO UPDATE SET value='1'").run();
+  }
+} catch (e) { console.error('權限拆分遷移失敗：', e.message); }
+
 // 星幣轉帳：預設關閉，開了才會出現 /轉帳。手續費與上限用來壓制洗錢與詐騙。
 // 僅管理員可用（例如富豪榜這種會暴露別人財力的查詢）
 ensureColumns('gather_cmd_perms', {

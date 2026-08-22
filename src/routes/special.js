@@ -6,7 +6,7 @@ const bot = require('../bot');
 
 const router = express.Router();
 // 沿用冒險系統的模組權限
-router.use(requireAuth(), guardModule('gather'));
+router.use(requireAuth(), guardModule('special'));
 
 const int = (v, d = 0, min = null) => { let n = parseInt(v, 10); if (!Number.isFinite(n)) n = d; return min === null ? n : Math.max(min, n); };
 const csvField = (v) => Array.isArray(v) ? v.join(',') : String(v || '');

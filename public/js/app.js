@@ -81,12 +81,14 @@ const App = {
   },
 
   // 導覽分組
+  // 側欄分區。跟 auth.js 的 MODULES.group 對齊 ——
+  // 遊戲區獨立成一塊，每個頁面各自一把權限鑰匙，才能只把其中一兩頁交給某個管理員。
   groups: [
     { name: '', keys: ['dashboard'] },
-    { name: '互動', keys: ['keywords', 'mentions', 'alerts', 'warnings', 'welcome', 'birthday'] },
-    { name: '活動', keys: ['announcements', 'polls', 'giveaways', 'wheels', 'reminders'] },
-    { name: '其他', keys: ['music', 'forum', 'tickets', 'levels', 'gather', 'ranch', 'aquarium', 'crops', 'stock', 'tax', 'charity', 'loans', 'special', 'media', 'blacklist'] },
-    { name: '設定', keys: ['appearance', 'perms', 'system', 'guilds', 'users'] }
+    { name: '互動', keys: ['keywords', 'mentions', 'alerts', 'warnings', 'welcome', 'birthday', 'forum', 'tickets', 'levels'] },
+    { name: '活動', keys: ['announcements', 'polls', 'giveaways', 'wheels', 'reminders', 'music'] },
+    { name: '遊戲區', keys: ['gather', 'ranch', 'aquarium', 'crops', 'special', 'tax', 'charity', 'loans', 'stock', 'news'] },
+    { name: '設定', keys: ['blacklist', 'media', 'appearance', 'perms', 'system', 'guilds', 'users'] }
   ],
 
   renderLayout() {

@@ -1,6 +1,6 @@
 // ===== 稅金：農地稅／養殖稅／所得稅，定期自動結算 =====
 App.page('tax', {
-  title: '稅金', sub: '定期課徵農地稅／養殖稅／所得稅，把囤積的星幣抽回去', module: 'gather',
+  title: '稅金', sub: '定期課徵農地稅／養殖稅／所得稅，把囤積的星幣抽回去', module: 'tax',
 
   async render(el) {
     await H.loadMeta();

@@ -5,33 +5,54 @@ const COOKIE = 'w2_admin';
 const TOKEN_TTL = '7d';
 
 // 後台功能模組（staff 帳號逐一勾選；admin 全開）。權限設定頁用得到。
+// 後台權限模組。
+//
+// group 是給側欄與「帳號權限」頁分區用的 —— 以前全部平鋪在一起，
+// 遊戲相關的十幾個頁面又共用同一個 gather 權限，所以沒辦法只把牧場交給某個管理員。
+// 現在每個頁面各自一把鑰匙，要交出去就只交那一把。
 const MODULES = [
-  { key: 'dashboard',    label: '總覽' },
-  { key: 'keywords',     label: '關鍵字自動回覆' },
-  { key: 'mentions',     label: '關鍵字標記管理員' },
-  { key: 'alerts',       label: '關鍵字通知與警告' },
-  { key: 'warnings',     label: '警告與禁言紀錄' },
-  { key: 'welcome',      label: '加入/退出通知' },
-  { key: 'birthday',     label: '生日驗證與慶生' },
-  { key: 'announcements',label: '公告' },
-  { key: 'polls',        label: '投票' },
-  { key: 'giveaways',    label: '抽獎' },
-  { key: 'wheels',       label: '角色轉盤' },
-  { key: 'reminders',    label: '提醒' },
-  { key: 'music',        label: '音樂' },
-  { key: 'blacklist',    label: '黑名單' },
-  { key: 'forum',        label: '論壇整理' },
-  { key: 'tickets',      label: '客服單' },
-  { key: 'levels',       label: '經驗值等級' },
-  { key: 'gather',       label: '釣魚挖礦' },
-  { key: 'stock',        label: '財經新聞與股市' },
-  { key: 'media',        label: '媒體庫' },
-  { key: 'appearance',   label: '外觀自訂' },
-  { key: 'perms',        label: '功能權限設定' },
-  { key: 'system',       label: '系統狀態與紀錄' },
-  { key: 'guilds',       label: '伺服器管理' },
-  { key: 'users',        label: '帳號權限' }
+  { key: 'dashboard',    label: '總覽',              group: '' },
+
+  { key: 'keywords',     label: '關鍵字自動回覆',    group: '互動' },
+  { key: 'mentions',     label: '關鍵字標記管理員',  group: '互動' },
+  { key: 'alerts',       label: '關鍵字通知與警告',  group: '互動' },
+  { key: 'warnings',     label: '警告與禁言紀錄',    group: '互動' },
+  { key: 'welcome',      label: '加入/退出通知',     group: '互動' },
+  { key: 'birthday',     label: '生日驗證與慶生',    group: '互動' },
+  { key: 'forum',        label: '論壇整理',          group: '互動' },
+  { key: 'tickets',      label: '客服單',            group: '互動' },
+  { key: 'levels',       label: '經驗值等級',        group: '互動' },
+
+  { key: 'announcements',label: '公告',              group: '活動' },
+  { key: 'polls',        label: '投票',              group: '活動' },
+  { key: 'giveaways',    label: '抽獎',              group: '活動' },
+  { key: 'wheels',       label: '角色轉盤',          group: '活動' },
+  { key: 'reminders',    label: '提醒',              group: '活動' },
+  { key: 'music',        label: '音樂',              group: '活動' },
+
+  // ---- 遊戲區：一個頁面一把鑰匙，可以分別交給不同管理員 ----
+  { key: 'gather',       label: '釣魚挖礦',          group: '遊戲區' },
+  { key: 'ranch',        label: '牧場經營',          group: '遊戲區' },
+  { key: 'aquarium',     label: '魚缸',              group: '遊戲區' },
+  { key: 'crops',        label: '農地溫室',          group: '遊戲區' },
+  { key: 'special',      label: '特殊商店',          group: '遊戲區' },
+  { key: 'tax',          label: '稅金',              group: '遊戲區' },
+  { key: 'charity',      label: '基金會',            group: '遊戲區' },
+  { key: 'loans',        label: '物資貸款',          group: '遊戲區' },
+  { key: 'stock',        label: '股市',              group: '遊戲區' },
+  // 新聞獨立成一把鑰匙：它掌管全服物價與股價，權責跟其他頁面完全不同
+  { key: 'news',         label: '財經新聞（掌管物價）', group: '遊戲區' },
+
+  { key: 'blacklist',    label: '黑名單',            group: '設定' },
+  { key: 'media',        label: '媒體庫',            group: '設定' },
+  { key: 'appearance',   label: '外觀自訂',          group: '設定' },
+  { key: 'perms',        label: '功能權限設定',      group: '設定' },
+  { key: 'system',       label: '系統狀態與紀錄',    group: '設定' },
+  { key: 'guilds',       label: '伺服器管理',        group: '設定' },
+  { key: 'users',        label: '帳號權限',          group: '設定' }
 ];
+// 側欄與權限頁的分區順序
+const MODULE_GROUPS = ['', '互動', '活動', '遊戲區', '設定'];
 const MODULE_KEYS = MODULES.map(m => m.key);
 
 function parsePermissions(str) {
@@ -158,7 +179,7 @@ function guardModule(mod) {
 }
 
 module.exports = {
-  COOKIE, MODULES, MODULE_KEYS, parsePermissions,
+  COOKIE, MODULES, MODULE_KEYS, MODULE_GROUPS, parsePermissions,
   signToken, setAuthCookie, clearAuthCookie, requireAuth, requireModule, guardModule,
   loginLockedMinutes, loginFailed, loginSucceeded, rateLimit, clientIp
 };

@@ -1,6 +1,6 @@
 // ===== 經營系統：牧場（養動物、每日產出、偷偷樂）=====
 App.page('ranch', {
-  title: '牧場經營', sub: '養動物、每日產蛋/擠奶、收成賣 NPC、偷偷樂', module: 'gather',
+  title: '牧場經營', sub: '養動物、每日產蛋/擠奶、收成賣 NPC、偷偷樂', module: 'ranch',
 
   async render(el) {
     await H.loadMeta();

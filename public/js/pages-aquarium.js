@@ -1,6 +1,6 @@
 // ===== 魚缸：只養 SSR 魚，每日飼料費，產星幣，可被偷 =====
 App.page('aquarium', {
-  title: '魚缸', sub: '只養 SSR 魚：每天要買飼料，會產星幣，沒餵會死', module: 'gather',
+  title: '魚缸', sub: '只養 SSR 魚：每天要買飼料，會產星幣，沒餵會死', module: 'aquarium',
 
   async render(el) {
     await H.loadMeta();

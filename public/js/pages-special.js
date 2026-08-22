@@ -1,6 +1,6 @@
 // ===== 特殊兌換商店 =====
 App.page('special', {
-  title: '特殊商店', sub: '花星幣兌換虛擬獎勵，兌換後通知管理員處理', module: 'gather',
+  title: '特殊商店', sub: '花星幣兌換虛擬獎勵，兌換後通知管理員處理', module: 'special',
 
   async render(el) {
     await H.loadMeta();

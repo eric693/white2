@@ -1,6 +1,6 @@
 // ===== 物資貸款：抵押工具／作物／魚借星幣，到期沒收 =====
 App.page('loans', {
-  title: '物資貸款', sub: '抵押工具、農地作物、魚缸的魚借星幣；還清贖回，到期沒收', module: 'gather',
+  title: '物資貸款', sub: '抵押工具、農地作物、魚缸的魚借星幣；還清贖回，到期沒收', module: 'loans',
 
   async render(el) {
     await H.loadMeta();
