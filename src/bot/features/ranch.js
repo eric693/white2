@@ -625,6 +625,7 @@ function init(client) {
           .setFooter({ text: `約值 ${value.toLocaleString('en-US')} ${gc.currency_name}｜今日 ${usedToday + 1}/${c.steal_daily_limit}` });
 
         bumpAch(gid, uid, 'steal_success', 1);
+        bumpAch(gid, to.id, 'robbed_count', 1);      // 受害者也記一筆（大賽「誰被偷最多」用得到）
         // 後台查得到真兇（前台公告仍匿名）
         logSteal({ guildId: gid, kind: 'ranch', thiefId: uid, thiefName: uname,
           victimId: to.id, victimName: to.username,

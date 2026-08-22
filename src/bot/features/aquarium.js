@@ -510,6 +510,7 @@ function init(client) {
         }
 
         bumpAch(gid, uid, 'steal_success', 1);
+        bumpAch(gid, to.id, 'robbed_count', 1);
         // 先看能不能整條撈走（小偷要有「自己的空魚缸格」才放得下；沒魚缸就撈不走）
         let fishNote = '', stolenFish = null;
         const myMax = effSlots(gid, uid);

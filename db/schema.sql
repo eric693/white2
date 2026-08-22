@@ -1840,3 +1840,44 @@ CREATE TABLE IF NOT EXISTS auction_bids (
   created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
 CREATE INDEX IF NOT EXISTS idx_auction_bids ON auction_bids(auction_id, id);
+
+-- ============================================================
+-- 大賽（週賽／月賽）：一段時間內比某個指標的成長量，前三名有獎金，冠軍可拿專屬成就。
+-- 比的是「這段期間增加了多少」而不是總量 —— 否則每次都是同一批老玩家躺著贏。
+-- 指標沿用 util/achievements.js 的 METRICS（誰賺最多、誰挖最多、誰做最多料理…）。
+-- ============================================================
+CREATE TABLE IF NOT EXISTS contests (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id     TEXT NOT NULL DEFAULT '',
+  name         TEXT NOT NULL DEFAULT '',
+  emoji        TEXT NOT NULL DEFAULT '🏆',
+  description  TEXT NOT NULL DEFAULT '',
+  metric       TEXT NOT NULL DEFAULT 'total_earned',
+  start_ts     INTEGER NOT NULL DEFAULT 0,
+  end_ts       INTEGER NOT NULL DEFAULT 0,
+  status       TEXT NOT NULL DEFAULT 'scheduled',  -- scheduled / live / ended / cancelled
+  reward1      INTEGER NOT NULL DEFAULT 0,
+  reward2      INTEGER NOT NULL DEFAULT 0,
+  reward3      INTEGER NOT NULL DEFAULT 0,
+  title_id     INTEGER NOT NULL DEFAULT 0,   -- 冠軍拿到的成就（title_defs.id，0＝不給）
+  min_score    INTEGER NOT NULL DEFAULT 1,   -- 至少要有這麼多成長才算參賽（防止 0 分掛榜）
+  channel      TEXT NOT NULL DEFAULT '',
+  repeat_days  INTEGER NOT NULL DEFAULT 0,   -- >0＝結束後自動開下一屆（例如 7＝每週一屆）
+  message_id   TEXT NOT NULL DEFAULT '',
+  created_by   TEXT NOT NULL DEFAULT '',
+  created_at   TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_contests ON contests(guild_id, status, end_ts);
+
+-- 參賽者的起跑點與目前分數。baseline 是開賽當下的指標值，score = 現在 - baseline。
+CREATE TABLE IF NOT EXISTS contest_scores (
+  contest_id INTEGER NOT NULL,
+  guild_id   TEXT NOT NULL DEFAULT '',
+  user_id    TEXT NOT NULL,
+  username   TEXT NOT NULL DEFAULT '',
+  baseline   INTEGER NOT NULL DEFAULT 0,
+  score      INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  PRIMARY KEY (contest_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_contest_scores ON contest_scores(contest_id, score);

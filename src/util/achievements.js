@@ -31,6 +31,8 @@ const METRICS = {
   gift_count:    { name: '送禮次數', unit: '次' },
   feed_count:    { name: '餵食寵物', unit: '次' },
   quest_done:    { name: '完成任務', unit: '個' },
+  robbed_count:  { name: '被偷次數（受害者）', unit: '次' },
+  fish_caught:   { name: '養進魚缸的魚', unit: '隻' },
 
   // ---- 衍生型：現算現有的資料 ----
   coins:        { name: '目前身家', unit: '', derived: (g, u) => q('SELECT coins n FROM econ_wallets WHERE guild_id=? AND user_id=?', g, u) },
@@ -50,6 +52,7 @@ const METRICS = {
   stock_trades: { name: '股市成交', unit: '筆', derived: (g, u) => q('SELECT COUNT(*) n FROM stock_trades WHERE guild_id=? AND user_id=?', g, u) },
   stock_profit: { name: '股市已實現獲利', unit: '', derived: (g, u) => q('SELECT COALESCE(SUM(pnl),0) n FROM stock_trades WHERE guild_id=? AND user_id=?', g, u) },
   tax_paid:     { name: '累計繳稅', unit: '', derived: (g, u) => q('SELECT COALESCE(SUM(total),0) n FROM tax_records WHERE guild_id=? AND user_id=? AND paid=1', g, u) },
+  aqua_ssr:     { name: '魚缸裡的 SSR 魚', unit: '隻', derived: (g, u) => q('SELECT COUNT(*) n FROM aquarium_slots WHERE guild_id=? AND user_id=?', g, u) },
   dex_total:    { name: '圖鑑總收集', unit: '種', derived: (g, u) => q('SELECT COUNT(*) n FROM dex_seen WHERE guild_id=? AND user_id=?', g, u) }
 };
 

@@ -1313,8 +1313,14 @@ function init(client) {
             .setDescription(`${got.map(n => `・${n}`).join('\n')}\n\n共獲得 ${money(c, coins)}${fullNote}`)] });
         }
 
+        // 任務面板分兩型：① 每日／每週任務（這份清單）② 大賽（比一段期間的成長量，冠軍有成就）
+        const liveContest = db.prepare("SELECT name, emoji, end_ts FROM contests WHERE guild_id=? AND status='live' ORDER BY end_ts LIMIT 2").all(gid);
         const embed = new EmbedBuilder().setColor(brandColor()).setTitle(`📜 ${i.member?.displayName || uname} 的任務`)
-          .setDescription('完成後用 `/任務 動作:領取獎勵` 一次領完。');
+          .setDescription('**① 每日／每週任務**：照著做就有獎金，完成後用 `/任務 動作:領取獎勵` 一次領完。\n'
+            + (liveContest.length
+              ? '**② 大賽進行中**：' + liveContest.map(x => `${x.emoji || '🏆'}**${x.name}**（<t:${Math.floor(x.end_ts / 1000)}:R> 結束）`).join('、')
+                + '　→ 點下面的「🏆 大賽」看排行榜'
+              : '**② 大賽**：目前沒有進行中的場次，開賽會在公告頻道通知。'));
         for (const q of list.slice(0, 25)) {
           const pk = periodKey(q.period);
           const pr = db.prepare('SELECT * FROM quest_progress WHERE guild_id=? AND user_id=? AND quest_id=? AND period_key=?')
@@ -1337,7 +1343,8 @@ function init(client) {
           });
         }
         const claimRow = new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId('adv:questclaim').setLabel('領取獎勵').setEmoji('🎁').setStyle(ButtonStyle.Success));
+          new ButtonBuilder().setCustomId('adv:questclaim').setLabel('領取獎勵').setEmoji('🎁').setStyle(ButtonStyle.Success),
+          new ButtonBuilder().setCustomId('adv:contest').setLabel('大賽排行榜').setEmoji('🏆').setStyle(ButtonStyle.Primary));
         return await reply({ embeds: [embed], components: [claimRow] });
       }
 
