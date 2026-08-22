@@ -18,7 +18,8 @@ const BUFF_TYPES = {
   cook_perfect_pct:'完美料理機率',
   cook_price_pct:  '料理售價',
   gift_pct:        '送禮好感',
-  visit_pct:       '角色來訪機率',
+  // visit_pct（角色來訪機率）已移除：角色只會在「逛街」隨機遇到，沒有來訪機率這回事。
+  // 既有資料一律換成 affinity_pct。
   stock_pct:       '股市收益',
   speed_pct:       '生產速度',
   steal_resist_pct:'全域防竊',      // 牧場＋魚缸都吃

@@ -6,6 +6,14 @@
   <title>White2 機器人後台</title>
   <link rel="stylesheet" href="/css/style.css">
   <meta name="theme-color" content="#5865f2">
+
+  <!-- PWA：可以「加到主畫面」當 App 用（iOS 與 Android 都吃這組） -->
+  <link rel="manifest" href="/manifest.json">
+  <link rel="apple-touch-icon" href="/icon-192.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="白光後台">
+  <meta name="mobile-web-app-capable" content="yes">
 </head>
 <body>
   <div id="app"></div>
@@ -38,6 +46,12 @@
   <script src="/js/pages-contest.js"></script>
   <script src="/js/pages-currency.js"></script>
   <script src="/js/pages-special.js"></script>
-  <script>App.boot();</script>
+  <script>
+    App.boot();
+    // Service Worker：只快取外殼，資料一律走網路（後台看到的必須是即時數字）
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => navigator.serviceWorker.register('/sw.js').catch(() => {}));
+    }
+  </script>
 </body>
 </html>

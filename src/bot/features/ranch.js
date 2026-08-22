@@ -1,7 +1,7 @@
 // 經營系統：牧場養動物（每日產蛋/擠奶）＋ 偷偷樂（偷別人未收成的產物）
 // 產物直接寫進 gather_items（kind='farm'）→ 玩家用現成的 /背包 看、/賣出 賣給 NPC。
 // 動物用金幣在 /畜牧商店 購買，最多養 max_slots 隻（預設 6）。
-const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, MessageFlags } = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
 const { db, guildConfig, logError } = require('../../db');
 const { bump: bumpAch } = require('../../util/achievements');
 const { brandColor } = require('../../util/brand');
@@ -388,6 +388,35 @@ function init(client) {
       return safeMenu(i, '賣出動物', () => sellAnimal(i.guildId, i.user.id, i.user.username, parseInt(i.values[0], 10)));
     }
     // 孵化室「直接賣掉孵好的動物」（牧場滿了免挪；值＝孵化室格子）
+    // 一鍵賣出：孵化室卡了幾十隻的時候，一格一格勾太痛苦
+    if (i.isButton() && i.customId === 'hatchsellall') {
+      try {
+        const gid = i.guildId, uid = i.user.id, uname = i.user.username, gc = gcfg(gid);
+        const now = Date.now();
+        const ready = db.prepare('SELECT * FROM ranch_incubator WHERE guild_id=? AND user_id=? AND ready_at<=?').all(gid, uid, now);
+        if (!ready.length) return i.reply({ content: '孵化室裡沒有已經孵好的動物。', flags: MessageFlags.Ephemeral }).catch(() => {});
+        let gained = 0; const tally = new Map();
+        db.transaction(() => {
+          for (const r of ready) {
+            const a = animalById(gid, r.animal_id);
+            const refund = a ? Math.max(1, Math.floor((a.price || 0) * SELL_PCT)) : 1;
+            db.prepare('DELETE FROM ranch_incubator WHERE guild_id=? AND user_id=? AND slot=?').run(gid, uid, r.slot);
+            addCoins(gid, uid, uname, refund);
+            gained += refund;
+            const key = a ? `${a.emoji || ''}${a.name}` : '動物';
+            tally.set(key, (tally.get(key) || 0) + 1);
+          }
+        })();
+        const bal = wallet(gid, uid, uname).coins;
+        const embed = new EmbedBuilder().setColor(brandColor()).setTitle(`💰 一次賣掉 ${ready.length} 隻`)
+          .setDescription([...tally.entries()].map(([k, n]) => `${k} ×${n}`).join('\n'))
+          .setFooter({ text: `共得 ${gained.toLocaleString('en-US')}｜餘額 ${bal.toLocaleString('en-US')} ${gc.currency_name}` });
+        return i.update({ content: '', embeds: [embed], components: [] }).catch(() => {});
+      } catch (e) {
+        logError(i.guildId, '一鍵賣出失敗：', e.message);
+        return i.reply({ content: '執行失敗，管理員可到後台的系統錯誤紀錄查看原因。', flags: MessageFlags.Ephemeral }).catch(() => {});
+      }
+    }
     if (i.isStringSelectMenu() && i.customId === 'hatchsell') {
       try {
       const gid = i.guildId, uid = i.user.id, uname = i.user.username, gc = gcfg(gid);
@@ -865,6 +894,11 @@ function init(client) {
         // Discord 的下拉最多 25 個選項，maxValues 也不能超過 ——
         // 蛋放超過 25 顆的人（真的有）以前會直接讓整個 /孵化室 壞掉（Invalid number value）
         const sellOpts = blocked.slice(0, 25);
+        // 一鍵賣出（孵好的全賣）：卡了幾十隻時一格一格勾太痛苦
+        const allReady = remain.filter(r => r.ready_at <= now);
+        const sellAllRow = allReady.length > 1 ? [new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId('hatchsellall')
+            .setLabel(`💰 一鍵賣掉全部孵好的（${allReady.length} 隻）`).setStyle(ButtonStyle.Danger))] : [];
         const sellRow = sellOpts.length ? [new ActionRowBuilder().addComponents(
           new StringSelectMenuBuilder().setCustomId('hatchsell').setPlaceholder('💰 直接賣掉孵好的動物（牧場滿了免挪）')
             .setMinValues(1).setMaxValues(sellOpts.length)
@@ -873,7 +907,7 @@ function init(client) {
               description: `回收 ${Math.max(1, Math.floor((b.a.price || 0) * SELL_PCT))} ${gc.currency_name}`.slice(0, 100),
               value: String(b.slot), emoji: b.a.emoji || '🐾'
             })))) ] : [];
-        return await reply({ embeds: [embed], components: [...sellRow, ...rows2] });
+        return await reply({ embeds: [embed], components: [...sellAllRow, ...sellRow, ...rows2].slice(0, 5) });
       }
     } catch (e) {
       logError(gid, '牧場指令失敗：', `${name}（${e.message}）`);

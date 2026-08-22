@@ -1,0 +1,18 @@
+{
+  "name": "小璃白Yu光 後台",
+  "short_name": "白光後台",
+  "description": "Discord 機器人管理後台：關鍵字、活動、冒險經濟系統與遊戲數值全部在這裡調。",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0f1225",
+  "theme_color": "#5865f2",
+  "lang": "zh-Hant-TW",
+  "categories": ["productivity", "utilities"],
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

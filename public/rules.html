@@ -189,6 +189,9 @@
     <a href="#tax">稅金</a>
     <a href="#charity">基金會</a>
     <a href="#loan">物資貸款</a>
+    <a href="#home">小屋</a>
+    <a href="#love">角色</a>
+    <a href="#ach">成就大賽</a>
     <a href="#more">其他玩法</a>
     <a href="#cmd">指令速查</a>
   </nav>
@@ -212,8 +215,14 @@
   <h2><span class="num">02</span>採集</h2>
   <p class="sub">五種採集共用一組規則：有冷卻、有每日次數、有稀有度。</p>
 
-  <h3>每日 15 點，地圖各有門票</h3>
-  <p>採集不算「次數」，算<strong>點數</strong>：每天一池 <strong>15 點</strong>，五種採集共用，台灣時間午夜重置。在哪張地圖採集，就扣那張圖的門票。門票越貴、次數越少，但稀有率越高。</p>
+  <h3>⚡ 體力：每日 15 點，所有活動共用</h3>
+  <p>採集不算「次數」，算<strong>體力</strong>：每天一池 <strong>15 點</strong>，台灣時間午夜回滿。
+  <strong>五種採集 ＋ 🛍️逛街遇角色</strong>全部共用這一池——今天要拿去挖礦還是去街上碰運氣，自己決定。</p>
+  <div class="note warn">
+    <span class="h">體力不能靠加成</span>
+    家具、寵物、成就<strong>都不會增加體力上限</strong>（這是刻意的，體力就是每天固定的行動額度）。
+    想多動只有兩條路：<strong>一般商店買體力</strong>（10,000／點，<strong>每天最多 5 點</strong>，當天有效），或請管理員個別調整。
+  </div>
   <div class="scroll"><table>
     <thead><tr><th>地圖</th><th class="num">門票</th><th class="num">稀有率</th><th class="num">全用在這張圖</th></tr></thead>
     <tbody>
@@ -338,20 +347,24 @@
     <li><strong>不想養了可以賣掉動物</strong>：<code>/牧場</code> 的下拉選單「💰賣掉動物」或 <code>/放生</code>，回收購買價的一半星幣，待收成的產物也一起進背包。</li>
   </ul>
 
-  <h3>看門動物</h3>
+  <h3>防竊：交給守衛寵物</h3>
+  <p>看門動物<strong>已經停售</strong>，改由<strong>寵物</strong>提供防護——寵物住在家裡，<strong>不佔牧場格子</strong>，牧場每一格都能拿去生產。</p>
   <div class="scroll"><table>
-    <thead><tr><th>動物</th><th class="num">價格</th><th class="num">反擊機率</th><th class="wrap">小偷最多賠你</th></tr></thead>
+    <thead><tr><th>寵物</th><th class="wrap">能力</th></tr></thead>
     <tbody>
-      <tr><td>🪿 看門鵝</td><td class="num">100</td><td class="num">25%</td><td class="num">15</td></tr>
-      <tr><td>🐈 看門貓</td><td class="num">150</td><td class="num">30%</td><td class="num">20</td></tr>
-      <tr><td>🐕 看門狗</td><td class="num">200</td><td class="num">40%</td><td class="num">30</td></tr>
+      <tr><td>🪿 看門鵝</td><td class="wrap">牧場防護 +8%</td></tr>
+      <tr><td>🐕 牧羊犬</td><td class="wrap">牧場防護 +15%</td></tr>
+      <tr><td>🐅 虎斑貓</td><td class="wrap">魚缸防護 +15%</td></tr>
+      <tr><td>🪶 蒼鷺</td><td class="wrap">魚缸防護 +22%</td></tr>
+      <tr><td>🦡 獴</td><td class="wrap">反擊 +25%（小偷會掉星幣賠你）</td></tr>
+      <tr><td>🐺 雪狼</td><td class="wrap">全域防竊 +18%（牧場魚缸一起顧）</td></tr>
+      <tr><td>🗿 守護石像鬼</td><td class="wrap">全域防竊 +25%（不用餵）</td></tr>
     </tbody>
   </table></div>
-  <div class="note warn">
-    <span class="h">養多隻不會疊加</span>
-    反擊機率<strong>只算你身上最高的那一隻</strong>。4 隻鵝還是 25%，鵝＋貓＋狗也只算狗的 40%。想更硬就換更高階的看門動物，或去升級牧場等級（那是另一套，直接扣小偷的成功率）。
+  <div class="note">
+    <span class="h">防護是扣小偷的成功率</span>
+    可以跟 <code>/設施商店</code> 的牧場／魚缸等級<strong>疊加</strong>。寵物的能力<strong>按親密度比例給</strong>——親密度 50 只有一半效果，所以要常餵。
   </div>
-  <p>看門動物<strong>不生產任何東西</strong>，還會佔格子，所以純防禦流會沒收入。反擊成功那次，小偷連動物都偷不走。</p>
 
   <h3>孵化室</h3>
   <p>🥚 把背包裡的蛋（動物生的、狩獵撿到的都行）放進孵化室，時間到領出來就是一隻新動物，可以省下買動物的錢。有些野生蛋有失敗率。</p>
@@ -676,8 +689,96 @@
   <p class="sub">抵押率、期限、利息、可抵押的種類都可由工程師調整；貸款功能也可能整個關閉，實際以 <code>/貸款</code> 顯示為準。</p>
 </section>
 
+<section id="home">
+  <h2><span class="num">14</span>小屋（家園）</h2>
+  <p class="sub">採集與生產的成果，最後都變成這裡的資產。用 <code>/我的家</code> 或面板的 🏡 我的家 進去。</p>
+
+  <h3>小屋 15 階</h3>
+  <p>用<strong>金幣 ＋ 材料</strong>升級，階級決定：可擺幾件家具、可養幾隻寵物、能不能蓋廚房、能不能同居，還有整體加成。</p>
+  <div class="scroll"><table>
+    <thead><tr><th>階段</th><th class="wrap">解鎖</th></tr></thead>
+    <tbody>
+      <tr><td>Lv.3 鄉間住宅</td><td class="wrap">可以養寵物</td></tr>
+      <tr><td>Lv.4 精緻平房</td><td class="wrap">取得廚房建造資格</td></tr>
+      <tr><td>Lv.6 花園別墅</td><td class="wrap">可以請角色同居（1 位）</td></tr>
+      <tr><td>Lv.10 私人莊園</td><td class="wrap">同居 2 位</td></tr>
+      <tr><td>Lv.13 雲上行館</td><td class="wrap">同居 3 位（上限）</td></tr>
+      <tr><td>Lv.15 永恆星域</td><td class="wrap">家具 100 件、寵物 3 隻、加成拉滿</td></tr>
+    </tbody>
+  </table></div>
+  <div class="note warn">
+    <span class="h">材料不夠也可以用錢硬升</span>
+    缺的材料會按<strong>市價的 500 倍</strong>折現，按「💸 用金幣硬升」就能跳過採集。
+    這是給錢多到沒地方花的人用的出海口——<strong>自己去挖永遠比較划算</strong>。
+  </div>
+
+  <h3>📅 小屋簽到</h3>
+  <p>每天回小屋簽到領星幣：基礎 500 ＋ <strong>連續天數加碼</strong>（每天 +100，第 7 天封頂）＋ <strong>房子越大領越多</strong>（每階 +10%），一週七天全簽再送 3,000。斷一天連續就從頭算。</p>
+
+  <h3>🍳 廚房與料理</h3>
+  <p>房子到 Lv.4 就能蓋廚房（<strong>用材料蓋</strong>或<strong>用金幣蓋</strong>），廚房最高 <strong>15 級</strong>，等級決定一次能煮幾道、以及做出高品質料理的機率。</p>
+  <p>料理有 <strong>5 種品質</strong>（普通／精良／稀有／史詩／傳說），品質越高賣越貴、<strong>送角色加的好感也越多</strong>。共 <strong>36 道食譜</strong>，材料主要來自農地、牧場與採集——<strong>還沒蓋廚房也可以先看食譜</strong>，確認值不值得蓋。</p>
+
+  <h3>🛋️ 家具</h3>
+  <p>共 80 件，分客廳／臥室／廚房／庭院／收藏／特殊。<strong>兩種取得方式</strong>：</p>
+  <ul>
+    <li><strong>🔨 用材料製作</strong>：便宜，但要自己準備材料。</li>
+    <li><strong>💰 直接購買</strong>：不用材料，但貴很多（材料按市價 ×10 折現）。</li>
+  </ul>
+  <p class="note"><span class="h">要「擺出來」才有加成</span>放在倉庫裡的家具完全沒效果。可擺的件數由房屋階級決定。</p>
+
+  <h3>🐾 寵物</h3>
+  <p><strong>只用金錢購買</strong>（不吃材料），一個家<strong>最多 3 隻</strong>。寵物不會生蛋生奶，牠給的是<strong>能力加成</strong>，而且<strong>按親密度比例給</strong>——親密度掉到 0 就完全沒效果。</p>
+  <p>能力分成七類：🛡️ 全防護、📦 <strong>指定素材</strong>掉落率（例如「碎石 +8%」）、📈 股市、💰 銷售、✨ 稀有率、⏱️ 生產加速、🎲 反機率、💕 好感度。</p>
+  <div class="note">
+    <span class="h">餵食要飼料</span>
+    每次餵食消耗 <strong>1 份寵物飼料</strong>，可以在寵物面板<strong>直接買</strong>（500／份），也可以自己<strong>製作</strong>（小麥×3＋紅蘿蔔×2 → 5 份）。
+    要等滿一個餵食週期才能再餵，親密度一次 +4~6，養滿約 20 次——是長期陪伴，不是三天速成。
+  </div>
+</section>
+
+<section id="love">
+  <h2><span class="num">15</span>角色：逛街、送禮、同居</h2>
+  <p class="sub">這個伺服器有兩百多位角色，全部從 <code>/好感度</code> 面板進去。</p>
+
+  <h3>🛍️ 逛街（隨機遇到角色）</h3>
+  <p>花 <strong>1 點體力</strong>出門，<strong>隨機</strong>遇到一位角色——遇到誰不能挑，這就是逛街的意義。角色會講自己的台詞，好感度自動 +3。</p>
+
+  <h3>🎁 送禮</h3>
+  <p>面板點「🎁 送禮」→ 選角色 → 選禮物。<strong>每位角色喜好不同</strong>，送對東西好感加得多；<strong>料理的品質越高加得越多</strong>。木雕、花束這類<strong>工藝禮物</strong>是專門做來送人的，好感度是一般物品的 2~3 倍。</p>
+
+  <h3>💞 同居</h3>
+  <p>好感度到<strong>曖昧（Lv.6）</strong>以上就能請他搬進你家。名額跟著房屋階級長：Lv.6 起 1 位、Lv.10 起 2 位、Lv.13 起 3 位。</p>
+  <p>搬進來的角色會<strong>隨機帶一個能力</strong>（廚藝指導、礦脈直覺、幫忙收成、會殺價…），好感度每一階讓加成 +10%。其中「🧺 幫忙收成」會<strong>每天早上自動幫你把牧場產物收進背包</strong>。</p>
+  <div class="note warn">
+    <span class="h">同居要繳伴侶稅</span>
+    每位每期 <strong>5,000 ＋ 好感度每階 1,500</strong>（Lv.7 的對象就是 15,500／期）。關係越深越花錢，養不起可以請他搬走，好感度不會消失。
+  </div>
+</section>
+
+<section id="ach">
+  <h2><span class="num">16</span>成就與大賽</h2>
+
+  <h3>🏅 成就（59 個）</h3>
+  <p>用 <code>/成就</code> 查看。成就靠<strong>做事</strong>解鎖——挖礦 300 次、連續簽到 30 天、擋掉小偷 30 次、做 50 道完美料理…每一個給的能力都不一樣，解鎖還有獎金。</p>
+  <p class="note warn"><span class="h">同時最多裝備 3 個</span>解鎖再多，也只有<strong>裝備中的 3 個</strong>會生效。想挖材料就帶《碎石狂人》，怕被偷就帶《銅牆鐵壁》，愛煮飯就帶《完美主義》——按「📋 全部成就與達成條件」可以看每個成就的條件與進度。</p>
+
+  <h3>🏆 大賽</h3>
+  <p>在 <code>/任務</code> 面板點「🏆 大賽排行榜」。大賽比的是<strong>期間內的成長量</strong>（開賽當下先記下每個人的起跑點），所以<strong>新玩家也有機會贏</strong>，不是老玩家躺著拿。</p>
+  <p>比什麼由管理員決定：誰賺最多、誰挖最多、誰做最多料理、誰魚缸最多魚、誰被偷最多…前三名有獎金，<strong>冠軍還能拿到專屬成就</strong>。</p>
+
+  <h3>🔨 拍賣會</h3>
+  <p>基金會不定期推出<strong>限時競標</strong>：特殊家具、珍稀寵物、成就稱號、稀有物品，價高者得。</p>
+  <ul>
+    <li><strong>出價當場鎖款</strong>，被超越會<strong>自動全額退回</strong>並私訊通知——不會有喊了不付錢的呆帳。</li>
+    <li>結束前幾分鐘有人出價會<strong>自動延長</strong>（防狙擊）。</li>
+    <li>有些標的<strong>得標時另收材料</strong>；材料不夠不會沒收標的，改按原價折算補收星幣。</li>
+    <li>成交價與手續費都<strong>進基金會</strong>。</li>
+  </ul>
+</section>
+
 <section id="more">
-  <h2><span class="num">14</span>其他玩法</h2>
+  <h2><span class="num">17</span>其他玩法</h2>
   <p class="sub">賺到的星幣不是只能買地買動物。</p>
 
   <h3>🎁 特殊兌換商店</h3>
@@ -725,7 +826,7 @@
 </section>
 
 <section id="cmd">
-  <h2><span class="num">15</span>指令速查</h2>
+  <h2><span class="num">18</span>指令速查</h2>
   <p class="sub">面板按鈕能做九成的事。以下是需要打字或按鈕沒有的功能。</p>
   <div class="scroll"><table>
     <thead><tr><th>指令</th><th class="wrap">用途</th></tr></thead>
@@ -763,6 +864,16 @@
       <tr><td><code>/賣出 物品 數量</code></td><td class="wrap">可填物品名、稀有度（N/R/SR/SSR）或「全部」</td></tr>
       <tr><td><code>/地圖</code></td><td class="wrap">切換採集地圖（不用錢也不扣點）</td></tr>
       <tr><td><code>/抽籤</code></td><td class="wrap">每日抽籤，可能抽到幸運符</td></tr>
+      <tr><td><code>/我的家</code></td><td class="wrap">小屋主面板（房屋／廚房／家具／寵物／約會）</td></tr>
+      <tr><td><code>/升級家園</code> · <code>/簽到</code></td><td class="wrap">升級小屋／每日簽到領星幣</td></tr>
+      <tr><td><code>/廚房</code> · <code>/烹飪</code></td><td class="wrap">蓋廚房、升級、做菜、領料理</td></tr>
+      <tr><td><code>/家具</code></td><td class="wrap">做家具或直接買，擺出來才有加成</td></tr>
+      <tr><td><code>/寵物</code> · <code>/寵物改名</code></td><td class="wrap">領養、餵食（要飼料）、看能力／幫寵物取名</td></tr>
+      <tr><td><code>/好感度</code></td><td class="wrap">角色面板：逛街、送禮、同居都在這裡</td></tr>
+      <tr><td><code>/送禮 角色</code></td><td class="wrap">指定角色送禮（打幾個字會跳候選）</td></tr>
+      <tr><td><code>/成就</code></td><td class="wrap">看成就進度並裝備加成（最多 3 個）</td></tr>
+      <tr><td><code>/拍賣</code></td><td class="wrap">基金會拍賣會，限時競標</td></tr>
+      <tr><td><code>/家園卡</code> · <code>/家園網頁</code></td><td class="wrap">把家園畫成圖／打開個人網頁版</td></tr>
     </tbody>
   </table></div>
 </section>

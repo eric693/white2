@@ -171,7 +171,7 @@ function inviteRole(gid, uid, uname, rid) {
   if (a.last_visit === today) return { error: `**${role.name}** 今天已經來過你家了。` };
 
   // 成功率：好感度階級越高越願意來，再加上家園的 visit_pct 加成
-  const chance = Math.min(95, 25 + a.level * 7 + buffPct(gid, uid, 'visit_pct'));
+  const chance = Math.min(95, 25 + a.level * 7 + buffPct(gid, uid, 'affinity_pct'));
   const ok = Math.random() * 100 < chance;
   db.prepare(`INSERT INTO affinity (guild_id,user_id,role_id,points,level,visits,last_visit) VALUES (?,?,?,0,0,?,?)
     ON CONFLICT(guild_id,user_id,role_id) DO UPDATE SET visits = visits + ?, last_visit = ?`)

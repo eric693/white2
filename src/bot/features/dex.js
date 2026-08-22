@@ -61,13 +61,13 @@ const SEED_TITLES = [
   ['furniture', '室內設計師', '🛋️', 15, 'sell_pct', 1, '', 0, '收集 15 種家具'],
   ['furniture', '生活美學家', '🏛️', 40, 'sell_pct', 2, 'affinity_pct', 2, '收集 40 種家具'],
   ['home', '有殼一族', '🏠', 4, 'sell_pct', 1, '', 0, '家園蓋到 Lv.4'],
-  ['home', '家的主人', '🏡', 8, 'visit_pct', 3, 'affinity_pct', 2, '家園蓋到 Lv.8'],
+  ['home', '家的主人', '🏡', 8, 'affinity_pct', 3, 'affinity_pct', 2, '家園蓋到 Lv.8'],
   ['home', '星耀領主', '🌌', 12, 'sell_pct', 3, 'luck_pct', 3, '家園蓋到頂'],
   ['wealth', '小康之家', '💰', 100000, 'sell_pct', 1, '', 0, '身家 10 萬'],
   ['wealth', '億萬富翁', '🤑', 1000000, 'sell_pct', 2, 'stock_pct', 2, '身家 100 萬'],
   ['wealth', '華爾街之狼', '📈', 5000000, 'stock_pct', 3, 'sell_pct', 2, '身家 500 萬'],
   ['affinity', '戀愛新手', '💗', 3, 'gift_pct', 2, '', 0, '任一角色好感到 Lv.3'],
-  ['affinity', '戀愛大師', '💘', 8, 'gift_pct', 3, 'visit_pct', 2, '任一角色好感到 Lv.8'],
+  ['affinity', '戀愛大師', '💘', 8, 'gift_pct', 3, 'affinity_pct', 2, '任一角色好感到 Lv.8'],
   ['role', '收藏家', '💝', 30, 'luck_pct', 2, '', 0, '跟 30 位角色互動過']
 ];
 
@@ -111,7 +111,7 @@ const SEED_ACH = [
   ['cook', '米其林', '🌟', 'kitchen_level', 10, 'cook_perfect_pct', 4, 'cook_price_pct', 4, '廚房升到 10 級', 80000],
   ['farm', '勤奮農夫', '🌾', 'harvest_count', 300, 'speed_pct', 5, '', 0, '收成 300 次', 30000],
   ['affinity', '送禮達人', '🎁', 'gift_count', 200, 'gift_pct', 6, '', 0, '送禮 200 次', 40000],
-  ['affinity', '萬人迷', '💞', 'affinity_roles', 50, 'gift_pct', 5, 'visit_pct', 4, '跟 50 位角色互動過', 80000],
+  ['affinity', '萬人迷', '💞', 'affinity_roles', 50, 'gift_pct', 5, 'affinity_pct', 4, '跟 50 位角色互動過', 80000],
   ['pet', '鏟屎官', '🐾', 'feed_count', 300, 'affinity_pct', 5, '', 0, '餵寵物 300 次', 30000],
   ['pet', '寵物大師', '🐕‍🦺', 'pet_intimacy', 100, 'affinity_pct', 5, 'luck_pct', 3, '把任一隻寵物養到親密度 100', 60000],
   ['quest', '任務狂', '📜', 'quest_done', 200, 'quest_pct', 6, '', 0, '完成 200 個任務', 50000],

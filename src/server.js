@@ -111,6 +111,14 @@ app.use('/api', require('./routes/users'));
 app.use('/', require('./routes/homepage'));
 
 // 公開功能介紹頁（乾淨網址 /intro，不需登入）
+// PWA：manifest 與 service worker 要從網站根目錄提供，sw.js 不能被快取住
+app.get('/manifest.json', (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'manifest.json')));
+app.get('/sw.js', (req, res) => {
+  res.set('Cache-Control', 'no-cache');
+  res.set('Service-Worker-Allowed', '/');
+  res.sendFile(path.join(__dirname, '..', 'public', 'sw.js'));
+});
+
 app.get('/intro', (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'intro.html')));
 
 // 公開的玩家規則手冊（給 Discord 玩家看，不需登入）；不快取，改了手冊玩家立刻看到新版
