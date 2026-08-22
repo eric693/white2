@@ -106,6 +106,18 @@ function assess(gid, userId) {
   const animalTaxed = Math.max(0, animals - bFree); bFree = Math.max(0, bFree - animals);
   const fishTaxed = Math.max(0, fish - bFree);
 
+  // 房屋稅：房子越大稅越重（指數成長），再依「擺出來的家具」與寵物數加課。
+  // 沒有這條的話，家園加成人人衝頂而零成本，蓋房子就變成純賺。
+  const hu = db.prepare('SELECT level FROM home_users WHERE guild_id=? AND user_id=?').get(gid, userId);
+  const houseLv = hu ? hu.level : 0;
+  const placed = db.prepare('SELECT COALESCE(SUM(placed),0) n FROM home_furniture_owned WHERE guild_id=? AND user_id=?').get(gid, userId).n;
+  const petCount = db.prepare('SELECT COUNT(*) n FROM pet_owned WHERE guild_id=? AND user_id=?').get(gid, userId).n;
+  const houseTaxedLv = Math.max(0, houseLv - (c.house_free || 0));
+  const house = c.house_enabled && houseTaxedLv > 0
+    ? Math.floor(Math.pow(houseTaxedLv, c.house_curve || 1.6) * (c.house_base || 0))
+      + placed * (c.house_furniture || 0) + petCount * (c.house_pet || 0)
+    : 0;
+
   const land = c.land_enabled ? fieldTaxed * (c.land_field || 0) + greenTaxed * (c.land_greenhouse || 0) : 0;
   const breed = c.breed_enabled ? animalTaxed * (c.breed_animal || 0) + fishTaxed * (c.breed_fish || 0) : 0;
   // 證券稅：持股市值扣掉免稅額後，乘上稅率
@@ -122,11 +134,11 @@ function assess(gid, userId) {
   let income = c.income_enabled ? incomeTax(base, c.income_free || 0, brackets(c), !!c.income_flat) : 0;
   // 單次上限：三稅合計不超過餘額的 income_max_pct %，避免一次被抄家
   const cap = Math.floor(w.coins * Math.max(0, Math.min(100, c.income_max_pct ?? 50)) / 100);
-  let total = income + land + breed + stock + spend;
+  let total = income + land + breed + stock + spend + house;
   if (cap > 0 && total > cap) {
     // 超過上限時先砍所得稅（農地/養殖/證券/消費是固定規費，該繳還是要繳）
-    income = Math.max(0, cap - land - breed - stock - spend);
-    total = income + land + breed + stock + spend;
+    income = Math.max(0, cap - land - breed - stock - spend - house);
+    total = income + land + breed + stock + spend + house;
   }
   // 慈善捐款折抵：本期捐款 × 折抵比例，直接從應繳稅額扣掉（不會扣成負數）
   const gross = total;
@@ -136,8 +148,8 @@ function assess(gid, userId) {
   const arrears = c.no_debt ? Math.max(0, w.tax_arrears || 0) : 0;
   total = curTax + arrears;
   return {
-    wallet: w, balance: w.coins, income, land, breed, stock, spend, gross, credit, donated, curTax, arrears, total, earned, incomeBase: base,
-    counts: { field, green, animals, fish, fieldTaxed, greenTaxed, animalTaxed, fishTaxed, stockVal, stockTaxed, spent, spendTaxed, earned, donated, credit }
+    wallet: w, balance: w.coins, income, land, breed, stock, spend, house, gross, credit, donated, curTax, arrears, total, earned, incomeBase: base,
+    counts: { field, green, animals, fish, fieldTaxed, greenTaxed, animalTaxed, fishTaxed, stockVal, stockTaxed, spent, spendTaxed, earned, donated, credit, houseLv, houseTaxedLv, placed, petCount }
   };
 }
 
@@ -412,7 +424,7 @@ async function announce(client, gid, period, bills, relief = [], reliefSum = 0, 
           name: '納稅大戶',
           value: top.map((b, i) => `${['🥇', '🥈', '🥉'][i] || `${i + 1}.`} <@${b.userId}> — ${money(gid, b.paid)}`).join('\n') || '—'
         })
-        .setFooter({ text: '所得稅算餘額／證券稅算持股市值／消費稅算本期兌換金額／農地稅算種著的格數／養殖稅算動物與魚。用 /稅單 查明細。' })
+        .setFooter({ text: '所得稅算餘額／證券稅算持股市值／消費稅算本期兌換金額／農地稅算種著的格數／養殖稅算動物與魚／房屋稅算階級與家具寵物。用 /稅單 查明細。' })
         .setColor(brandColor());
       if (liq.length) {
         emb.addFields({
@@ -452,6 +464,7 @@ function billEmbed(gid, b, period) {
   if (b.income) lines.push(`💰 所得稅　${money(gid, b.income)}（課稅基準 ${Number(b.incomeBase ?? b.balance).toLocaleString('en-US')}｜餘額 ${b.balance.toLocaleString('en-US')}、本期收入 ${Number(b.earned || 0).toLocaleString('en-US')}）`);
   if (b.land) lines.push(`🌾 農地稅　${money(gid, b.land)}（農地 ${b.counts.fieldTaxed} 格／溫室 ${b.counts.greenTaxed} 格）`);
   if (b.breed) lines.push(`🐄 養殖稅　${money(gid, b.breed)}（動物 ${b.counts.animalTaxed} 隻／魚 ${b.counts.fishTaxed} 條）`);
+  if (b.house) lines.push(`🏡 房屋稅　${money(gid, b.house)}（房屋 Lv.${b.counts.houseLv}｜家具 ${b.counts.placed} 件／寵物 ${b.counts.petCount} 隻）`);
   if (b.stock) lines.push(`📈 證券稅　${money(gid, b.stock)}（持股市值 ${Number(b.counts.stockVal || 0).toLocaleString('en-US')}）`);
   if (b.spend) lines.push(`🛍️ 消費稅　${money(gid, b.spend)}（本期兌換 ${Number(b.counts.spent || 0).toLocaleString('en-US')}）`);
   if (b.credit) lines.push(`❤️ 慈善折抵　**−${money(gid, b.credit)}**（本期捐款 ${Number(b.donated || 0).toLocaleString('en-US')}）`);
@@ -505,6 +518,7 @@ function infoEmbed(gid, userId, username) {
   if (c.stock_enabled) lines.push(`📈 **證券稅**　持股市值 × ${c.stock_pct || 0}%${(c.stock_free || 0) > 0 ? `（${money(gid, c.stock_free)} 以內免稅）` : ''}，負價股不算`);
   if (c.land_enabled) lines.push(`🌾 **農地稅**　種著的作物：農地 ${money(gid, c.land_field || 0)}／溫室 ${money(gid, c.land_greenhouse || 0)} 每格${c.land_free ? `（前 ${c.land_free} 格免稅）` : ''}`);
   if (c.breed_enabled) lines.push(`🐄 **養殖稅**　動物 ${money(gid, c.breed_animal || 0)}／隻、魚 ${money(gid, c.breed_fish || 0)}／條${c.breed_free ? `（前 ${c.breed_free} 隻免稅）` : ''}`);
+  if (c.house_enabled) lines.push(`🏡 **房屋稅**　房子越大稅越重（Lv.${(c.house_free || 0) + 1} 起課，指數成長），另加家具 ${money(gid, c.house_furniture || 0)}／件、寵物 ${money(gid, c.house_pet || 0)}／隻`);
   if (c.spend_enabled) lines.push(`🛍️ **消費稅**　神秘商店花掉的金額 × ${c.spend_pct || 0}%${(c.spend_free || 0) > 0 ? `（${money(gid, c.spend_free)} 以內免稅）` : ''}`);
   if (!lines.length) lines.push('目前沒有開徵稅金。');
   emb.setDescription(lines.join('\n'));
@@ -631,7 +645,7 @@ function init(client) {
   }, { timezone: 'Asia/Taipei' });
 
   client._runTax = (gid, opts) => runGuild(client, gid, opts);
-  console.log('  ↳ 稅金模組已載入（農地稅／養殖稅／所得稅，每分鐘檢查結算時間；面板 🧾稅務）');
+  console.log('  ↳ 稅金模組已載入（農地稅／養殖稅／房屋稅／所得稅，每分鐘檢查結算時間；面板 🧾稅務）');
 }
 
 const DOW = ['日', '一', '二', '三', '四', '五', '六'];

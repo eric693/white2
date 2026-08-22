@@ -166,6 +166,28 @@ const builders = [
     .addIntegerOption(o => o.setName('格子').setDescription('要賣的格子編號（用 /魚缸 查看）').setRequired(true).setMinValue(1)),
   new SlashCommandBuilder().setName('偷魚').setDescription('去別人的魚缸偷未領取的星幣（有機會整條魚撈走）')
     .addUserOption(o => o.setName('對象').setDescription('要偷誰的魚缸').setRequired(true)),
+  // ---- 家園系統 ----
+  new SlashCommandBuilder().setName('我的家').setDescription('打開你的家園面板（房屋／廚房／家具／寵物／約會）'),
+  new SlashCommandBuilder().setName('升級家園').setDescription('用金幣＋木材／礦石把房子升到下一階'),
+  new SlashCommandBuilder().setName('家園加成').setDescription('查看你目前所有加成與來源明細'),
+  new SlashCommandBuilder().setName('家園卡').setDescription('把你的家園畫成一張圖（房屋、寵物、稱號、加成一次看完）'),
+  new SlashCommandBuilder().setName('簽到').setDescription('回小屋簽到領星幣（連續加碼，房子越大領越多）'),
+  new SlashCommandBuilder().setName('家園網頁').setDescription('取得你的個人家園網頁連結（完整漂亮版）'),
+  new SlashCommandBuilder().setName('家具').setDescription('買家具、擺放或收起（只有擺出來才有加成）'),
+  new SlashCommandBuilder().setName('廚房').setDescription('蓋廚房、升級、做菜、領取料理'),
+  new SlashCommandBuilder().setName('烹飪').setDescription('打開廚房做菜'),
+  new SlashCommandBuilder().setName('寵物').setDescription('領養、餵食、查看寵物技能'),
+  new SlashCommandBuilder().setName('寵物改名').setDescription('幫你的寵物取個名字')
+    .addStringOption(o => o.setName('寵物').setDescription('要改名的寵物').setRequired(true))
+    .addStringOption(o => o.setName('名字').setDescription('新名字').setRequired(true)),
+  new SlashCommandBuilder().setName('圖鑑2').setDescription('查看各類收集完成度（收集到門檻會解鎖稱號）'),
+  new SlashCommandBuilder().setName('稱號').setDescription('查看與裝備稱號（同時只能裝備 3 個）'),
+  new SlashCommandBuilder().setName('送禮').setDescription('送東西給角色，提升好感度')
+    .addStringOption(o => o.setName('角色').setDescription('打字搜尋角色名字').setRequired(true).setAutocomplete(true)),
+  new SlashCommandBuilder().setName('邀請').setDescription('邀請角色來你家作客（需要家園 Lv.6）')
+    .addStringOption(o => o.setName('角色').setDescription('打字搜尋角色名字').setRequired(true).setAutocomplete(true)),
+  new SlashCommandBuilder().setName('好感度').setDescription('查看你跟某位角色的好感度')
+    .addStringOption(o => o.setName('角色').setDescription('打字搜尋角色名字').setRequired(true).setAutocomplete(true)),
   new SlashCommandBuilder().setName('設施商店').setDescription('買農地／溫室／牧場／孵化室的等級，擴充格數'),
 
   new SlashCommandBuilder().setName('稅單').setDescription('查看本期要繳的稅（農地稅／養殖稅／所得稅）與上期實繳')

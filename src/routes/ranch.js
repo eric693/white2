@@ -187,4 +187,35 @@ router.delete('/ranch-steal-routes/:id', (req, res) => {
   res.json({ ok: true });
 });
 
+
+// ---- 偷竊紀錄：前台公告匿名，管理員在這裡查得到真兇 ----
+// 支援用小偷／被害者／關鍵字篩選，預設只列最近 300 筆。
+router.get('/ranch/steal-logs', requireModule('gather'), (req, res) => {
+  const kw = String(req.query.q || '').trim();
+  const kind = String(req.query.kind || '').trim();     // ranch / aquarium
+  const result = String(req.query.result || '').trim(); // success / miss / caught
+  const where = ['guild_id = @g'];
+  if (kind) where.push('kind = @kind');
+  if (result) where.push('result = @result');
+  if (kw) where.push('(thief_name LIKE @k OR victim_name LIKE @k OR thief_id LIKE @k OR victim_id LIKE @k OR loot LIKE @k)');
+  const rows = db.prepare(
+    `SELECT * FROM steal_logs WHERE ${where.join(' AND ')} ORDER BY id DESC LIMIT 300`
+  ).all({ g: req.guildId, k: `%${kw}%`, kind, result });
+  res.json(rows);
+});
+
+// 排行：誰偷最多、誰被偷最慘（處理糾紛時最常看的兩張表）
+router.get('/ranch/steal-stats', requireModule('gather'), (req, res) => {
+  const days = int(req.query.days, 7, 1);
+  const since = `-${days} days`;
+  const q = (col, nameCol) => db.prepare(
+    `SELECT ${col} AS user_id, ${nameCol} AS username, COUNT(*) AS times,
+            SUM(CASE WHEN result='success' THEN 1 ELSE 0 END) AS success,
+            SUM(coins) AS coins
+       FROM steal_logs
+      WHERE guild_id = ? AND created_at > datetime('now','localtime',?)
+      GROUP BY ${col} ORDER BY times DESC LIMIT 20`).all(req.guildId, since);
+  res.json({ days, thieves: q('thief_id', 'thief_name'), victims: q('victim_id', 'victim_name') });
+});
+
 module.exports = router;

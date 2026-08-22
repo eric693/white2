@@ -1497,3 +1497,274 @@ CREATE TABLE IF NOT EXISTS loan_collaterals (
   detail   TEXT NOT NULL DEFAULT ''     -- 顯示用名稱
 );
 CREATE INDEX IF NOT EXISTS idx_loan_coll ON loan_collaterals(loan_id);
+
+
+-- ============================================================
+-- 家園系統（家園 → 廚房 → 料理 → 家具 → 寵物 → 圖鑑 → 稱號 → 好感度）
+-- 設計主軸：採集/挖礦/農場/魚缸的產物有了長期出海口，
+-- 所有加成最後都由 util/buffs.js 統一結算，避免各系統各自加成而失控。
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS home_config (
+  guild_id        TEXT PRIMARY KEY,
+  enabled         INTEGER NOT NULL DEFAULT 1,
+  seeded          INTEGER NOT NULL DEFAULT 0,
+  title_slots     INTEGER NOT NULL DEFAULT 3,   -- 同時可裝備幾個稱號
+  visit_enabled   INTEGER NOT NULL DEFAULT 1,   -- 是否開放邀請角色來訪
+  gift_daily_limit INTEGER NOT NULL DEFAULT 5,  -- 每日送禮次數上限（每角色）
+  visit_daily_limit INTEGER NOT NULL DEFAULT 3, -- 每日邀請次數上限
+  buff_cap_pct    INTEGER NOT NULL DEFAULT 30   -- 單一類型加成總和上限%（防止疊到爆）
+);
+
+-- 房屋 12 階（管理員可在後台改名稱與材料）
+CREATE TABLE IF NOT EXISTS home_levels (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id      TEXT NOT NULL DEFAULT '',
+  level         INTEGER NOT NULL DEFAULT 1,
+  name          TEXT NOT NULL DEFAULT '',
+  emoji         TEXT NOT NULL DEFAULT '',
+  unlocks       TEXT NOT NULL DEFAULT '',   -- 解鎖內容說明（顯示用）
+  coins         INTEGER NOT NULL DEFAULT 0, -- 升到此階要的金幣
+  materials     TEXT NOT NULL DEFAULT '[]', -- [{item:"木材",count:800}]，用名稱比對 gather_items
+  furniture_cap INTEGER NOT NULL DEFAULT 5, -- 可擺放家具數
+  pet_cap       INTEGER NOT NULL DEFAULT 0, -- 可養寵物數
+  kitchen_ok    INTEGER NOT NULL DEFAULT 0, -- 到此階可蓋廚房
+  visit_ok      INTEGER NOT NULL DEFAULT 0, -- 到此階角色才願意來訪
+  home_buff_pct INTEGER NOT NULL DEFAULT 0, -- 家園整體加成%
+  UNIQUE (guild_id, level)
+);
+
+CREATE TABLE IF NOT EXISTS home_users (
+  guild_id       TEXT NOT NULL DEFAULT '',
+  user_id        TEXT NOT NULL,
+  username       TEXT NOT NULL DEFAULT '',
+  level          INTEGER NOT NULL DEFAULT 1,
+  kitchen_built  INTEGER NOT NULL DEFAULT 0,
+  kitchen_level  INTEGER NOT NULL DEFAULT 0,
+  created_at     TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  PRIMARY KEY (guild_id, user_id)
+);
+
+-- ---- 家具：6 大類、可擺放、給小幅加成 ----
+CREATE TABLE IF NOT EXISTS home_furniture (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id    TEXT NOT NULL DEFAULT '',
+  category    TEXT NOT NULL DEFAULT 'living', -- living/bedroom/kitchen/garden/collection/special
+  name        TEXT NOT NULL DEFAULT '',
+  emoji       TEXT NOT NULL DEFAULT '',
+  price       INTEGER NOT NULL DEFAULT 0,
+  materials   TEXT NOT NULL DEFAULT '[]',
+  min_level   INTEGER NOT NULL DEFAULT 1,     -- 需要的房屋階級
+  buff_type   TEXT NOT NULL DEFAULT '',       -- 見 util/buffs.js 的 BUFF_TYPES
+  buff_pct    INTEGER NOT NULL DEFAULT 0,
+  description TEXT NOT NULL DEFAULT '',
+  sort        INTEGER NOT NULL DEFAULT 0,
+  enabled     INTEGER NOT NULL DEFAULT 1
+);
+CREATE TABLE IF NOT EXISTS home_furniture_owned (
+  guild_id     TEXT NOT NULL DEFAULT '',
+  user_id      TEXT NOT NULL,
+  furniture_id INTEGER NOT NULL,
+  count        INTEGER NOT NULL DEFAULT 0,
+  placed       INTEGER NOT NULL DEFAULT 0,   -- 擺出來的數量（只有擺出來才有加成）
+  PRIMARY KEY (guild_id, user_id, furniture_id)
+);
+
+-- ---- 廚房 10 級 ----
+CREATE TABLE IF NOT EXISTS kitchen_levels (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id    TEXT NOT NULL DEFAULT '',
+  level       INTEGER NOT NULL DEFAULT 1,
+  name        TEXT NOT NULL DEFAULT '',
+  emoji       TEXT NOT NULL DEFAULT '',
+  coins       INTEGER NOT NULL DEFAULT 0,
+  materials   TEXT NOT NULL DEFAULT '[]',
+  perfect_pct INTEGER NOT NULL DEFAULT 0,  -- 完美料理額外機率%
+  description TEXT NOT NULL DEFAULT '',
+  UNIQUE (guild_id, level)
+);
+
+-- ---- 食譜與料理成品（品質：普通/精良/稀有/史詩/傳說） ----
+CREATE TABLE IF NOT EXISTS cook_recipes (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id      TEXT NOT NULL DEFAULT '',
+  name          TEXT NOT NULL DEFAULT '',
+  emoji         TEXT NOT NULL DEFAULT '',
+  min_kitchen   INTEGER NOT NULL DEFAULT 1,
+  materials     TEXT NOT NULL DEFAULT '[]',
+  cook_minutes  INTEGER NOT NULL DEFAULT 10,
+  base_price    INTEGER NOT NULL DEFAULT 0,   -- 普通品質售價，其餘按品質倍率
+  affinity_base INTEGER NOT NULL DEFAULT 0,   -- 送禮基礎好感
+  buff_type     TEXT NOT NULL DEFAULT '',     -- 吃了給的暫時 buff
+  buff_pct      INTEGER NOT NULL DEFAULT 0,
+  buff_minutes  INTEGER NOT NULL DEFAULT 0,
+  description   TEXT NOT NULL DEFAULT '',
+  sort          INTEGER NOT NULL DEFAULT 0,
+  enabled       INTEGER NOT NULL DEFAULT 1
+);
+-- 烹飪中的鍋子（廚房等級＝同時能煮幾道）
+CREATE TABLE IF NOT EXISTS cook_queue (
+  id        INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id  TEXT NOT NULL DEFAULT '',
+  user_id   TEXT NOT NULL,
+  recipe_id INTEGER NOT NULL,
+  slot      INTEGER NOT NULL DEFAULT 0,
+  ready_at  INTEGER NOT NULL DEFAULT 0,
+  quality   INTEGER NOT NULL DEFAULT 0   -- 下鍋時就擲好，領取時揭曉
+);
+-- 做好的料理（同一道菜不同品質分開存）
+CREATE TABLE IF NOT EXISTS cook_inventory (
+  guild_id  TEXT NOT NULL DEFAULT '',
+  user_id   TEXT NOT NULL,
+  recipe_id INTEGER NOT NULL,
+  quality   INTEGER NOT NULL DEFAULT 0,
+  count     INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (guild_id, user_id, recipe_id, quality)
+);
+
+-- ---- 寵物 ----
+CREATE TABLE IF NOT EXISTS pet_defs (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id    TEXT NOT NULL DEFAULT '',
+  name        TEXT NOT NULL DEFAULT '',
+  emoji       TEXT NOT NULL DEFAULT '',
+  rarity      TEXT NOT NULL DEFAULT 'N',      -- N/R/SR/SSR/UR
+  min_level   INTEGER NOT NULL DEFAULT 2,     -- 需要的房屋階級
+  price       INTEGER NOT NULL DEFAULT 0,     -- 0＝不販售（只能特殊管道取得）
+  materials   TEXT NOT NULL DEFAULT '[]',
+  skill_name  TEXT NOT NULL DEFAULT '',
+  buff_type   TEXT NOT NULL DEFAULT '',
+  buff_pct    INTEGER NOT NULL DEFAULT 0,     -- 滿親密度時的加成，實際按親密度比例給
+  feed_hours  INTEGER NOT NULL DEFAULT 24,
+  description TEXT NOT NULL DEFAULT '',
+  sort        INTEGER NOT NULL DEFAULT 0,
+  enabled     INTEGER NOT NULL DEFAULT 1
+);
+CREATE TABLE IF NOT EXISTS pet_owned (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id    TEXT NOT NULL DEFAULT '',
+  user_id     TEXT NOT NULL,
+  pet_id      INTEGER NOT NULL,
+  nickname    TEXT NOT NULL DEFAULT '',
+  level       INTEGER NOT NULL DEFAULT 1,
+  exp         INTEGER NOT NULL DEFAULT 0,
+  intimacy    INTEGER NOT NULL DEFAULT 0,   -- 0~100
+  personality TEXT NOT NULL DEFAULT '',
+  fed_ms      INTEGER NOT NULL DEFAULT 0,
+  created_at  TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_pet_owned ON pet_owned(guild_id, user_id);
+
+-- ---- 圖鑑：記錄「曾經擁有過」，賣掉也不會消失 ----
+CREATE TABLE IF NOT EXISTS dex_seen (
+  guild_id TEXT NOT NULL DEFAULT '',
+  user_id  TEXT NOT NULL,
+  cat      TEXT NOT NULL,          -- fish/crop/greenhouse/mine/cook/pet/furniture/role
+  key      TEXT NOT NULL,          -- 物品名稱（跨表通用）
+  first_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  PRIMARY KEY (guild_id, user_id, cat, key)
+);
+
+-- ---- 稱號：可無限收集，但同時只能裝備 title_slots 個 ----
+CREATE TABLE IF NOT EXISTS title_defs (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id    TEXT NOT NULL DEFAULT '',
+  cat         TEXT NOT NULL DEFAULT '',   -- 對應 dex_seen.cat，或 wealth/home/affinity
+  name        TEXT NOT NULL DEFAULT '',
+  emoji       TEXT NOT NULL DEFAULT '',
+  need        INTEGER NOT NULL DEFAULT 0, -- 需要的完成數（wealth＝金幣、home＝房屋階級）
+  buff_type   TEXT NOT NULL DEFAULT '',
+  buff_pct    INTEGER NOT NULL DEFAULT 0,
+  buff2_type  TEXT NOT NULL DEFAULT '',
+  buff2_pct   INTEGER NOT NULL DEFAULT 0,
+  description TEXT NOT NULL DEFAULT '',
+  sort        INTEGER NOT NULL DEFAULT 0,
+  enabled     INTEGER NOT NULL DEFAULT 1
+);
+CREATE TABLE IF NOT EXISTS title_owned (
+  guild_id TEXT NOT NULL DEFAULT '',
+  user_id  TEXT NOT NULL,
+  title_id INTEGER NOT NULL,
+  got_at   TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  slot     INTEGER NOT NULL DEFAULT -1,   -- -1＝未裝備，0..n＝裝備欄位
+  PRIMARY KEY (guild_id, user_id, title_id)
+);
+
+-- ---- 好感度：角色直接沿用轉盤的 wheel_roles（已有數百位角色） ----
+CREATE TABLE IF NOT EXISTS affinity (
+  guild_id   TEXT NOT NULL DEFAULT '',
+  user_id    TEXT NOT NULL,
+  role_id    INTEGER NOT NULL,
+  points     INTEGER NOT NULL DEFAULT 0,
+  level      INTEGER NOT NULL DEFAULT 0,
+  visits     INTEGER NOT NULL DEFAULT 0,
+  gift_day   TEXT NOT NULL DEFAULT '',
+  gift_count INTEGER NOT NULL DEFAULT 0,
+  last_visit TEXT NOT NULL DEFAULT '',
+  PRIMARY KEY (guild_id, user_id, role_id)
+);
+-- 角色喜好：沒設定的角色用預設權重，設了就吃這裡
+CREATE TABLE IF NOT EXISTS affinity_prefs (
+  id       INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id TEXT NOT NULL DEFAULT '',
+  role_id  INTEGER NOT NULL,
+  item     TEXT NOT NULL DEFAULT '',    -- 物品或料理名稱
+  weight   INTEGER NOT NULL DEFAULT 100 -- 100＝普通，300＝最愛，-100＝討厭
+);
+CREATE INDEX IF NOT EXISTS idx_aff_prefs ON affinity_prefs(guild_id, role_id);
+-- 好感度階級門檻與獎勵
+CREATE TABLE IF NOT EXISTS affinity_levels (
+  id        INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id  TEXT NOT NULL DEFAULT '',
+  level     INTEGER NOT NULL DEFAULT 1,
+  name      TEXT NOT NULL DEFAULT '',
+  need      INTEGER NOT NULL DEFAULT 0,
+  reward    TEXT NOT NULL DEFAULT '',
+  title_id  INTEGER NOT NULL DEFAULT 0,
+  UNIQUE (guild_id, level)
+);
+
+-- ---- 偷竊紀錄（後台查得到誰偷誰，前台仍匿名） ----
+CREATE TABLE IF NOT EXISTS steal_logs (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id    TEXT NOT NULL DEFAULT '',
+  kind        TEXT NOT NULL DEFAULT 'ranch',   -- ranch / aquarium
+  thief_id    TEXT NOT NULL DEFAULT '',
+  thief_name  TEXT NOT NULL DEFAULT '',
+  victim_id   TEXT NOT NULL DEFAULT '',
+  victim_name TEXT NOT NULL DEFAULT '',
+  result      TEXT NOT NULL DEFAULT '',        -- success / miss / caught
+  loot        TEXT NOT NULL DEFAULT '',        -- 偷到的東西（顯示用）
+  coins       INTEGER NOT NULL DEFAULT 0,
+  penalty     INTEGER NOT NULL DEFAULT 0,      -- 被看門動物罰掉的星幣
+  channel_id  TEXT NOT NULL DEFAULT '',
+  created_at  TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_steal_logs ON steal_logs(guild_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_steal_thief ON steal_logs(guild_id, thief_id);
+CREATE INDEX IF NOT EXISTS idx_steal_victim ON steal_logs(guild_id, victim_id);
+
+-- 暫時性加成（吃料理等），到期自動失效
+CREATE TABLE IF NOT EXISTS home_buffs (
+  id        INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id  TEXT NOT NULL DEFAULT '',
+  user_id   TEXT NOT NULL,
+  buff_type TEXT NOT NULL DEFAULT '',
+  buff_pct  INTEGER NOT NULL DEFAULT 0,
+  source    TEXT NOT NULL DEFAULT '',
+  expire_ms INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_home_buffs ON home_buffs(guild_id, user_id, expire_ms);
+
+-- 家園每日簽到：連續簽到獎勵遞增，斷了就從頭
+CREATE TABLE IF NOT EXISTS home_checkin (
+  guild_id   TEXT NOT NULL DEFAULT '',
+  user_id    TEXT NOT NULL,
+  last_day   TEXT NOT NULL DEFAULT '',   -- 台北時區的日期
+  streak     INTEGER NOT NULL DEFAULT 0, -- 目前連續天數
+  best       INTEGER NOT NULL DEFAULT 0,
+  total      INTEGER NOT NULL DEFAULT 0, -- 累計簽到次數
+  week_start TEXT NOT NULL DEFAULT '',   -- 本週起始日（顯示週一~週日用）
+  week_mask  INTEGER NOT NULL DEFAULT 0, -- 本週已簽的位元遮罩（bit0=週一）
+  PRIMARY KEY (guild_id, user_id)
+);

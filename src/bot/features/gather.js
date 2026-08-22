@@ -387,6 +387,20 @@ function addToBag(gid, userId, itemId, n = 1) {
     `INSERT INTO gather_inventory (guild_id,user_id,item_id,count,total_caught) VALUES (?,?,?,?,?)
      ON CONFLICT(guild_id,user_id,item_id) DO UPDATE SET count = count + ?, total_caught = total_caught + ?`
   ).run(gid, userId, itemId, n, n, n, n);
+  // 圖鑑：所有物品都會流經這裡（釣魚、挖礦、收成、偷竊、製作…），
+  // 所以只要在這一點記一筆，圖鑑就會自動填滿，而且賣掉也不會消失。
+  try {
+    const it = db.prepare('SELECT kind, name FROM gather_items WHERE id=?').get(itemId);
+    if (it) {
+      // farm 類要再分農地／溫室，圖鑑才對得上；分不出來就歸農作
+      let cat = it.kind;
+      if (it.kind === 'farm') {
+        const s = db.prepare('SELECT plot_type FROM crop_seeds WHERE guild_id=? AND product_item_id=?').get(gid, itemId);
+        cat = s && s.plot_type === 'greenhouse' ? 'greenhouse' : 'crop';
+      }
+      db.prepare('INSERT OR IGNORE INTO dex_seen (guild_id,user_id,cat,key) VALUES (?,?,?,?)').run(gid, userId, cat, it.name);
+    }
+  } catch { /* 圖鑑記錄失敗不該影響到手的東西 */ }
 }
 
 

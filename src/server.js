@@ -104,6 +104,8 @@ app.use('/api', require('./routes/tax'));
 app.use('/api', require('./routes/charity'));
 app.use('/api', require('./routes/loans'));
 app.use('/api', require('./routes/users'));
+// 玩家的個人家園網頁（唯讀，不需登入，網址帶簽章 token）
+app.use('/', require('./routes/homepage'));
 
 // 公開功能介紹頁（乾淨網址 /intro，不需登入）
 app.get('/intro', (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'intro.html')));

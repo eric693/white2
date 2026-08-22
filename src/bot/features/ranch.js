@@ -8,6 +8,8 @@ const { brandColor } = require('../../util/brand');
 const { livePrice, priceTag } = require('../../util/market');
 const { wallet, addCoins, addToBag, menuResult, safeMenu } = require('./gather');
 const { facilitySlots, facilityBonus, applySpeed } = require('./facility');
+const { logSteal, stealChannel } = require('../../util/steal');
+const { buffPct } = require('../../util/buffs');
 
 const rcfg = (gid) => guildConfig('ranch_config', gid);
 const gcfg = (gid) => guildConfig('gather_config', gid);
@@ -479,21 +481,31 @@ function init(client) {
 
         bumpSteal(gid, uid);
         // 被偷者的牧場等級提供防竊：直接扣小偷的成功率與搶動物機率（最低壓到 0）
-        const resist = facilityBonus(gid, to.id, 'ranch').resist;
+        // 防護來源有三層：牧場等級（設施商店）＋ 守衛寵物（牧場防護／全域防竊）。
+        // 守衛寵物是為了讓玩家不必再拿生產格子去養看門鵝 —— 寵物住家裡，不佔牧場。
+        const petResist = buffPct(gid, to.id, 'ranch_resist_pct') + buffPct(gid, to.id, 'steal_resist_pct');
+        const resist = facilityBonus(gid, to.id, 'ranch').resist + petResist;
         const successPct = Math.max(0, c.steal_success_pct - resist);
         const animalPct = Math.max(0, c.steal_animal_pct - resist);
         const success = Math.random() * 100 < successPct;
         if (!success) {
-          return await reply({ content: `你正要下手，卻被 ${to.username} 的看門狗發現，只好空手逃走！${resist ? `（對方牧場等級讓成功率 -${resist}%）` : ''}（今日 ${usedToday + 1}/${c.steal_daily_limit}）` });
+          logSteal({ guildId: gid, kind: 'ranch', thiefId: uid, thiefName: uname,
+            victimId: to.id, victimName: to.username, result: 'miss', channelId: i.channelId });
+          return await reply({ content: `你正要下手，卻被 ${to.username} 的守衛發現，只好空手逃走！${resist ? `（對方防護讓成功率 -${resist}%${petResist ? `，其中寵物擋了 ${petResist}%` : ''}）` : ''}（今日 ${usedToday + 1}/${c.steal_daily_limit}）` });
         }
 
         // 看門動物反擊：被偷者若養了看門狗/貓，有機率讓小偷掉星幣（賠給被偷者）。
         // 先擲看門，再決定偷什麼 —— 被逮到的那次就不該讓他還牽走動物。
         let guardNote = '', guardPenalty = 0, guardAnimal = null;
         const guards = victimSlots.map(s => animalById(gid, s.animal_id)).filter(a => a && a.guard_pct > 0);
-        if (guards.length) {
-          // 只取「反擊機率最高的那一隻」，不累加 —— 否則買 4 隻看門鵝就變成 100% 免疫。
-          const best = guards.reduce((m, a) => (a.guard_pct > m.guard_pct ? a : m), guards[0]);
+        // 寵物的反擊機率也算進來，跟牧場看門動物取高的那一個（不累加）
+        const petBite = buffPct(gid, to.id, 'guard_bite_pct');
+        const bestAnimal = guards.length ? guards.reduce((m, a) => (a.guard_pct > m.guard_pct ? a : m), guards[0]) : null;
+        const useAnimal = bestAnimal && bestAnimal.guard_pct >= petBite;
+        const best = useAnimal ? bestAnimal
+          : petBite > 0 ? { name: '守衛寵物', emoji: '🐾', guard_pct: petBite, guard_penalty: Math.max(20, petBite * 2) }
+            : null;
+        if (best) {
           if (Math.random() * 100 < best.guard_pct) {
             const before = wallet(gid, uid, uname).coins;
             // 罰款照抽全額、不再被小偷的餘額上限卡住——沒錢也照罰，會欠成負數（防止玩家故意花光錢來偷）
@@ -576,6 +588,9 @@ function init(client) {
 
         // 產物與動物都沒得手：真正的撲空（看門狗有咬到的話還是要講）
         if (!stolen.size && !animalStolen) {
+          logSteal({ guildId: gid, kind: 'ranch', thiefId: uid, thiefName: uname,
+            victimId: to.id, victimName: to.username,
+            result: guardPenalty > 0 ? 'caught' : 'miss', penalty: guardPenalty, channelId: i.channelId });
           return await reply({
             content: totalPending > 0
               ? `你摸進了 ${to.username} 的牧場，但什麼都沒帶走！（今日 ${usedToday + 1}/${c.steal_daily_limit}）${guardNote}`
@@ -594,8 +609,16 @@ function init(client) {
           .setDescription(`${loot}${guardNote}${animalNote}`)
           .setFooter({ text: `約值 ${value.toLocaleString('en-US')} ${gc.currency_name}｜今日 ${usedToday + 1}/${c.steal_daily_limit}` });
 
-        // 私訊通知被偷的人（對方關私訊會失敗，忽略即可）
+        // 後台查得到真兇（前台公告仍匿名）
+        logSteal({ guildId: gid, kind: 'ranch', thiefId: uid, thiefName: uname,
+          victimId: to.id, victimName: to.username,
+          result: guardPenalty > 0 ? 'caught' : 'success',
+          loot: [...lines, animalStolen ? '（整隻動物被牽走）' : ''].filter(Boolean).join('、'),
+          coins: value, penalty: guardPenalty, channelId: i.channelId });
+
+        // 私訊通知被偷的人（對方關私訊會失敗，改在公告裡 @ 他，見下方 dmOk）
         const thief = i.member?.displayName || uname;
+        let dmOk = false;
         if (stolen.size || animalStolen) {
           const guardDm = guardPenalty > 0 ? `\n\n🐕 你的 ${guardAnimal.emoji || ''}${guardAnimal.name} 咬了小偷，追回 ${money(gc, guardPenalty)}！` : '';
           const animalDm = animalStolen ? `\n\n😱 你的一隻動物被整隻牽走了！` : '';
@@ -603,13 +626,13 @@ function init(client) {
           const dm = new EmbedBuilder().setColor(0xed4245).setTitle('🚨 你的牧場被偷了！')
             .setDescription(`**${thief}** ${lootDm}${guardDm}${animalDm}\n\n下次記得早點用 \`/收成\` 收，或去 \`/偷\` 討回來！`)
             .setFooter({ text: `發生在 ${i.guild.name}` });
-          to.send({ embeds: [dm] }).catch(() => {});
+          dmOk = await to.send({ embeds: [dm] }).then(() => true).catch(() => false);
         }
-        // 公開公告：一律發在小偷打 /偷 的那個頻道。
-        // 之前是照「被偷者的身分組」路由到他那一區，結果人在 A 區偷、公告卻跑去 B 區，
-        // 兩邊都看得莫名其妙；而且很多玩家身上根本沒有平台身分組，公告就直接消失。
+        // 公開公告：優先發到後台設定的固定公告頻道（ranch_config.steal_channel）。
+        // 沒設定才退回小偷所在頻道 —— 舊行為會讓公告散落在各個冒險區頻道，
+        // 被偷的人常常整天都不知道自己被偷了。
         if (stolen.size || animalStolen) {
-          const ch = i.channel || await i.guild.channels.fetch(i.channelId).catch(() => null);
+          const ch = await stealChannel(i, gid);
           if (ch) {
             // 公告不寫小偷是誰：留白讓大家互相猜、互相指控，比直接點名有趣得多。
             // （被偷的人仍會收到私訊，私訊裡才有小偷名字）
@@ -620,8 +643,11 @@ function init(client) {
                 (animalStolen ? `\n🐄💨 連**整隻動物**都被牽走了！` : '') +
                 (guardPenalty > 0 ? `\n🐕 不過那傢伙被 ${guardAnimal.emoji || ''}${guardAnimal.name} 逮到，掉了 ${money(gc, guardPenalty)} 賠給 <@${to.id}>！` : ''))
               .setFooter({ text: '到底是誰做的？想討回來就去 /偷 反擊！' });
-            // 只送 Embed、不 @ 身分組；Embed 內的 <@id> 只顯示名字不會發通知
-            ch.send({ embeds: [pub] }).catch(() => {});
+            // Embed 內的 <@id> 只顯示名字不會發通知，所以私訊送不出去時（對方關閉私訊）
+            // 改用 content 真的 tag 他一下，否則他完全不會知道自己被偷。
+            ch.send(dmOk
+              ? { embeds: [pub] }
+              : { content: `<@${to.id}>`, embeds: [pub], allowedMentions: { users: [to.id] } }).catch(() => {});
           }
         }
         return await reply({ embeds: [embed] });

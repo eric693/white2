@@ -194,6 +194,27 @@ ensureColumns('ranch_config', {
   steal_channel: "TEXT NOT NULL DEFAULT ''"    // 偷竊成功時公開公告的頻道（空＝只私訊被偷者）
 });
 
+// 房屋稅：房子越大稅越重，避免全民衝頂階後家園加成人人有、稅金零負擔。
+// house_base × 房屋階級 ^ house_curve，階級越高成長越陡。
+ensureColumns('tax_config', {
+  house_enabled: 'INTEGER NOT NULL DEFAULT 1',
+  house_base:    'INTEGER NOT NULL DEFAULT 300',   // 每一階的基礎稅額
+  house_curve:   'REAL NOT NULL DEFAULT 1.6',      // 指數：1＝線性，越大越懲罰高階
+  house_free:    'INTEGER NOT NULL DEFAULT 3',     // 前幾階免稅（新手不繳）
+  house_furniture: 'INTEGER NOT NULL DEFAULT 50',  // 每件「已擺出」的家具加課
+  house_pet:     'INTEGER NOT NULL DEFAULT 150'    // 每隻寵物加課
+});
+
+// 家園簽到設定：基礎金幣、連續加碼、滿週獎勵
+ensureColumns('home_config', {
+  checkin_enabled: 'INTEGER NOT NULL DEFAULT 1',
+  checkin_base:    'INTEGER NOT NULL DEFAULT 500',   // 每日基礎金幣
+  checkin_streak:  'INTEGER NOT NULL DEFAULT 100',   // 每連續一天多給
+  checkin_max:     'INTEGER NOT NULL DEFAULT 7',     // 連續加碼到第幾天封頂
+  checkin_week:    'INTEGER NOT NULL DEFAULT 3000',  // 一週七天全簽到的額外獎勵
+  checkin_home_pct:'INTEGER NOT NULL DEFAULT 10'     // 每一階房屋額外 +%（家蓋越大簽到越多）
+});
+
 // 多商店：把既有的 special_items 歸到某一間店（0＝未分類）
 ensureColumns('special_items', {
   shop_id: 'INTEGER NOT NULL DEFAULT 0'

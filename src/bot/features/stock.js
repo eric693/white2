@@ -93,8 +93,12 @@ function nextPrice(c, s, fx) {
   // 用 base 當步幅基準：股價逼近 0 時仍留最小跳動，才能真的穿越零線變負數
   const step = Math.max(base, Math.abs(s.anchor || 0) * 0.02, 1) * change;
   let px = Math.round(s.price + step);
-  // 股價只剩個位數時，步幅會小於 1 被四捨五入吃掉 → 價格永遠卡住不動。
-  // 只要這個 tick 有方向，就至少走 1 塊，才走得到 0 以下。
+  // 漲跌停要對「現價」封頂。anchor 很大時上面的步幅基準會遠大於現價
+  // （例：現價 100、anchor -20000 → 一盤固定跳 60 塊 = -60%），停板等於形同虛設。
+  // 現價接近 0 時至少留 1 塊，才走得到零以下。
+  const cap = Math.max(1, Math.round(base * lim));
+  px = Math.max(s.price - cap, Math.min(s.price + cap, px));
+  // 步幅小於 1 會被四捨五入吃掉 → 價格永遠卡住不動。只要這個 tick 有方向就至少走 1 塊。
   if (px === s.price && change !== 0) px = s.price + (change > 0 ? 1 : -1);
   const floor = s.floor_price == null ? 1 : s.floor_price;
   const ceil = s.ceil_price == null ? 1e9 : s.ceil_price;
@@ -180,14 +184,19 @@ const history = (gid, symbolId, n = 24) =>
   db.prepare('SELECT * FROM stock_prices WHERE guild_id=? AND symbol_id=? ORDER BY ts DESC LIMIT ?')
     .all(gid, symbolId, n).reverse();
 
-function changePct(gid, s) {
+// 這一盤的漲跌：開盤 → 現價
+function changeOf(gid, s) {
   const h = history(gid, s.id, 2);
   const prev = h.length ? h[h.length - 1].open : s.price;
-  if (!prev) return 0;
-  return ((s.price - prev) / Math.abs(prev)) * 100;
+  const d = s.price - prev;
+  // 股價可以是 0 或負數，這種時候百分比沒有意義（40 跌到 -20 不是「跌 150%」），只報金額
+  const p = prev > 0 && s.price > 0 ? (d / prev) * 100 : null;
+  return { d, p };
 }
-const arrow = (p) => (p > 0.05 ? '▲' : p < -0.05 ? '▼' : '－');
-const pctStr = (p) => `${p > 0 ? '+' : ''}${p.toFixed(1)}%`;
+const arrow = (d) => (d > 0 ? '▲' : d < 0 ? '▼' : '－');
+const sign = (n) => `${n > 0 ? '+' : ''}${num(n)}`;
+// 「本盤」講明白：使用者只在整點後看一眼，很容易把它當成「跟我上次看到的價比」
+const chgStr = ({ d, p }) => `${arrow(d)} ${sign(d)}${p == null ? '' : `（${p > 0 ? '+' : ''}${p.toFixed(1)}%）`}`;
 
 // ================== 錢包 / 持股 ==================
 function wallet(gid, uid, username) {
@@ -346,9 +355,9 @@ function marketEmbed(gid) {
   const list = symbols(gid);
   if (!list.length) return new EmbedBuilder().setColor(brandColor()).setTitle('📈 星幣股市').setDescription('目前沒有掛牌的股票。');
   const lines = list.map(s => {
-    const p = changePct(gid, s);
+    const chg = changeOf(gid, s);
     const h = history(gid, s.id, 24).map(r => r.close);
-    return `\`${s.code}\` ${s.emoji} **${s.name}**　**${num(s.price)}** ${arrow(p)} ${pctStr(p)}\n\`${sparkline(h)}\``;
+    return `\`${s.code}\` ${s.emoji} **${s.name}**　**${num(s.price)}** ${chgStr(chg)}\n\`${sparkline(h)}\``;
   });
   const step = Math.max(1, c.tick_minutes || 60) * 60000;
   const next = alignDown(Date.now(), step) + step;
@@ -359,13 +368,13 @@ function marketEmbed(gid) {
 }
 
 function symbolEmbed(gid, uid, s) {
-  const p = changePct(gid, s);
+  const chg = changeOf(gid, s);
   const h = history(gid, s.id, 24);
   const closes = h.map(r => r.close);
   const hold = holding(gid, uid, s.id);
-  const e = new EmbedBuilder().setColor(p >= 0 ? UP : DOWN)
+  const e = new EmbedBuilder().setColor(chg.d >= 0 ? UP : DOWN)
     .setTitle(`${s.emoji} ${s.name}　\`${s.code}\``)
-    .setDescription(`**${num(s.price)}** ${arrow(p)} ${pctStr(p)}\n\`${sparkline(closes)}\`　近 ${closes.length} 盤`);
+    .setDescription(`**${num(s.price)}** ${chgStr(chg)}　本盤\n\`${sparkline(closes)}\`　近 ${closes.length} 盤`);
   if (closes.length) {
     e.addFields({ name: '近期', value: `高 ${num(Math.max(...h.map(r => r.high)))}　低 ${num(Math.min(...h.map(r => r.low)))}　量 ${num(h.reduce((a, r) => a + r.volume, 0))}`, inline: false });
   }

@@ -9,6 +9,8 @@ const { db, guildConfig, logError } = require('../../db');
 const { brandColor } = require('../../util/brand');
 const { wallet, addCoins, safeMenu } = require('./gather');
 const { facilitySlots, facilityBonus } = require('./facility');
+const { logSteal, stealChannel } = require('../../util/steal');
+const { buffPct } = require('../../util/buffs');
 
 const acfg = (gid) => guildConfig('aquarium_config', gid);
 const gcfg = (gid) => guildConfig('gather_config', gid);
@@ -476,7 +478,12 @@ function init(client) {
 
         bumpSteal(gid, uid);
         const tag = `（今日 ${usedToday + 1}/${c.steal_daily_limit}）`;
-        if (Math.random() * 100 >= c.steal_success_pct) {
+        // 防護：魚缸等級（設施商店本來就標了「被偷成功率 -25%」，但一直沒接上）
+        // ＋ 守衛寵物（魚缸防護／全域防竊）。寵物住家裡，不佔魚缸格子。
+        const petResist = buffPct(gid, to.id, 'aqua_resist_pct') + buffPct(gid, to.id, 'steal_resist_pct');
+        const resist = facilityBonus(gid, to.id, 'aquarium').resist + petResist;
+        const successPct = Math.max(0, c.steal_success_pct - resist);
+        if (Math.random() * 100 >= successPct) {
           // 偷失敗被抓 → 罰款（星幣可為負）。可設定賠給受害者或直接沒收。
           const fine = Math.max(0, c.steal_fail_penalty || 0);
           if (fine > 0) {
@@ -491,9 +498,13 @@ function init(client) {
             } else {
               note += `（充公沒收）。`;
             }
-            return await reply({ content: `你把手伸進 ${to.username} 的魚缸，結果打翻了水，還被當場抓到！${note}${tag}` });
+            logSteal({ guildId: gid, kind: 'aquarium', thiefId: uid, thiefName: uname,
+              victimId: to.id, victimName: to.username, result: 'caught', penalty: fine, channelId: i.channelId });
+            return await reply({ content: `你把手伸進 ${to.username} 的魚缸，結果打翻了水，還被當場抓到！${resist ? `（對方防護 -${resist}%${petResist ? `，寵物擋了 ${petResist}%` : ''}）` : ''}${note}${tag}` });
           }
-          return await reply({ content: `你把手伸進 ${to.username} 的魚缸，結果打翻了水，只好落跑！${tag}` });
+          logSteal({ guildId: gid, kind: 'aquarium', thiefId: uid, thiefName: uname,
+            victimId: to.id, victimName: to.username, result: 'miss', channelId: i.channelId });
+          return await reply({ content: `你把手伸進 ${to.username} 的魚缸，結果打翻了水，只好落跑！${resist ? `（對方防護 -${resist}%）` : ''}${tag}` });
         }
 
         // 先看能不能整條撈走（小偷要有「自己的空魚缸格」才放得下；沒魚缸就撈不走）
@@ -535,6 +546,8 @@ function init(client) {
         })();
 
         if (!got && !stolenFish) {
+          logSteal({ guildId: gid, kind: 'aquarium', thiefId: uid, thiefName: uname,
+            victimId: to.id, victimName: to.username, result: 'miss', channelId: i.channelId });
           return await reply({ content: `你摸進 ${to.username} 的魚缸，但星幣都被領走了、魚也沒撈到，撲空！${tag}` });
         }
         const embed = new EmbedBuilder().setColor(0xed4245).setTitle('🕵️ 偷魚成功！')
@@ -542,21 +555,27 @@ function init(client) {
           .setFooter({ text: `今日 ${usedToday + 1}/${c.steal_daily_limit}` });
 
         const thief = i.member?.displayName || uname;
+        logSteal({ guildId: gid, kind: 'aquarium', thiefId: uid, thiefName: uname,
+          victimId: to.id, victimName: to.username, result: 'success',
+          loot: stolenFish ? `整條 ${stolenFish.name}` : '', coins: got, channelId: i.channelId });
         const dm = new EmbedBuilder().setColor(0xed4245).setTitle('🚨 你的魚缸被偷了！')
           .setDescription(`**${thief}** ${got ? `從你的魚缸撈走了 ${money(gc, got)}` : '摸進了你的魚缸'}` +
             (stolenFish ? `\n😱 連整條 ${stolenFish.emoji || ''}**${stolenFish.name}** 都被撈走了！` : '') +
             `\n\n下次記得早點 \`/撈金\`，或去 \`/偷魚\` 討回來！`)
           .setFooter({ text: `發生在 ${i.guild.name}` });
-        to.send({ embeds: [dm] }).catch(() => {});
+        const dmOk = await to.send({ embeds: [dm] }).then(() => true).catch(() => false);
 
-        const ch = i.channel || await i.guild.channels.fetch(i.channelId).catch(() => null);
+        // 跟牧場共用同一個公告頻道設定，兩套偷竊事件集中在同一個地方看
+        const ch = await stealChannel(i, gid);
         if (ch) {
           const pub = new EmbedBuilder().setColor(0xed4245).setTitle('🕵️ 魚缸偷竊事件')
             .setDescription(`<@${to.id}> 的魚缸被**不知名人士**摸進去了` +
               (got ? `，撈走 ${money(gc, got)}` : '') +
               (stolenFish ? `\n🐟💨 連整條 ${stolenFish.emoji || ''}**${stolenFish.name}** 都不見了！` : ''))
             .setFooter({ text: '到底是誰做的？想討回來就去 /偷魚 反擊！' });
-          ch.send({ embeds: [pub] }).catch(() => {});
+          ch.send(dmOk
+            ? { embeds: [pub] }
+            : { content: `<@${to.id}>`, embeds: [pub], allowedMentions: { users: [to.id] } }).catch(() => {});
         }
         return await reply({ embeds: [embed] });
       }

@@ -1,69 +1,99 @@
-// 冒險面板：一則訊息＋整齊的按鈕格，玩家直接點就執行對應動作（不用打指令）。
-// 按鈕由各功能模組（gather/ranch/crops/special）用 customId 'adv:*' 接手處理。
+// 冒險面板：改成「分類入口 → 私人分頁面板」。
+//
+// 為什麼不做成直接在釘選訊息上切換分頁：那則訊息是公開共用的，
+// 任何人按一下就會改掉所有人看到的內容。所以釘選訊息只留分類入口，
+// 點下去會開一份「只有你看得到」的分頁面板，在那上面切換才安全。
+//
+// 實際動作仍由各模組的 adv:* / stk:* 接手，這裡只負責版面。
 const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags, PermissionsBitField } = require('discord.js');
 const { brandColor } = require('../../util/brand');
 const { guildConfig } = require('../../db');
 
-function buildPanel() {
-  const embed = new EmbedBuilder().setColor(brandColor()).setTitle('🌿 冒險生活 · 一鍵面板')
-    .setDescription('點下方按鈕直接玩，不用打指令！結果只有你自己看得到。\n\n' +
-      '⬜ **灰色**＝採集與查看（釣魚、挖礦、背包、牧場、農地…）\n' +
-      '🟦 **藍色**＝賣錢／抽籤／交易\n' +
-      '🟩 **綠色**＝四家商店，全部集中在同一排（買道具、動物、種子、設施等級）\n\n' +
-      '想看**全部狀況**（動物數、作物數、工具耐久…）就點 **📊查看狀態**。完整說明打 `/幫助`。')
-    .setFooter({ text: '需要選項目的（種植/飼養/兌換/製作）請用 /，其餘一鍵搞定' });
-  const mk = (id, label, emoji, style = ButtonStyle.Secondary) =>
-    new ButtonBuilder().setCustomId(id).setLabel(label).setEmoji(emoji).setStyle(style);
-  const rows = [
-    // 灰＝採集動作
-    new ActionRowBuilder().addComponents(mk('adv:fish', '釣魚', '🎣'), mk('adv:mine', '挖礦', '⛏️'), mk('adv:wood', '伐木', '🪓'), mk('adv:forage', '採集', '🧺'), mk('adv:hunt', '狩獵', '🏹')),
-    // 藍＝經濟動作（賣錢、抽獎、交易）
-    new ActionRowBuilder().addComponents(mk('adv:sellpick', '賣出', '💰', ButtonStyle.Primary), mk('adv:draw', '每日抽籤', '🎲', ButtonStyle.Primary), mk('adv:trade', '交易', '🔄', ButtonStyle.Primary), mk('adv:bag', '背包', '🎒'), mk('adv:status', '查看狀態', '📊')),
-    // 🟢 綠＝四家商店集中一排，一眼就知道「要花錢的都在這」
-    new ActionRowBuilder().addComponents(
-      mk('adv:store', '一般商店', '🏪', ButtonStyle.Success),
-      mk('adv:ranchshop', '畜牧商店', '🛒', ButtonStyle.Success),
-      mk('adv:cropshop', '種子商店', '🌱', ButtonStyle.Success),
-      mk('adv:facility', '設施商店', '🏗️', ButtonStyle.Success),
-      mk('adv:aqshop', '水族商店', '🐠', ButtonStyle.Success)),
-    // 灰＝牧場區日常
-    new ActionRowBuilder().addComponents(mk('adv:ranch', '牧場', '🐔'), mk('adv:harvest', '收成', '🥛'), mk('adv:incubator', '孵化室', '🥚'), mk('adv:recipe', '製作', '🔨'), mk('adv:map', '地圖', '🗺️')),
-    // 灰＝農地區日常
-    new ActionRowBuilder().addComponents(mk('adv:farm', '農地', '🌾'), mk('adv:greenhouse', '溫室', '🏡'), mk('adv:reap', '採收', '🌻'), mk('adv:quest', '任務', '📜', ButtonStyle.Primary), mk('adv:aquarium', '魚缸', '🐠'))
-  ];
-  return { embeds: [embed], components: rows };
+const mk = (id, label, emoji, style = ButtonStyle.Secondary) =>
+  new ButtonBuilder().setCustomId(id).setLabel(label).setEmoji(emoji).setStyle(style);
+
+// ---- 分頁定義：一個地方改，入口與內頁同步 ----
+const TABS = {
+  gather: {
+    label: '冒險', emoji: '🎣', color: 0x3498db,
+    title: '🎣 出門冒險',
+    desc: '出門找素材。每個動作各有冷卻，工具會耗損，記得 `/修理`。\n撿到的東西會自動記進 **📖 圖鑑**，賣掉也不會消失。',
+    rows: [
+      [['adv:fish', '釣魚', '🎣'], ['adv:mine', '挖礦', '⛏️'], ['adv:wood', '伐木', '🪓'], ['adv:forage', '採集', '🧺'], ['adv:hunt', '狩獵', '🏹']],
+      [['adv:bag', '背包', '🎒'], ['adv:status', '查看狀態', '📊'], ['adv:map', '地圖', '🗺️'], ['adv:recipe', '製作', '🔨'], ['adv:quest', '任務', '📜', ButtonStyle.Primary]]
+    ]
+  },
+  produce: {
+    label: '生產', emoji: '🌾', color: 0x2ecc71,
+    title: '🌾 牧場與農地',
+    desc: '養動物、種作物、養魚。產物是家園升級與烹飪的原料 —— 別急著全部賣掉。\n沒收成的東西會被別人 `/偷`，記得早點收。',
+    rows: [
+      [['adv:ranch', '牧場', '🐔'], ['adv:harvest', '收成', '🥛'], ['adv:incubator', '孵化室', '🥚'], ['adv:aquarium', '魚缸', '🐠']],
+      [['adv:farm', '農地', '🌾'], ['adv:greenhouse', '溫室', '🏡'], ['adv:reap', '採收', '🌻']]
+    ]
+  },
+  home: {
+    label: '我的家', emoji: '🏡', color: 0xe91e63,
+    title: '🏡 我的家',
+    desc: '把採集、生產的成果變成長期資產。\n房屋 12 階 → 蓋廚房做料理 → 擺家具、養寵物 → 送禮攻略角色 → 收集圖鑑換稱號。\n**所有加成都在這條線上**，用 ⭐ 家園加成 隨時查目前有多少。',
+    rows: [
+      [['adv:home', '我的家', '🏠', ButtonStyle.Primary], ['adv:kitchen', '廚房', '🍳'], ['adv:furniture', '家具', '🛋️'], ['adv:pets', '寵物', '🐾'], ['adv:love', '約會', '💕']],
+      [['adv:checkin', '簽到', '📅', ButtonStyle.Success], ['adv:dex', '圖鑑', '📖'], ['adv:titles', '稱號', '🏅'], ['adv:buffs', '家園加成', '⭐'], ['adv:homeweb', '完整網頁版', '🖼️', ButtonStyle.Primary]]
+    ]
+  },
+  shop: {
+    label: '商店', emoji: '🏪', color: 0xf1c40f,
+    title: '🏪 商店街',
+    desc: '要花錢的都在這裡。買工具、動物、種子、魚，還有設施等級（擴充格數）。',
+    rows: [
+      [['adv:store', '一般商店', '🏪', ButtonStyle.Success], ['adv:ranchshop', '畜牧商店', '🛒', ButtonStyle.Success], ['adv:cropshop', '種子商店', '🌱', ButtonStyle.Success]],
+      [['adv:facility', '設施商店', '🏗️', ButtonStyle.Success], ['adv:aqshop', '水族商店', '🐠', ButtonStyle.Success]]
+    ]
+  },
+  money: {
+    label: '金錢', emoji: '💰', color: 0x9b59b6,
+    title: '💰 賺錢與理財',
+    desc: '賣東西、玩股票、繳稅、借錢。\n⚠️ 股價可能跌到**負數**，賣出會倒扣星幣，出場前先看清楚現價。',
+    rows: [
+      [['adv:sellpick', '賣出', '💰', ButtonStyle.Primary], ['adv:draw', '每日抽籤', '🎲', ButtonStyle.Primary], ['adv:trade', '交易', '🔄', ButtonStyle.Primary]],
+      [['stk:market', '股市行情', '📈', ButtonStyle.Primary], ['stk:buymenu', '買股', '📥', ButtonStyle.Success], ['stk:sellmenu', '賣股', '📤', ButtonStyle.Danger], ['stk:mine', '我的持股', '📊'], ['stk:news', '財經新聞', '📰']],
+      [['adv:tax', '稅務', '🧾'], ['adv:charity', '基金會', '❤️'], ['adv:loan', '物資貸款', '🏦']]
+    ]
+  }
+};
+
+// 分頁導覽列（跟「我的家」同一套視覺語言：目前所在的分頁是實心的）
+const navRow = (active) => new ActionRowBuilder().addComponents(
+  ...Object.entries(TABS).map(([k, t]) =>
+    mk(`pan:${k}`, t.label, t.emoji, k === active ? ButtonStyle.Primary : ButtonStyle.Secondary)));
+
+/** 某一個分頁的私人面板 */
+function tabPanel(key) {
+  const t = TABS[key] || TABS.gather;
+  const embed = new EmbedBuilder().setColor(t.color).setTitle(t.title).setDescription(t.desc)
+    .setFooter({ text: '只有你看得到這則訊息｜上排可切換分類' });
+  const rows = [navRow(key), ...t.rows.map(r => new ActionRowBuilder().addComponents(...r.map(b => mk(...b))))];
+  return { embeds: [embed], components: rows.slice(0, 5) };
 }
 
-// 股市面板（第二則訊息）：主面板 5 排已滿，股市另發一則。按鈕由 stock 模組的 stk:* 接手。
-// 🧾 稅務按鈕也放這排（主面板沒位子了），由 tax 模組的 adv:tax 接手。
-function buildStockPanel(gid) {
-  const c = gid ? guildConfig('market_config', gid) : {};
-  const fee = c.fee_pct ?? 2;
-  const embed = new EmbedBuilder().setColor(0x2ecc71).setTitle('📈 星幣股市 · 面板')
-    .setDescription('用星幣買賣股票賺價差——價格每小時跳動，還會被 📰財經新聞影響，高風險高報酬。\n' +
-      `全部**用點的**：看行情、看持股、買股、賣股都不用打指令（買賣各收 ${fee}% 交易稅、有交易冷卻）。\n` +
-      '⚠️ 股價可能跌到**負數**，這時賣出會**倒扣星幣**，出場前先看清楚現價。\n' +
-      '🧾 想知道自己會被課多少稅、什麼時候結算，點 **稅務** 查。');
-  const row1 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('stk:market').setLabel('股市行情').setEmoji('📈').setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId('stk:buymenu').setLabel('買股').setEmoji('📥').setStyle(ButtonStyle.Success),
-    new ButtonBuilder().setCustomId('stk:sellmenu').setLabel('賣股').setEmoji('📤').setStyle(ButtonStyle.Danger),
-    new ButtonBuilder().setCustomId('stk:mine').setLabel('我的持股').setEmoji('📊').setStyle(ButtonStyle.Secondary));
-  const row2 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('stk:news').setLabel('財經新聞').setEmoji('📰').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId('stk:quotes').setLabel('目前行情').setEmoji('📊').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId('adv:tax').setLabel('稅務').setEmoji('🧾').setStyle(ButtonStyle.Secondary),
-    new ButtonBuilder().setCustomId('adv:charity').setLabel('基金會').setEmoji('❤️').setStyle(ButtonStyle.Secondary));
-  const row3 = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('adv:loan').setLabel('物資貸款').setEmoji('🏦').setStyle(ButtonStyle.Secondary));
-  return { embeds: [embed], components: [row1, row2, row3] };
+/** 釘選在頻道的入口訊息（公開，所有人共用，所以不放會改內容的按鈕） */
+function buildPanel() {
+  const embed = new EmbedBuilder().setColor(brandColor()).setTitle('🌿 冒險生活 · 主選單')
+    .setDescription(
+      '選一個分類，會開一份**只有你看得到**的面板，在那裡面點按鈕就能玩，全程不用打指令。\n\n' +
+      `🎣 **冒險**　釣魚、挖礦、伐木、採集、狩獵、背包、任務\n` +
+      `🌾 **生產**　牧場、農地、溫室、魚缸、收成\n` +
+      `🏡 **我的家**　簽到、房屋、廚房、家具、寵物、約會、圖鑑、稱號\n` +
+      `🏪 **商店**　五家商店，要花錢的都在這\n` +
+      `💰 **金錢**　賣出、股市、稅務、貸款\n\n` +
+      '完整說明打 `/幫助`。')
+    .setFooter({ text: '點分類 → 開私人面板 → 在裡面隨意切換，不會洗版' });
+  return { embeds: [embed], components: [navRow(null)] };
 }
 
 async function publishPanel(channel) {
   const sent = await channel.send(buildPanel());
-  await sent.pin().catch(() => {});   // 釘選，方便玩家隨時從釘選找到
-  const stk = await channel.send(buildStockPanel(channel.guild && channel.guild.id)).catch(() => null);
-  if (stk) await stk.pin().catch(() => {});
+  await sent.pin().catch(() => {});
   return sent;
 }
 
@@ -73,17 +103,32 @@ function init(client) {
     return ch ? publishPanel(ch) : Promise.reject(new Error('找不到頻道'));
   };
   client.on('interactionCreate', async (i) => {
-    if (!i.isChatInputCommand() || i.commandName !== '冒險面板') return;
-    const admin = i.member && (i.member.permissions.has(PermissionsBitField.Flags.ManageGuild) || i.member.permissions.has(PermissionsBitField.Flags.Administrator));
-    if (!admin) return i.reply({ content: '只有管理員能發布面板。', flags: MessageFlags.Ephemeral });
-    const sent = await publishPanel(i.channel).catch(() => null);
-    if (!sent) return i.reply({ content: '發布失敗，請確認機器人在這個頻道有「發送訊息」權限。', flags: MessageFlags.Ephemeral });
-    return i.reply({
-      content: '✅ 已在這個頻道發布冒險面板，並自動釘選。\n\n**想讓它永遠停在最下面不被洗版**：把這個頻道設成只有機器人能發言（@everyone 關掉「傳送訊息」但保留可看到、可用應用程式指令）。玩家點按鈕不需要發言權限，結果又只有自己看得到，面板就會一直停在底部。',
-      flags: MessageFlags.Ephemeral
-    });
+    try {
+      // 分頁切換：從釘選訊息點進來是「新開一則私人訊息」，
+      // 在私人訊息裡再切換就是就地更新，兩種情況要分開處理。
+      if (i.isButton() && i.customId.startsWith('pan:')) {
+        const key = i.customId.split(':')[1];
+        const panel = tabPanel(key);
+        // ephemeral 訊息才可以就地更新；公開的釘選訊息一律另開私人面板
+        const isPrivate = Boolean(i.message?.flags?.has?.(MessageFlags.Ephemeral));
+        return isPrivate
+          ? i.update(panel).catch(() => {})
+          : i.reply({ ...panel, flags: MessageFlags.Ephemeral }).catch(() => {});
+      }
+      if (!i.isChatInputCommand() || i.commandName !== '冒險面板') return;
+      const admin = i.member && (i.member.permissions.has(PermissionsBitField.Flags.ManageGuild) || i.member.permissions.has(PermissionsBitField.Flags.Administrator));
+      if (!admin) return i.reply({ content: '只有管理員能發布面板。', flags: MessageFlags.Ephemeral });
+      const sent = await publishPanel(i.channel).catch(() => null);
+      if (!sent) return i.reply({ content: '發布失敗，請確認機器人在這個頻道有「發送訊息」權限。', flags: MessageFlags.Ephemeral });
+      return i.reply({
+        content: '✅ 已發布新版主選單並自動釘選。\n\n舊的面板訊息可以直接刪掉（新版把 21 顆按鈕收成 5 個分類，而且每個人開的是自己的面板，不會互相影響）。\n\n**想讓它永遠停在最下面不被洗版**：把這個頻道設成只有機器人能發言（@everyone 關掉「傳送訊息」但保留可看到、可用應用程式指令）。',
+        flags: MessageFlags.Ephemeral
+      });
+    } catch (e) {
+      if (i.isRepliable() && !i.replied) i.reply({ content: '面板開啟失敗。', flags: MessageFlags.Ephemeral }).catch(() => {});
+    }
   });
-  console.log('  ↳ 冒險面板已載入（/冒險面板 發布可點按鈕，自動釘選）');
+  console.log('  ↳ 冒險面板已載入（5 分類，私人分頁面板）');
 }
 
-module.exports = { init, buildPanel };
+module.exports = { init, buildPanel, tabPanel, TABS };
