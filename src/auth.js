@@ -39,6 +39,7 @@ const MODULES = [
   { key: 'tax',          label: '稅金',              group: '遊戲區' },
   { key: 'charity',      label: '基金會',            group: '遊戲區' },
   { key: 'loans',        label: '物資貸款',          group: '遊戲區' },
+  { key: 'home',         label: '家園與成就',        group: '遊戲區' },
   { key: 'stock',        label: '股市',              group: '遊戲區' },
   // 新聞獨立成一把鑰匙：它掌管全服物價與股價，權責跟其他頁面完全不同
   { key: 'news',         label: '財經新聞（掌管物價）', group: '遊戲區' },
