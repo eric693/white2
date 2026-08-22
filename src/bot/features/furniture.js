@@ -228,7 +228,12 @@ function furniturePanel(gid, uid, uname) {
   if (owned.length) {
     embed.addFields({
       name: '你的家具',
-      value: owned.map(o => `${o.emoji || ''}${o.name} ×${o.count}${o.placed ? `（已擺 ${o.placed}）` : ''}${o.buff_pct ? `　${BUFF_TYPES[o.buff_type]} +${o.buff_pct}%` : ''}`).join('\n').slice(0, 1024)
+      // 加成寫清楚：擺出來才算，所以直接標「生效中／未擺出」
+      value: owned.map(o => `${o.emoji || ''}${o.name} ×${o.count}`
+        + (o.buff_pct
+          ? `　⭐ ${BUFF_TYPES[o.buff_type] || o.buff_type} +${o.buff_pct}%`
+            + (o.placed ? `（已擺 ${o.placed} 件＝生效 +${o.buff_pct * o.placed}%）` : '（未擺出，沒有效果）')
+          : '　（無加成）')).join('\n').slice(0, 1024)
     });
   }
   const rows = [NAV('furn')];
@@ -255,9 +260,11 @@ function catPanel(gid, uid, uname, cat) {
   const embed = new EmbedBuilder().setColor(brandColor()).setTitle(`${CATS[cat] || '家具'}`)
     .setDescription(list.map(f => {
       const lock = home.level < f.min_level ? `🔒 需要家園 Lv.${f.min_level}　` : '';
-      const buff = f.buff_pct ? `　⭐ ${BUFF_TYPES[f.buff_type]} +${f.buff_pct}%` : '';
+      const buff = f.buff_pct ? true : false;
       const mats = parseMats(f.materials).map(m => `${m.item}×${m.count}`).join('、');
-      return `${lock}${f.emoji || ''}**${f.name}**　${money(gc, f.price)}${buff}\n　　${mats || '不需材料'}　${f.description}`;
+      return `${lock}${f.emoji || ''}**${f.name}**　${buff ? `**${BUFF_TYPES[f.buff_type] || f.buff_type} +${f.buff_pct}%**` : '無加成'}\n`
+        + `　　🔨 ${money(gc, f.price)} ＋ ${mats || '不需材料'}　💰 直接買 ${money(gc, cashPrice(gid, f))}\n`
+        + `　　${f.description || ''}`;
     }).join('\n').slice(0, 4000) || '這個分類還沒有家具。')
     .setFooter({ text: '🔨 用材料製作比較便宜｜💰 直接購買免材料但貴很多（🔒 的要先升級家園）' });
   const buyable = list.filter(f => home.level >= f.min_level).slice(0, 25);

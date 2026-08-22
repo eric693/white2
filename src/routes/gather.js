@@ -183,6 +183,52 @@ router.get('/gather-players', (req, res) => {
   }));
 });
 
+// 直接發素材給玩家：測試新內容、活動補償、修正誤扣都用得到。
+// 走這支才有操作紀錄（audit），比直接改資料庫安全。
+router.post('/gather-players/:userId/items', (req, res) => {
+  const b = req.body || {};
+  const gid = req.guildId;
+  const itemId = int(b.item_id, 0, 0);
+  const count = Math.max(-100000, Math.min(100000, parseInt(b.count, 10) || 0));
+  if (!itemId || !count) return res.status(400).json({ error: '請選擇素材並填數量' });
+  const it = db.prepare('SELECT * FROM gather_items WHERE id=? AND guild_id=?').get(itemId, gid);
+  if (!it) return res.status(404).json({ error: '找不到這個素材' });
+  db.prepare(`INSERT INTO gather_inventory (guild_id,user_id,item_id,count) VALUES (?,?,?,?)
+    ON CONFLICT(guild_id,user_id,item_id) DO UPDATE SET count = MAX(0, count + ?)`)
+    .run(gid, req.params.userId, itemId, Math.max(0, count), count);
+  const now = (db.prepare('SELECT count FROM gather_inventory WHERE guild_id=? AND user_id=? AND item_id=?')
+    .get(gid, req.params.userId, itemId) || {}).count || 0;
+  audit(req.user.name, `發素材給 ${req.params.userId}：${it.name} ${count > 0 ? '+' : ''}${count}（現有 ${now}）`, 'gather');
+  res.json({ ok: true, name: it.name, count: now });
+});
+
+// 一次發一整組（例如「基礎素材包」）—— 測試新玩法時最常用
+router.post('/gather-players/:userId/items-bulk', (req, res) => {
+  const b = req.body || {};
+  const gid = req.guildId;
+  const list = Array.isArray(b.items) ? b.items : [];
+  if (!list.length) return res.status(400).json({ error: '請至少選一個素材' });
+  const ins = db.prepare(`INSERT INTO gather_inventory (guild_id,user_id,item_id,count) VALUES (?,?,?,?)
+    ON CONFLICT(guild_id,user_id,item_id) DO UPDATE SET count = MAX(0, count + ?)`);
+  let n = 0;
+  db.transaction(() => {
+    for (const x of list) {
+      const id = int(x.item_id, 0, 0), c = Math.max(-100000, Math.min(100000, parseInt(x.count, 10) || 0));
+      if (!id || !c) continue;
+      ins.run(gid, req.params.userId, id, Math.max(0, c), c);
+      n++;
+    }
+  })();
+  audit(req.user.name, `批次發素材給 ${req.params.userId}：${n} 種`, 'gather');
+  res.json({ ok: true, kinds: n });
+});
+
+// 素材清單（發放用的下拉）
+router.get('/gather-item-list', (req, res) => {
+  res.json(db.prepare(
+    'SELECT id, name, emoji, kind, rarity, price FROM gather_items WHERE guild_id=? AND enabled=1 ORDER BY kind, price').all(req.guildId));
+});
+
 // 個別玩家的每日體力上限（+N，永久）。有些玩家在別的活動達標，管理員給他多一點行動額度。
 router.post('/gather-players/:userId/stamina', (req, res) => {
   const b = req.body || {};

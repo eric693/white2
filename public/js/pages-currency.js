@@ -5,9 +5,9 @@ App.page('currency', {
   title: '貨幣與玩家', sub: '所有玩家的餘額一覽，直接搜尋名字就能增減貨幣', module: 'gather',
 
   async render(el) {
-    const [c, players, transfers, resetGroups] = await Promise.all([
+    const [c, players, transfers, resetGroups, itemList] = await Promise.all([
       GET('/gather'), GET('/gather-players'), GET('/econ-transfers').catch(() => []),
-      GET('/gather-reset-groups').catch(() => [])
+      GET('/gather-reset-groups').catch(() => []), GET('/gather-item-list').catch(() => [])
     ]);
     const coin = (n) => `${c.currency_emoji || '🪙'} ${Number(n || 0).toLocaleString('en-US')}`;
     const total = players.reduce((a, p) => a + (p.coins || 0), 0);
@@ -55,6 +55,7 @@ App.page('currency', {
           </td>
           <td style="white-space:nowrap">
             <button class="btn tiny secondary" data-coins="${p.user_id}" data-name="${UI.esc(p.username || '')}" data-cur="${p.coins}">增減貨幣</button>
+            <button class="btn tiny secondary" data-give="${p.user_id}" data-name="${UI.esc(p.username || '')}">發素材</button>
             <button class="btn tiny danger" data-wipe="${p.user_id}" data-name="${UI.esc(p.username || '')}">清空</button>
           </td>
         </tr>`).join('');
@@ -179,6 +180,41 @@ App.page('currency', {
             const r = await POST(`/gather-players/${b.dataset.coins}/coins`, { delta });
             UI.ok(`已調整，餘額 ${Number(r.coins).toLocaleString('en-US')}`);
             App.go('currency');
+          }
+        });
+      });
+      el.querySelectorAll('[data-give]').forEach(b => b.onclick = () => {
+        // 測試新內容、活動補償都用這個 —— 一次可以發 5 種，數量填負數就是扣回來
+        const KINDS = { mine: '⛏️ 礦石', wood: '🪓 木材', forage: '🧺 採集', hunt: '🏹 狩獵', fish: '🎣 魚', farm: '🥚 農牧', craft: '🛠️ 加工品' };
+        const optsFor = (sel) => '<option value="">— 不發 —</option>' + Object.entries(KINDS).map(([k, label]) => {
+          const list = itemList.filter(it => it.kind === k);
+          if (!list.length) return '';
+          return `<optgroup label="${label}">` + list.map(it =>
+            `<option value="${it.id}" ${it.id == sel ? 'selected' : ''}>${UI.esc((it.emoji || '') + it.name)}（${it.rarity}）</option>`).join('') + '</optgroup>';
+        }).join('');
+        UI.modal({
+          title: `發素材給「${b.dataset.name || b.dataset.give}」`,
+          bodyHTML: `
+            <div class="hint" style="margin-bottom:8px">
+              直接把素材放進玩家背包（測試新玩法、活動補償都用這個）。
+              數量填<b>負數</b>就是從背包扣回來，扣不到負數。
+            </div>
+            ${[0, 1, 2, 3, 4].map(n => `
+              <div class="form-row" style="align-items:flex-end">
+                <div class="field"><label>${n === 0 ? '素材' : ''}</label><select name="item${n}">${optsFor('')}</select></div>
+                <div class="field" style="max-width:130px"><label>${n === 0 ? '數量' : ''}</label>
+                  <input name="cnt${n}" type="number" value="${n === 0 ? 100 : ''}" placeholder="例如 100"></div>
+              </div>`).join('')}`,
+          onOk: async (back) => {
+            const items = [];
+            for (let n = 0; n < 5; n++) {
+              const id = UI.val(back, 'item' + n);
+              const cnt = parseInt(UI.val(back, 'cnt' + n), 10);
+              if (id && Number.isFinite(cnt) && cnt) items.push({ item_id: Number(id), count: cnt });
+            }
+            if (!items.length) { UI.err('請至少選一種素材並填數量'); return false; }
+            const r = await POST(`/gather-players/${b.dataset.give}/items-bulk`, { items });
+            UI.ok(`已發放 ${r.kinds} 種素材`);
           }
         });
       });

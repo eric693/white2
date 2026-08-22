@@ -259,6 +259,23 @@ function seedToolsT4AndGifts(gid) {
         }
       }
 
+      // ①-2 寵物飼料：可以買也可以自己做（做的比買便宜，材料用農產品）
+      {
+        const hasFood = db.prepare("SELECT id FROM gather_items WHERE guild_id=? AND name='寵物飼料'").get(gid);
+        let foodId = hasFood && hasFood.id;
+        if (!foodId) {
+          foodId = db.prepare("INSERT INTO gather_items (guild_id,kind,name,emoji,rarity,weight,price) VALUES (?,'craft','寵物飼料','🥫','N',0,250)")
+            .run(gid).lastInsertRowid;
+        }
+        const hasRec = db.prepare("SELECT 1 FROM gather_recipes WHERE guild_id=? AND result_type='item' AND result_id=?").get(gid, foodId);
+        const fmats = toMats([['小麥', 3], ['紅蘿蔔', 2]]);
+        if (!hasRec && fmats.length) {
+          insRec.run(gid, '寵物飼料 ×5', '🥫', 'item', foodId, JSON.stringify(fmats), 0, 100,
+            '自己做飼料比買便宜（一次做 5 份）');
+          db.prepare("UPDATE gather_recipes SET result_count=5 WHERE guild_id=? AND result_type='item' AND result_id=?").run(gid, foodId);
+        }
+      }
+
       // ② 禮物工藝品：先建物品（kind='craft'，不會出現在採集掉落池），再建製作配方
       const hasItem = db.prepare('SELECT id FROM gather_items WHERE guild_id=? AND name=?');
       const insItem = db.prepare("INSERT INTO gather_items (guild_id,kind,name,emoji,rarity,weight,price) VALUES (?,'craft',?,?,'SR',0,?)");

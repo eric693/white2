@@ -429,18 +429,9 @@ function pickRole(gid, uid) {
   const roles = db.prepare(
     'SELECT id, name, image_url, intro, author, ad_line, ad_line2, ad_line3 FROM wheel_roles WHERE guild_id=? AND enabled=1 AND stroll_ok=1').all(gid);
   if (!roles.length) return null;
-  const met = new Map(db.prepare('SELECT role_id, points FROM affinity WHERE guild_id=? AND user_id=?').all(gid, uid)
-    .map(r => [r.role_id, r.points]));
-  const weighted = roles.map(r => {
-    const p = met.get(r.id) || 0;
-    // 沒遇過＝權重 10；已經很熟的降到 1（不會完全遇不到，只是機率低）
-    const w = p <= 0 ? 10 : Math.max(1, 10 - Math.floor(Math.log10(p + 1) * 3));
-    return { r, w };
-  });
-  const total = weighted.reduce((a, x) => a + x.w, 0);
-  let n = Math.random() * total;
-  for (const x of weighted) { n -= x.w; if (n <= 0) return x.r; }
-  return weighted[weighted.length - 1].r;
+  // 完全隨機：每位角色機率一樣（本來會壓低已經很熟的角色，但你們要的是純隨機，
+  // 遇到同一個人也沒關係 —— 那才像真的在街上碰到）
+  return roles[Math.floor(Math.random() * roles.length)];
 }
 
 const adLine = (r) => {
@@ -481,13 +472,11 @@ function stroll(gid, uid, uname) {
 function strollEmbed(gid, uid, out) {
   const a = db.prepare('SELECT points, level FROM affinity WHERE guild_id=? AND user_id=? AND role_id=?').get(gid, uid, out.role.id) || { points: 0, level: 0 };
   // 台詞與介紹常常是同一句（匯入時就是同一份文字），重複貼兩次很醜 —— 一樣就只顯示台詞
-  const intro = String(out.role.intro || '').trim();
-  const line = String(out.line || '').trim();
-  const showIntro = intro && intro !== line;
+  // 只顯示台詞就好 —— 介紹欄跟台詞常常是同一句，貼兩次很囉唆
+  const line = String(out.line || out.role.intro || '').trim();
   const e = new EmbedBuilder().setColor(0xeb459e)
     .setTitle(`🛍️ 你在街上遇到了 ${out.role.name}`)
     .setDescription((line ? `💬 **「${line}」**\n\n` : '')
-      + (showIntro ? `${intro.slice(0, 300)}\n\n` : '')
       + `好感度 **+${out.points}** → 目前 ${a.points.toLocaleString('en-US')} 點（${levelName(gid, a.level)}）`)
     .setFooter({ text: `體力剩 ${out.left}/${out.max}｜想加深關係就用 /送禮` });
   // 遇到角色是「看臉」的畫面，圖片用大圖（setImage）而不是右上角的小縮圖
