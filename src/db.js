@@ -246,6 +246,13 @@ ensureColumns('pet_defs', {
 // 逛街名單：轉盤裡不是「角色」的項目（模擬器、活動介紹…）或不想參與的作者，可以排除
 ensureColumns('wheel_roles', { stroll_ok: 'INTEGER NOT NULL DEFAULT 1' });
 
+// 寵物飼料：餵食要消耗飼料（可在寵物面板直接買），不然餵食只剩冷卻、沒有成本
+ensureColumns('home_config', {
+  pet_food_enabled: 'INTEGER NOT NULL DEFAULT 1',
+  pet_food_price:   'INTEGER NOT NULL DEFAULT 500',   // 一份飼料多少錢
+  pet_food_cost:    'INTEGER NOT NULL DEFAULT 1'      // 餵一次要幾份
+});
+
 // 同居與伴侶稅
 ensureColumns('home_config', {
   partner_enabled: 'INTEGER NOT NULL DEFAULT 1',

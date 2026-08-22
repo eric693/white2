@@ -480,13 +480,18 @@ function stroll(gid, uid, uname) {
 
 function strollEmbed(gid, uid, out) {
   const a = db.prepare('SELECT points, level FROM affinity WHERE guild_id=? AND user_id=? AND role_id=?').get(gid, uid, out.role.id) || { points: 0, level: 0 };
+  // 台詞與介紹常常是同一句（匯入時就是同一份文字），重複貼兩次很醜 —— 一樣就只顯示台詞
+  const intro = String(out.role.intro || '').trim();
+  const line = String(out.line || '').trim();
+  const showIntro = intro && intro !== line;
   const e = new EmbedBuilder().setColor(0xeb459e)
     .setTitle(`🛍️ 你在街上遇到了 ${out.role.name}`)
-    .setDescription((out.line ? `💬 **「${out.line}」**\n\n` : '')
-      + (out.role.intro ? `${String(out.role.intro).slice(0, 300)}\n\n` : '')
+    .setDescription((line ? `💬 **「${line}」**\n\n` : '')
+      + (showIntro ? `${intro.slice(0, 300)}\n\n` : '')
       + `好感度 **+${out.points}** → 目前 ${a.points.toLocaleString('en-US')} 點（${levelName(gid, a.level)}）`)
     .setFooter({ text: `體力剩 ${out.left}/${out.max}｜想加深關係就用 /送禮` });
-  if (out.role.image_url) e.setThumbnail(absUrl(out.role.image_url));
+  // 遇到角色是「看臉」的畫面，圖片用大圖（setImage）而不是右上角的小縮圖
+  if (out.role.image_url) e.setImage(absUrl(out.role.image_url));
   return e;
 }
 

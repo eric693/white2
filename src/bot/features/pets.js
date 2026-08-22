@@ -148,6 +148,45 @@ function adoptPet(gid, uid, uname, petId) {
   return { adopted: p, personality };
 }
 
+
+// ---- 寵物飼料 ----
+// 餵食本來只有冷卻、沒有任何成本，養寵物等於免費拿加成。
+// 改成要消耗飼料，飼料在寵物面板就能直接買（不用跑去別的商店）。
+const FOOD_NAME = '寵物飼料';
+const foodItem = (gid) => db.prepare('SELECT * FROM gather_items WHERE guild_id=? AND name=?').get(gid, FOOD_NAME);
+function ensureFoodItem(gid) {
+  let it = foodItem(gid);
+  if (!it) {
+    db.prepare("INSERT INTO gather_items (guild_id,kind,name,emoji,rarity,weight,price) VALUES (?,'craft',?,'🥫','N',0,250)")
+      .run(gid, FOOD_NAME);
+    it = foodItem(gid);
+  }
+  return it;
+}
+const foodCount = (gid, uid) => {
+  const it = foodItem(gid);
+  if (!it) return 0;
+  return (db.prepare('SELECT count FROM gather_inventory WHERE guild_id=? AND user_id=? AND item_id=?').get(gid, uid, it.id) || {}).count || 0;
+};
+
+/** 買飼料（寵物面板的按鈕） */
+function buyFood(gid, uid, uname, qty) {
+  const c = guildConfig('home_config', gid);
+  const it = ensureFoodItem(gid);
+  const n = Math.max(1, Math.min(50, qty));
+  const price = Math.max(1, c.pet_food_price || 500);
+  const total = price * n;
+  const gc = gcfg(gid);
+  const w = wallet(gid, uid, uname);
+  if (w.coins < total) return { error: `${gc.currency_name}不夠：買 ${n} 份飼料要 ${money(gc, total)}，你只有 ${w.coins.toLocaleString('en-US')}。` };
+  db.transaction(() => {
+    addCoins(gid, uid, uname, -total);
+    db.prepare(`INSERT INTO gather_inventory (guild_id,user_id,item_id,count) VALUES (?,?,?,?)
+      ON CONFLICT(guild_id,user_id,item_id) DO UPDATE SET count = count + ?`).run(gid, uid, it.id, n, n);
+  })();
+  return { bought: n, total, left: foodCount(gid, uid) };
+}
+
 /** 餵食：親密度 +，等級經驗 +。餵過就要等一個週期，不能狂點。 */
 function feedPet(gid, uid, ownedId) {
   const p = db.prepare(
@@ -157,14 +196,25 @@ function feedPet(gid, uid, ownedId) {
   const now = Date.now();
   const wait = p.fed_ms + p.feed_hours * 3600000;   // 要等滿一個餵食週期（以前半個週期就能餵，養太快）
   if (now < wait) return { error: `${p.emoji || ''}${p.nickname || p.name} 現在還不餓，${Math.ceil((wait - now) / 60000)} 分鐘後再來。` };
+  // 餵食要花飼料（沒開啟這個設定就跟以前一樣免費）
+  const hc = guildConfig('home_config', gid);
+  const need = hc.pet_food_enabled ? Math.max(1, hc.pet_food_cost || 1) : 0;
+  const it = need ? ensureFoodItem(gid) : null;
+  if (need) {
+    const have = foodCount(gid, uid);
+    if (have < need) return { error: `飼料不夠了（要 ${need} 份，你有 ${have} 份）。\n在寵物面板按 **🥫 買飼料** 就能補。` };
+  }
   // 親密度成長刻意放慢：一次 +4~6（原本 +8~12），養滿要 20 次左右，是長期關係不是三天速成
   const gain = 4 + Math.floor(Math.random() * 3);
   const exp = p.exp + 10;
   const lvUp = exp >= p.level * 100;
   bumpAch(gid, uid, 'feed_count', 1);
-  db.prepare('UPDATE pet_owned SET intimacy = MIN(100, intimacy + ?), exp = ?, level = ?, fed_ms = ? WHERE id=?')
-    .run(gain, lvUp ? 0 : exp, lvUp ? p.level + 1 : p.level, now, p.id);
-  return { fed: p, gain, lvUp };
+  db.transaction(() => {
+    if (need) db.prepare('UPDATE gather_inventory SET count = count - ? WHERE guild_id=? AND user_id=? AND item_id=?').run(need, gid, uid, it.id);
+    db.prepare('UPDATE pet_owned SET intimacy = MIN(100, intimacy + ?), exp = ?, level = ?, fed_ms = ? WHERE id=?')
+      .run(gain, lvUp ? 0 : exp, lvUp ? p.level + 1 : p.level, now, p.id);
+  })();
+  return { fed: p, gain, lvUp, foodLeft: need ? foodCount(gid, uid) : null };
 }
 
 function renamePet(gid, uid, ownedId, nickname) {
@@ -202,6 +252,17 @@ function petPanel(gid, uid, uname) {
     });
   }
   const rows = [NAV('pet')];
+  // 買飼料：餵食要花飼料，所以買的地方就放在餵食旁邊
+  const hcFood = guildConfig('home_config', gid);
+  if (hcFood.pet_food_enabled) {
+    const price = hcFood.pet_food_price || 500;
+    const have = foodCount(gid, uid);
+    embed.addFields({ name: '🥫 飼料', value: `目前有 **${have}** 份　每次餵食消耗 ${Math.max(1, hcFood.pet_food_cost || 1)} 份　售價 ${price.toLocaleString('en-US')} ／份` });
+    rows.push(new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('petfood:1').setLabel(`🥫 買 1 份（${price.toLocaleString('en-US')}）`).setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId('petfood:5').setLabel(`🥫 買 5 份（${(price * 5).toLocaleString('en-US')}）`).setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId('petfood:10').setLabel(`🥫 買 10 份（${(price * 10).toLocaleString('en-US')}）`).setStyle(ButtonStyle.Secondary)));
+  }
   if (list.length) rows.push(new ActionRowBuilder().addComponents(
     new StringSelectMenuBuilder().setCustomId('petfeed').setPlaceholder('餵食一隻寵物')
       .addOptions(list.slice(0, 25).map(p => ({
@@ -229,6 +290,13 @@ function init(client) {
       if (!i.guildId) return;
       const gid = i.guildId, uid = i.user.id, uname = i.user.username;
       const eph = { flags: MessageFlags.Ephemeral };
+      if (i.isButton() && i.customId.startsWith('petfood:')) {
+        const n = parseInt(i.customId.split(':')[1], 10) || 1;
+        const out = buyFood(gid, uid, uname, n);
+        if (out.error) return i.reply({ content: out.error, ...eph }).catch(() => {});
+        await i.update(petPanel(gid, uid, uname)).catch(() => {});
+        return i.followUp({ content: `🥫 買了 **${out.bought}** 份飼料（花了 ${out.total.toLocaleString('en-US')}），現在有 ${out.left} 份。`, ...eph }).catch(() => {});
+      }
       if (i.isStringSelectMenu() && i.customId === 'petadopt') {
         const out = adoptPet(gid, uid, uname, parseInt(i.values[0], 10));
         if (out.error) return i.reply({ content: out.error, ...eph }).catch(() => {});
@@ -239,11 +307,25 @@ function init(client) {
         const out = feedPet(gid, uid, parseInt(i.values[0], 10));
         if (out.error) return i.reply({ content: out.error, ...eph }).catch(() => {});
         await i.update(petPanel(gid, uid, uname)).catch(() => {});
-        return i.followUp({ content: `🍖 你餵了 ${out.fed.emoji || ''}**${out.fed.nickname || out.fed.name}**，親密度 +${out.gain}${out.lvUp ? `\n🎉 而且升級了！` : ''}`, ...eph }).catch(() => {});
+        return i.followUp({
+          content: `🍖 你餵了 ${out.fed.emoji || ''}**${out.fed.nickname || out.fed.name}**，親密度 +${out.gain}`
+            + (out.lvUp ? `\n🎉 而且升級了！` : '')
+            + (out.foodLeft != null ? `\n🥫 飼料剩 ${out.foodLeft} 份` : ''),
+          ...eph
+        }).catch(() => {});
       }
       if (i.isChatInputCommand() && i.commandName === '寵物') {
         seedPets(gid);
         return i.reply({ ...petPanel(gid, uid, uname), ...eph }).catch(() => {});
+      }
+      // 寵物名字自動完成：不用自己打，打字就跳出自己的寵物
+      if (i.isAutocomplete() && i.commandName === '寵物改名') {
+        const kw = String(i.options.getFocused() || '').toLowerCase();
+        const list = petsOf(gid, uid)
+          .map(p => ({ name: `${p.emoji || ''}${p.nickname || p.name}（親密度 ${p.intimacy}）`.slice(0, 100), value: (p.nickname || p.name).slice(0, 100) }))
+          .filter(x => !kw || x.name.toLowerCase().includes(kw))
+          .slice(0, 25);
+        return i.respond(list).catch(() => {});
       }
       if (i.isChatInputCommand() && i.commandName === '寵物改名') {
         const list = petsOf(gid, uid);

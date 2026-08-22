@@ -41,6 +41,8 @@ router.put('/tax', (req, res) => {
        breed_enabled=@breed_enabled, breed_animal=@breed_animal, breed_fish=@breed_fish, breed_free=@breed_free,
        partner_enabled=@partner_enabled, partner_base=@partner_base, partner_per_lv=@partner_per_lv,
        land_tier_pct=@land_tier_pct,
+       house_enabled=@house_enabled, house_base=@house_base, house_curve=@house_curve,
+       house_free=@house_free, house_furniture=@house_furniture, house_pet=@house_pet,
        stock_enabled=@stock_enabled, stock_pct=@stock_pct, stock_free=@stock_free,
        spend_enabled=@spend_enabled, spend_pct=@spend_pct, spend_free=@spend_free,
        liquidate_enabled=@liquidate_enabled, liquidate_order=@liquidate_order, no_debt=@no_debt,
@@ -79,6 +81,13 @@ router.put('/tax', (req, res) => {
     partner_per_lv: keep(b.partner_per_lv, 'partner_per_lv', v => int(v, 1500, 0)),
     // 土地稅依設施等級加成（每階 +N%）
     land_tier_pct: keep(b.land_tier_pct, 'land_tier_pct', v => int(v, 20, 0)),
+    // 房屋稅：階級指數成長 ＋ 家具與寵物加課
+    house_enabled: bool(b.house_enabled, 'house_enabled'),
+    house_base: keep(b.house_base, 'house_base', v => int(v, 300, 0)),
+    house_curve: keep(b.house_curve, 'house_curve', v => Math.max(1, Math.min(4, Math.round(parseFloat(v) * 100) / 100 || 1.6))),
+    house_free: keep(b.house_free, 'house_free', v => int(v, 3, 0)),
+    house_furniture: keep(b.house_furniture, 'house_furniture', v => int(v, 50, 0)),
+    house_pet: keep(b.house_pet, 'house_pet', v => int(v, 150, 0)),
     // 證券稅：按持股市值課
     stock_enabled: bool(b.stock_enabled, 'stock_enabled'),
     stock_pct: keep(b.stock_pct, 'stock_pct', v => Math.max(0, Math.min(100, Math.round(parseFloat(v) * 100) / 100 || 0))),

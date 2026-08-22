@@ -170,6 +170,14 @@ App.page('home', {
               伴侶稅的金額在「稅金」那一頁設定。
             </div>
 
+            <h3 style="margin-top:18px">🥫 寵物飼料</h3>
+            <div class="field">${H.toggle('pet_food_enabled', c.pet_food_enabled ?? 1, '餵寵物要消耗飼料（關閉＝餵食免費，只有冷卻限制）')}</div>
+            <div class="form-row">
+              <div class="field"><label>飼料售價（每份）</label><input name="pet_food_price" type="number" min="1" value="${c.pet_food_price ?? 500}"></div>
+              <div class="field"><label>餵一次消耗幾份</label><input name="pet_food_cost" type="number" min="1" value="${c.pet_food_cost ?? 1}"></div>
+            </div>
+            <div class="hint" style="margin-bottom:10px">玩家在寵物面板可以直接買（1／5／10 份），不用跑去別的商店。</div>
+
             <h3 style="margin-top:18px">💸 用金幣代替材料</h3>
             <div class="field">${H.toggle('buy_mats_enabled', c.buy_mats_enabled ?? 1, '允許用金幣硬升家園／廚房（材料折現）')}</div>
             <div class="field"><label>材料折現倍率 %（5000＝市價的 50 倍）</label><input name="buy_mats_mult" type="number" min="100" value="${c.buy_mats_mult ?? 5000}">
@@ -600,13 +608,29 @@ App.page('home', {
         const rows = await GET('/home-players');
         body.innerHTML = `
           <div class="table-wrap"><table class="list">
-            <thead><tr><th>玩家</th><th>房屋</th><th>廚房</th><th>寵物</th><th>擺出家具</th><th>成就</th><th>累計簽到</th></tr></thead>
+            <thead><tr><th>玩家</th><th>房屋</th><th>廚房</th><th>寵物</th><th>擺出家具</th><th>成就</th><th>累計簽到</th><th></th></tr></thead>
             <tbody>${rows.length ? rows.map(r => `<tr>
               <td>${UI.esc(r.username || r.user_id)}</td>
               <td>Lv.${r.level}</td><td>${r.kitchen_level ? 'Lv.' + r.kitchen_level : '—'}</td>
               <td>${r.pets}</td><td>${r.furniture}</td><td>${r.achievements}</td><td>${r.checkins} 天</td>
-            </tr>`).join('') : '<tr><td colspan="7" class="hint">還沒有人開始蓋家園。</td></tr>'}
+              <td><button class="btn tiny secondary" data-lv="${r.user_id}" data-name="${UI.esc(r.username || '')}"
+                    data-cur="${r.level}" data-k="${r.kitchen_level || 0}">調整等級</button></td>
+            </tr>`).join('') : '<tr><td colspan="8" class="hint">還沒有人開始蓋家園。</td></tr>'}
             </tbody></table></div>`;
+        body.querySelectorAll('[data-lv]').forEach(b => b.onclick = () => UI.modal({
+          title: `調整「${b.dataset.name || b.dataset.lv}」的等級`,
+          bodyHTML: `
+            <div class="hint" style="margin-bottom:8px">用便宜的價格硬升上去要退回、或活動補償都用這裡。</div>
+            <div class="form-row">
+              <div class="field"><label>家園階級（目前 ${b.dataset.cur}）</label><input name="level" type="number" min="1" value="${b.dataset.cur}"></div>
+              <div class="field"><label>廚房等級（目前 ${b.dataset.k}，0＝沒有廚房）</label><input name="kitchen_level" type="number" min="0" value="${b.dataset.k}"></div>
+            </div>
+            <div class="field"><label>順便退錢給他（0＝不退）</label><input name="refund" type="number" min="0" value="0"></div>`,
+          onOk: async (back) => {
+            await POST(`/home-players/${b.dataset.lv}/level`, H.collect(back));
+            UI.ok('已調整'); draw();
+          }
+        }));
         return;
       }
     };

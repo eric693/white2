@@ -48,7 +48,8 @@ router.put('/home-config', (req, res) => {
        buy_mats_enabled=@buy_mats_enabled, buy_mats_mult=@buy_mats_mult,
        stroll_enabled=@stroll_enabled, stroll_stamina=@stroll_stamina, stroll_cost=@stroll_cost,
        stroll_points=@stroll_points,
-       partner_enabled=@partner_enabled, partner_slots=@partner_slots, partner_level=@partner_level
+       partner_enabled=@partner_enabled, partner_slots=@partner_slots, partner_level=@partner_level,
+       pet_food_enabled=@pet_food_enabled, pet_food_price=@pet_food_price, pet_food_cost=@pet_food_cost
      WHERE guild_id=@guild_id`
   ).run({
     enabled: b.enabled ? 1 : 0,
@@ -72,6 +73,9 @@ router.put('/home-config', (req, res) => {
     partner_enabled: b.partner_enabled ? 1 : 0,
     partner_slots: int(b.partner_slots, 1, 1),
     partner_level: int(b.partner_level, 6, 0),
+    pet_food_enabled: b.pet_food_enabled ? 1 : 0,
+    pet_food_price: int(b.pet_food_price, 500, 1),
+    pet_food_cost: int(b.pet_food_cost, 1, 1),
     guild_id: req.guildId
   });
   audit(req.user.name, '更新家園設定');
@@ -237,6 +241,28 @@ router.post('/stroll-roles', (req, res) => {
   }
   audit(req.user.name, `${on ? '開放' : '排除'}逛街角色 ${changed} 位`);
   res.json({ ok: true, changed });
+});
+
+// 調整單一玩家的家園／廚房等級（例如把用便宜價硬升上去的退回來）
+router.post('/home-players/:userId/level', (req, res) => {
+  const b = req.body || {};
+  const gid = req.guildId;
+  const cur = db.prepare('SELECT * FROM home_users WHERE guild_id=? AND user_id=?').get(gid, req.params.userId);
+  if (!cur) return res.status(404).json({ error: '這位玩家還沒有家園資料' });
+  const maxLv = (db.prepare('SELECT MAX(level) m FROM home_levels WHERE guild_id=?').get(gid) || {}).m || 1;
+  const maxK = (db.prepare('SELECT MAX(level) m FROM kitchen_levels WHERE guild_id=?').get(gid) || {}).m || 1;
+  const level = Math.max(1, Math.min(maxLv, int(b.level, cur.level, 1)));
+  const kitchen = Math.max(0, Math.min(maxK, int(b.kitchen_level, cur.kitchen_level, 0)));
+  db.prepare('UPDATE home_users SET level=?, kitchen_level=?, kitchen_built=? WHERE guild_id=? AND user_id=?')
+    .run(level, kitchen, kitchen > 0 ? 1 : 0, gid, req.params.userId);
+  // 退款（可選）：退回玩家當初花的錢
+  const refund = int(b.refund, 0, 0);
+  if (refund > 0) {
+    db.prepare("UPDATE econ_wallets SET coins = coins + ?, updated_at=datetime('now','localtime') WHERE guild_id=? AND user_id=?")
+      .run(refund, gid, req.params.userId);
+  }
+  audit(req.user.name, `調整 ${req.params.userId} 的家園 Lv.${cur.level}→${level}、廚房 Lv.${cur.kitchen_level}→${kitchen}${refund ? `，退款 ${refund}` : ''}`);
+  res.json({ ok: true, level, kitchen_level: kitchen, refund });
 });
 
 // ---------- 玩家現況（看得到誰在玩、誰帶了什麼成就）----------

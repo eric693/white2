@@ -93,6 +93,22 @@ App.page('tax', {
         </div>
 
       <div class="card" style="max-width:820px">
+        <h3>🏡 房屋稅</h3>
+        <div class="field">${H.toggle('house_enabled', c.house_enabled ?? 1, '課房屋稅（房子越大稅越重）')}</div>
+        <div class="form-row">
+          <div class="field"><label>每一階的基礎稅額</label><input name="house_base" type="number" min="0" value="${c.house_base ?? 300}"></div>
+          <div class="field"><label>成長指數（1＝線性，越大越懲罰高階）</label><input name="house_curve" type="number" min="1" max="4" step="0.1" value="${c.house_curve ?? 1.6}"></div>
+          <div class="field"><label>前幾階免稅</label><input name="house_free" type="number" min="0" value="${c.house_free ?? 3}"></div>
+        </div>
+        <div class="form-row">
+          <div class="field"><label>每件「已擺出」的家具加課</label><input name="house_furniture" type="number" min="0" value="${c.house_furniture ?? 50}"></div>
+          <div class="field"><label>每隻寵物加課</label><input name="house_pet" type="number" min="0" value="${c.house_pet ?? 150}"></div>
+        </div>
+        <div class="hint">公式：基礎 ×（房屋階級 − 免稅階）^ 指數 ＋ 家具×單價 ＋ 寵物×單價。
+          目前設定下，Lv.15 的房子光階級就要 ${Math.round((c.house_base ?? 300) * Math.pow(15 - (c.house_free ?? 3), c.house_curve ?? 1.6)).toLocaleString('en-US')} 星幣／期。</div>
+      </div>
+
+      <div class="card" style="max-width:820px">
         <h3>💞 伴侶稅</h3>
         <div class="field">${H.toggle('partner_enabled', c.partner_enabled ?? 1, '課伴侶稅（角色搬進家裡就要養）')}</div>
         <div class="form-row">

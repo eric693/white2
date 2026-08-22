@@ -323,6 +323,23 @@ function kitchenPanel(gid, uid, uname) {
         ? '你的房子已經有廚房建造資格了，但廚房要**自己出材料蓋**。'
         : '需要家園 **Lv.4 精緻平房** 才能取得廚房建造資格。先去 `/升級家園`。')
       .addFields({ name: '建造基礎廚房', value: `${coins >= k.coins ? '🟢' : '🔴'} ${money(gc, k.coins)}（你有 ${coins.toLocaleString('en-US')}）\n${mats.join('\n')}` });
+    // 還沒蓋廚房也要看得到食譜 —— 不然玩家根本不知道蓋了能做什麼、值不值得
+    const preview = recipesOf(gid).slice(0, 12);
+    if (preview.length) {
+      embed.addFields({
+        name: '📖 蓋好之後可以做的料理（前 12 道）',
+        value: preview.map(r => `${r.emoji || ''}**${r.name}**（廚房 Lv.${r.min_kitchen}）　`
+          + `${parseMats(r.materials).map(m => `${m.item}×${m.count}`).join('、')}`
+          + `　→ 售價 ${r.base_price.toLocaleString('en-US')}／好感 ${r.affinity_base}`).join('\n').slice(0, 1024)
+      });
+      rows.push(new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder().setCustomId('kpreview').setPlaceholder(`看全部 ${recipesOf(gid).length} 道食譜的材料`)
+          .addOptions(recipesOf(gid).slice(0, 25).map(r => ({
+            label: `${r.emoji || ''}${r.name}`.slice(0, 100),
+            description: `廚房 Lv.${r.min_kitchen}｜${parseMats(r.materials).map(m => `${m.item}×${m.count}`).join('、')}`.slice(0, 100),
+            value: String(r.id)
+          })))));
+    }
     if (can) {
       const btns = new ActionRowBuilder().addComponents(
         new ButtonBuilder().setCustomId('kbuild').setLabel('🔨 蓋廚房（用材料）').setStyle(ButtonStyle.Success));
@@ -412,6 +429,21 @@ function init(client) {
         if (out.error) return i.reply({ content: out.error, ...eph }).catch(() => {});
         await refresh();
         return i.followUp({ content: `🎉 廚房升級成 **Lv.${out.upgraded.level} ${out.upgraded.emoji || ''}${out.upgraded.name}**！\n完美料理機率 +${out.upgraded.perfect_pct}%，同時可烹飪 ${out.upgraded.level} 鍋。`, ...eph }).catch(() => {});
+      }
+      if (i.isStringSelectMenu() && i.customId === 'kpreview') {
+        const r = db.prepare('SELECT * FROM cook_recipes WHERE guild_id=? AND id=?').get(gid, parseInt(i.values[0], 10));
+        if (!r) return i.reply({ content: '找不到這道食譜。', ...eph }).catch(() => {});
+        const gc2 = gcfg(gid);
+        const e = new EmbedBuilder().setColor(brandColor()).setTitle(`${r.emoji || '🍳'} ${r.name}`)
+          .setDescription(r.description || '')
+          .addFields(
+            { name: '需要廚房', value: `Lv.${r.min_kitchen}`, inline: true },
+            { name: '烹飪時間', value: `${r.cook_minutes} 分`, inline: true },
+            { name: '基礎售價', value: money(gc2, r.base_price), inline: true },
+            { name: '材料', value: parseMats(r.materials).map(m => `${m.item} ×${m.count}`).join('\n') || '不需材料' },
+            { name: '送禮好感', value: `${r.affinity_base}（品質越高倍率越大）`, inline: true })
+          .setFooter({ text: r.buff_pct ? `吃了會有：${BUFF_TYPES[r.buff_type] || r.buff_type} +${r.buff_pct}%／${r.buff_minutes} 分` : '　' });
+        return i.reply({ embeds: [e], ...eph }).catch(() => {});
       }
       if (i.isButton() && i.customId === 'kbuy') {
         const q = kitchenBuyQuote(gid, uid, uname);

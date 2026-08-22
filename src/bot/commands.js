@@ -182,7 +182,7 @@ const builders = [
   new SlashCommandBuilder().setName('烹飪').setDescription('打開廚房做菜'),
   new SlashCommandBuilder().setName('寵物').setDescription('領養、餵食、查看寵物技能'),
   new SlashCommandBuilder().setName('寵物改名').setDescription('幫你的寵物取個名字')
-    .addStringOption(o => o.setName('寵物').setDescription('要改名的寵物').setRequired(true))
+    .addStringOption(o => o.setName('寵物').setDescription('要改名的寵物（打字就會跳出你的寵物清單）').setRequired(true).setAutocomplete(true))
     .addStringOption(o => o.setName('名字').setDescription('新名字').setRequired(true)),
   new SlashCommandBuilder().setName('成就').setDescription('查看成就進度並裝備加成（一個人最多同時帶 3 個）'),
   new SlashCommandBuilder().setName('送禮').setDescription('送東西給角色，提升好感度')
