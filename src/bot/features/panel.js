@@ -20,7 +20,19 @@ const TABS = {
     desc: '出門找素材。每個動作各有冷卻，工具會耗損，記得 `/修理`。\n撿到的東西會自動記進 **📖 圖鑑**，賣掉也不會消失。',
     rows: [
       [['adv:fish', '釣魚', '🎣'], ['adv:mine', '挖礦', '⛏️'], ['adv:wood', '伐木', '🪓'], ['adv:forage', '採集', '🧺'], ['adv:hunt', '狩獵', '🏹']],
-      [['adv:bag', '背包', '🎒'], ['adv:status', '查看狀態', '📊'], ['adv:map', '地圖', '🗺️'], ['adv:recipe', '製作', '🔨'], ['adv:quest', '任務', '📜', ButtonStyle.Primary]]
+      [['adv:bag', '背包', '🎒'], ['adv:status', '查看狀態', '📊'], ['adv:map', '地圖', '🗺️'], ['adv:quest', '任務', '📜', ButtonStyle.Primary]]
+    ]
+  },
+  // 製作獨立成一個分類：家具、工具、農地、牧場、魚缸、孵化室、溫室都是從這裡做出來的，
+  // 以前藏在「冒險」分頁最後一顆按鈕，玩家根本找不到。
+  craft: {
+    label: '製作', emoji: '🔨', color: 0xe67e22,
+    title: '🔨 製作與鍛造',
+    desc: '把撿來的材料變成東西：**工具、家具**，還有**農地／溫室／牧場／孵化室／魚缸**的格子。\n'
+      + '先看 📋 配方確認材料，再按下面的按鈕做。工具壞了用 `/修理` 比重買便宜。',
+    rows: [
+      [['adv:recipe', '配方一覽', '📋', ButtonStyle.Primary], ['adv:craftmake', '製作', '🔨', ButtonStyle.Success], ['adv:forge', '鍛造工具', '⚒️', ButtonStyle.Success]],
+      [['adv:furniture', '做家具', '🛋️'], ['adv:repair', '修理工具', '🔧'], ['adv:bag', '看背包材料', '🎒']]
     ]
   },
   produce: {
@@ -44,10 +56,12 @@ const TABS = {
   shop: {
     label: '商店', emoji: '🏪', color: 0xf1c40f,
     title: '🏪 商店街',
-    desc: '要花錢的都在這裡。買工具、動物、種子、魚，還有設施等級（擴充格數）。',
+    desc: '要花錢的都在這裡。買工具與體力、動物、種子、魚、家具、寵物，還有設施等級（擴充格數）。',
     rows: [
       [['adv:store', '一般商店', '🏪', ButtonStyle.Success], ['adv:ranchshop', '畜牧商店', '🛒', ButtonStyle.Success], ['adv:cropshop', '種子商店', '🌱', ButtonStyle.Success]],
-      [['adv:facility', '設施商店', '🏗️', ButtonStyle.Success], ['adv:aqshop', '水族商店', '🐠', ButtonStyle.Success]]
+      [['adv:facility', '設施商店', '🏗️', ButtonStyle.Success], ['adv:aqshop', '水族商店', '🐠', ButtonStyle.Success]],
+      // 家具與寵物本來只能從「我的家」進去，玩家找不到 —— 直接放進商店街
+      [['adv:furniture', '家具商店', '🛋️', ButtonStyle.Success], ['adv:pets', '寵物商店', '🐾', ButtonStyle.Success]]
     ]
   },
   money: {
@@ -128,7 +142,7 @@ function init(client) {
       if (i.isRepliable() && !i.replied) i.reply({ content: '面板開啟失敗。', flags: MessageFlags.Ephemeral }).catch(() => {});
     }
   });
-  console.log('  ↳ 冒險面板已載入（5 分類，私人分頁面板）');
+  console.log('  ↳ 冒險面板已載入（6 分類，私人分頁面板）');
 }
 
 module.exports = { init, buildPanel, tabPanel, TABS };

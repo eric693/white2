@@ -38,6 +38,8 @@ const catLabel = (p) => {
 // 個性只影響對話語氣與親密度成長速度，不給數值優勢（避免洗個性）
 const PERSONALITIES = ['黏人', '高冷', '貪吃', '愛玩', '膽小', '傲嬌', '穩重', '好奇'];
 const RARITY = { N: '⚪', R: '🟢', SR: '🔵', SSR: '🟣', UR: '🟠' };
+// 寵物不吃材料，所以價格要拉高當門檻（後台可以再逐隻調）
+const PET_PRICE_MULT = 3;
 
 // [名稱, emoji, 稀有度, 需要房屋階, 售價(0=不販售), 材料, 技能名, 加成類型, 滿親密加成%, 餵食間隔時, 說明]
 const SEED_PETS = [
@@ -86,7 +88,8 @@ function seedPets(gid) {
     db.transaction(() => {
       SEED_PETS.forEach(([name, emoji, rar, lv, price, mats, skill, bt, bp, fh, desc], idx) => {
         if (has.get(gid, name)) return;
-        ins.run(gid, name, emoji, rar, lv, price, JSON.stringify(mats.map(([item, count]) => ({ item, count }))), skill, bt, bp, fh, desc, idx);
+        // 寵物只用金錢買：材料一律不收（留給蓋房子與做家具），改用比較貴的價格當門檻
+        ins.run(gid, name, emoji, rar, lv, Math.round(price * PET_PRICE_MULT), '[]', skill, bt, bp, fh, desc, idx);
       });
     })();
   } catch (e) { logError(gid, '寵物預設建立失敗：', e.message); }
@@ -128,17 +131,16 @@ function adoptPet(gid, uid, uname, petId) {
     ? '你的房子還不能養寵物，需要家園 **Lv.3 鄉間住宅**。'
     : `你的家最多養 ${cap} 隻（已經有 ${have} 隻）。小屋塞不下那麼多寵物 —— 想多養就去 \`/升級家園\`。` };
   if (!p.price) return { error: `${p.name} 不販售，要靠特殊管道才能取得。` };
+  // 寵物一律「只用金錢」買，不吃材料 —— 材料留給蓋房子與做家具，
+  // 寵物改用比較貴的價格當門檻（後台調價格就好，不用再湊材料表）
   const gc = gcfg(gid);
   const coins = wallet(gid, uid, uname).coins;
-  const mats = parseMats(p.materials);
-  const missing = [];
-  if (coins < p.price) missing.push(`${money(gc, p.price)}（你有 ${coins.toLocaleString('en-US')}）`);
-  for (const m of mats) { const h = bagCount(gid, uid, m.item); if (h < m.count) missing.push(`${m.item} ×${m.count}（你有 ${h}）`); }
-  if (missing.length) return { error: `還差：\n🔴 ${missing.join('\n🔴 ')}` };
+  if (coins < p.price) {
+    return { error: `${gc.currency_name}不夠：需要 ${money(gc, p.price)}，你只有 ${coins.toLocaleString('en-US')}。` };
+  }
   const personality = PERSONALITIES[Math.floor(Math.random() * PERSONALITIES.length)];
   db.transaction(() => {
     addCoins(gid, uid, uname, -p.price);
-    takeItems(gid, uid, mats);
     db.prepare('INSERT INTO pet_owned (guild_id,user_id,pet_id,nickname,level,exp,intimacy,personality,fed_ms) VALUES (?,?,?,?,1,0,20,?,?)')
       .run(gid, uid, p.id, '', personality, Date.now());
   })();
@@ -212,7 +214,7 @@ function petPanel(gid, uid, uname) {
     new StringSelectMenuBuilder().setCustomId('petadopt').setPlaceholder('領養一隻新寵物')
       .addOptions(shop.slice(0, 25).map(p => ({
         label: `${RARITY[p.rarity] || ''}${p.emoji || ''}${p.name}`.slice(0, 100),
-        description: `${p.price.toLocaleString('en-US')}｜${p.skill_name}　${BUFF_TYPES[p.buff_type] || ''}+${p.buff_pct}%`.slice(0, 100),
+        description: `${p.price.toLocaleString('en-US')} 星幣｜${p.skill_name}　${p.target_item ? p.target_item + ' 掉落率' : (BUFF_TYPES[p.buff_type] || '')}+${p.buff_pct}%`.slice(0, 100),
         value: String(p.id)
       })))));
   return { embeds: [embed], components: rows };

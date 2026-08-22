@@ -983,6 +983,8 @@ function init(client) {
       'adv:fish': '釣魚', 'adv:mine': '挖礦', 'adv:wood': '伐木', 'adv:forage': '採集', 'adv:hunt': '狩獵',
       'adv:bag': '背包', 'adv:wallet': '錢包', 'adv:sellall': '賣出', 'adv:draw': '抽籤', 'adv:map': '地圖',
       'adv:rich': '富豪榜', 'adv:store': '商店', 'adv:recipe': '配方', 'adv:status': '狀態',
+      // 製作分類的按鈕：製作／鍛造／修理各自對應同名指令的面板
+      'adv:craftmake': '製作', 'adv:forge': '鍛造', 'adv:repair': '修理',
       'adv:quest': '任務', 'adv:questclaim': '任務'
     };
     const isBtn = i.isButton();
@@ -1315,6 +1317,9 @@ function init(client) {
 
       // ---- 修理工具 ----
       if (name === '修理') {
+        // 面板按鈕沒有「道具」參數 → 轉去狀態卡（那裡有可以直接修的下拉選單）
+        if (isBtn) { name = '狀態'; }
+        else {
         const what = (i.options.getString('道具') || '').trim();
         const tool = db.prepare(
           `SELECT t.id FROM gather_tools t JOIN gather_user_tools u ON u.tool_id=t.id
@@ -1323,6 +1328,7 @@ function init(client) {
         const out = repairTool(gid, uid, uname, tool.id);
         if (out.error) return i.reply({ content: out.error, flags: MessageFlags.Ephemeral });
         return await reply({ embeds: [out.embed] });
+        }
       }
 
       // ---- 圖鑑 ----
@@ -1353,6 +1359,10 @@ function init(client) {
       // ---- 製作 / 鍛造 ----
       if (name === '製作' || name === '鍛造') {
         const rkind = name === '製作' ? 'craft' : 'forge';
+        // 從面板按鈕進來沒有「配方」參數 —— 直接開該類的配方清單（下拉選單可以當場做），
+        // 不要丟一句「找不到配方『』」給玩家
+        if (isBtn) { name = '配方'; i._forceKind = rkind; }
+        else {
         const what = (i.options.getString('配方') || '').trim();
         const times = Math.min(10, Math.max(1, i.options.getInteger('次數') || 1));
         const rec = db.prepare('SELECT * FROM gather_recipes WHERE guild_id=? AND kind=? AND enabled=1 AND name=?').get(gid, rkind, what);
@@ -1360,12 +1370,14 @@ function init(client) {
         const out = craftRecipe(gid, uid, uname, rec.id, times);
         if (out.error) return i.reply({ content: out.error, flags: MessageFlags.Ephemeral });
         return await reply({ embeds: [out.embed] });
+        }
       }
 
       // ---- 配方一覽 ----
       if (name === '配方') {
         // 按鈕進來時直接把製作與鍛造都列出；斜線指令可指定種類
-        const kinds = isBtn ? ['craft', 'forge'] : [i.options.getString('種類') || 'craft'];
+        const kinds = i._forceKind ? [i._forceKind]
+          : (isBtn ? ['craft', 'forge'] : [i.options.getString('種類') || 'craft']);
         const KCOLOR = { craft: 0x5865f2, forge: 0xe67e22 };
         const KTITLE = { craft: '🛠️ 製作配方', forge: '🔨 鍛造配方' };
         const PLOT_RES = { plot_field: { name: '農地（開一格）', emoji: '🌾' }, plot_greenhouse: { name: '溫室（開一格）', emoji: '🏡' }, plot_ranch: { name: '牧場（開一格）', emoji: '🐔' }, plot_hatch: { name: '孵化室（開一格）', emoji: '🥚' }, plot_aquarium: { name: '魚缸格（開一格）', emoji: '🐠' } };
