@@ -240,7 +240,8 @@ function sellAnimal(gid, uid, uname, slot) {
 }
 
 // 把一顆蛋放進孵化室。/孵化 指令與孵化室的下拉選單共用。
-function hatchEgg(gid, uid, uname, eggItemId) {
+/** 放蛋。qty 可以一次放多顆（有幾格放幾顆，蛋不夠就放到沒蛋為止）。 */
+function hatchEgg(gid, uid, uname, eggItemId, qty = 1) {
   const c = rcfg(gid);
   const def = hatchList(gid).find(d => d.egg_item_id === eggItemId);
   if (!def) return { error: '這顆蛋現在不能孵化。' };
@@ -249,19 +250,22 @@ function hatchEgg(gid, uid, uname, eggItemId) {
   const hMax = effHatchSlots(gid, uid, c);
   if (hMax <= 0) return { error: '你還沒有孵化室！去 `/設施商店` 買一個（小孵化箱 350 星幣），或用 `/製作` 的「蓋孵化室（+1 格）」。' };
   const usedSlots = db.prepare('SELECT slot FROM ranch_incubator WHERE guild_id=? AND user_id=?').all(gid, uid).map(r => r.slot);
-  let free = -1;
-  for (let sl = 0; sl < hMax; sl++) if (!usedSlots.includes(sl)) { free = sl; break; }
-  if (free < 0) return { error: `孵化室滿了（${hMax} 格）。等現有的蛋孵化完領走，或去 \`/設施商店\` 升級孵化室。` };
+  const freeSlots = [];
+  for (let sl = 0; sl < hMax; sl++) if (!usedSlots.includes(sl)) freeSlots.push(sl);
+  if (!freeSlots.length) return { error: `孵化室滿了（${hMax} 格）。等現有的蛋孵化完領走，或去 \`/設施商店\` 升級孵化室。` };
+
+  const n = Math.max(1, Math.min(qty, inv.count, freeSlots.length));
   const readyAt = Date.now() + applySpeed(Math.max(1, def.hatch_minutes) * 60000, facilityBonus(gid, uid, 'hatch').speed);
-  const tx = db.transaction(() => {
-    db.prepare('UPDATE gather_inventory SET count = count - 1 WHERE guild_id=? AND user_id=? AND item_id=?').run(gid, uid, def.egg_item_id);
-    db.prepare('INSERT INTO ranch_incubator (guild_id,user_id,slot,egg_item_id,animal_id,ready_at) VALUES (?,?,?,?,?,?)')
-      .run(gid, uid, free, def.egg_item_id, def.animal_id, readyAt);
-  });
-  tx();
+  const put = [];
+  db.transaction(() => {
+    db.prepare('UPDATE gather_inventory SET count = count - ? WHERE guild_id=? AND user_id=? AND item_id=?').run(n, gid, uid, def.egg_item_id);
+    const ins = db.prepare('INSERT INTO ranch_incubator (guild_id,user_id,slot,egg_item_id,animal_id,ready_at) VALUES (?,?,?,?,?,?)');
+    for (let k = 0; k < n; k++) { ins.run(gid, uid, freeSlots[k], def.egg_item_id, def.animal_id, readyAt); put.push(freeSlots[k] + 1); }
+  })();
   const used = db.prepare('SELECT COUNT(*) n FROM ranch_incubator WHERE guild_id=? AND user_id=?').get(gid, uid).n;
+  const short = n < qty ? `\n（你想放 ${qty} 顆，但${inv.count < qty ? '蛋只夠 ' + inv.count + ' 顆' : '只剩 ' + freeSlots.length + ' 格'}）` : '';
   return { embed: new EmbedBuilder().setColor(brandColor()).setTitle('🥚 開始孵化')
-    .setDescription(`${def.egg_emoji || '🥚'}**${def.egg_name}** 放進孵化室第 ${free + 1} 格，將孵出 ${def.animal_emoji || '🐾'}**${def.animal_name}**。\n` +
+    .setDescription(`${def.egg_emoji || '🥚'}**${def.egg_name}** ×**${n}** 放進孵化室（第 ${put.join('、')} 格），將孵出 ${def.animal_emoji || '🐾'}**${def.animal_name}**。${short}\n` +
       `預計完成：<t:${Math.floor(readyAt / 1000)}:R>（<t:${Math.floor(readyAt / 1000)}:t>）\n\n` +
       `孵化室：**${used}/${hMax} 格**已使用\n時間到用 \`/孵化室\` 領取，會直接住進牧場空格。`) };
 }
@@ -320,9 +324,41 @@ function init(client) {
   const RANCH_BTN = { 'adv:ranch': '牧場', 'adv:harvest': '收成', 'adv:incubator': '孵化室', 'adv:ranchshop': '畜牧商店' };
 
   client.on('interactionCreate', async (i) => {
-    // 孵化室的放蛋選單
+    // 孵化室的放蛋選單：選好蛋之後再選要放幾顆（以前一次只能放一顆，格子多的人要點很多次）
     if (i.isStringSelectMenu() && i.customId === 'hatchput') {
-      return safeMenu(i, '放蛋孵化', () => hatchEgg(i.guildId, i.user.id, i.user.username, parseInt(i.values[0], 10)));
+      const gid = i.guildId, uid = i.user.id, c = rcfg(gid);
+      const eggId = parseInt(i.values[0], 10);
+      const def = hatchList(gid).find(d => d.egg_item_id === eggId);
+      if (!def) return i.update({ content: '這顆蛋現在不能孵化。', components: [], embeds: [] }).catch(() => {});
+      const have = (db.prepare('SELECT count FROM gather_inventory WHERE guild_id=? AND user_id=? AND item_id=?').get(gid, uid, eggId) || {}).count || 0;
+      const hMax = effHatchSlots(gid, uid, c);
+      const usedN = db.prepare('SELECT COUNT(*) n FROM ranch_incubator WHERE guild_id=? AND user_id=?').get(gid, uid).n;
+      const freeN = Math.max(0, hMax - usedN);
+      const cap = Math.min(have, freeN);
+      if (cap <= 0) {
+        return i.update({
+          content: freeN <= 0 ? `孵化室滿了（${hMax} 格），等孵好的領走再放。` : `你的背包裡沒有 ${def.egg_emoji || '🥚'}${def.egg_name}。`,
+          components: [], embeds: []
+        }).catch(() => {});
+      }
+      // 一顆、幾顆、全部放滿都給選項
+      const amounts = [...new Set([1, 3, 5, 10, cap].filter(n => n >= 1 && n <= cap))].sort((a, b) => a - b);
+      const menu = new StringSelectMenuBuilder().setCustomId(`hatchqty:${eggId}`).setPlaceholder('要放幾顆？')
+        .addOptions(amounts.slice(0, 25).map(n => ({
+          label: n === cap ? `放滿（${n} 顆）` : `放 ${n} 顆`,
+          description: `${def.hatch_minutes} 分／顆${def.fail_pct ? `　失敗率 ${def.fail_pct}%` : ''}`.slice(0, 100),
+          value: String(n)
+        })));
+      return i.update({
+        content: `${def.egg_emoji || '🥚'}**${def.egg_name}** → ${def.animal_emoji || '🐾'}**${def.animal_name}**\n`
+          + `背包有 **${have}** 顆，孵化室還有 **${freeN}** 格。`,
+        embeds: [], components: [new ActionRowBuilder().addComponents(menu)]
+      }).catch(() => {});
+    }
+    if (i.isStringSelectMenu() && i.customId.startsWith('hatchqty:')) {
+      const eggId = parseInt(i.customId.split(':')[1], 10);
+      const qty = parseInt(i.values[0], 10);
+      return safeMenu(i, '放蛋孵化', () => hatchEgg(i.guildId, i.user.id, i.user.username, eggId, qty));
     }
     // 畜牧商店：選一種動物 → 選要養幾隻（可養多隻同款）
     if (i.isStringSelectMenu() && i.customId === 'ranchbuyone') {
@@ -730,7 +766,7 @@ function init(client) {
           const menu = defs.map(d => `${d.egg_emoji || '🥚'} ${d.egg_name} → ${d.animal_emoji || '🐾'}${d.animal_name}（${d.hatch_minutes} 分）`).join('\n');
           return await reply({ content: `找不到可孵化的「${what}」。目前可孵化：\n${menu}\n\n提示：直接點 \`/孵化室\` 的下拉選單放蛋更快。` });
         }
-        const out = hatchEgg(gid, uid, uname, def.egg_item_id);
+        const out = hatchEgg(gid, uid, uname, def.egg_item_id, i.options.getInteger('數量') || 1);
         if (out.error) return await reply({ content: out.error });
         return await reply({ embeds: [out.embed] });
       }
@@ -802,7 +838,7 @@ function init(client) {
           ? `可孵化：${defs.map(d => `${d.egg_name}→${d.animal_name}`).join('、')}`
           : '目前沒有設定任何可孵化的蛋' });
         const rows2 = (owned.length && hMaxNow > 0) ? [new ActionRowBuilder().addComponents(
-          new StringSelectMenuBuilder().setCustomId('hatchput').setPlaceholder('選一顆背包裡的蛋放進孵化室')
+          new StringSelectMenuBuilder().setCustomId('hatchput').setPlaceholder('選要孵的蛋（下一步選數量）')
             .addOptions(owned.slice(0, 25).map(d => ({
               label: `${d.egg_name} → ${d.animal_name}`.slice(0, 100),
               description: `${d.hatch_minutes} 分孵化${d.fail_pct ? `　失敗率 ${d.fail_pct}%` : ''}`.slice(0, 100),

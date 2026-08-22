@@ -156,8 +156,14 @@ function petPanel(gid, uid, uname) {
   const embed = new EmbedBuilder().setColor(brandColor()).setTitle('🐾 寵物')
     .setDescription(cap <= 0
       ? '你的房子還不能養寵物，需要家園 **Lv.3 鄉間住宅**。'
-      : `可養 **${list.length} / ${cap}** 隻（由房屋階級決定）。\n寵物**不會生蛋生奶** —— 牠給的是技能加成，而且加成按親密度比例給，不餵就沒效果。`)
-    .setFooter({ text: '房屋越大養越多隻；親密度掉到 0 技能就完全失效' });
+      : `可養 **${list.length} / ${cap}** 隻（由房屋階級決定，最多 3 隻）。\n寵物**不會生蛋生奶** —— 牠給的是技能加成，而且加成按親密度比例給，不餵就沒效果。`)
+    .setFooter({ text: (() => {
+      // 體力（跟釣魚挖礦、逛街共用同一池）順便顯示在這裡，玩家不用再跑一次別的指令
+      try {
+        const st = require('./gather').staminaState(gid, uid);
+        return `⚡ 今日體力 ${st.left}/${st.max}｜親密度掉到 0 技能就完全失效`;
+      } catch { return '親密度掉到 0 技能就完全失效'; }
+    })() });
   for (const p of list.slice(0, 8)) {
     const pct = Math.floor(p.buff_pct * p.intimacy / 100);
     embed.addFields({

@@ -6,7 +6,7 @@
 //      所以之後要加《幸運星》《釣魚之神》都不用改程式，後台新增一筆就好。
 //
 // 防爆規則：稱號可以無限收集，但同時只能裝備 home_config.title_slots 個（預設 3）。
-const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, MessageFlags } = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
 const { db, guildConfig, logError } = require('../../db');
 const { brandColor } = require('../../util/brand');
 const { BUFF_TYPES } = require('../../util/buffs');
@@ -274,7 +274,8 @@ function titlePanel(gid, uid, uname) {
     ).join('\n').slice(0, 1024)
   });
 
-  const rows = [NAV('home')];
+  const rows = [NAV('home'), new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId('achall:0').setLabel('📋 全部成就與達成條件').setStyle(ButtonStyle.Secondary))];
   if (list.length) rows.push(new ActionRowBuilder().addComponents(
     new StringSelectMenuBuilder().setCustomId('titleeq').setPlaceholder('裝備／卸下成就（最多 3 個）')
       .addOptions(list.slice(0, 25).map(t => ({
@@ -285,6 +286,50 @@ function titlePanel(gid, uid, uname) {
   return { embeds: [embed], components: rows, gained };
 }
 
+
+/**
+ * 全部成就一覽：每一個都寫清楚「怎麼達成、你現在多少」。
+ * 一頁 10 個分頁顯示 —— 成就有五十幾個，塞不進一個 Embed。
+ */
+function achAllPanel(gid, uid, uname, page = 0) {
+  syncTitles(gid, uid, uname);
+  const defs = db.prepare('SELECT * FROM title_defs WHERE guild_id=? AND enabled=1 ORDER BY sort, id').all(gid);
+  const owned = new Set(db.prepare('SELECT title_id FROM title_owned WHERE guild_id=? AND user_id=?').all(gid, uid).map(r => r.title_id));
+  const per = 10;
+  const pages = Math.max(1, Math.ceil(defs.length / per));
+  const p = Math.max(0, Math.min(page, pages - 1));
+  const slice = defs.slice(p * per, p * per + per);
+
+  const lines = slice.map(t => {
+    const got = owned.has(t.id);
+    // metric 型：現在數字／門檻；收集型：看該分類已收集幾種
+    let have = 0;
+    if (t.metric && METRICS[t.metric]) have = metricValue(gid, uid, t.metric);
+    else if (t.cat === 'wealth') have = (db.prepare('SELECT coins FROM econ_wallets WHERE guild_id=? AND user_id=?').get(gid, uid) || {}).coins || 0;
+    else if (t.cat === 'home') have = (db.prepare('SELECT level FROM home_users WHERE guild_id=? AND user_id=?').get(gid, uid) || {}).level || 0;
+    else if (t.cat === 'affinity') have = (db.prepare('SELECT COALESCE(MAX(level),0) n FROM affinity WHERE guild_id=? AND user_id=?').get(gid, uid) || {}).n || 0;
+    else have = seenCount(gid, uid, t.cat);
+
+    const how = t.hint || t.description
+      || (t.metric && METRICS[t.metric] ? `${metricName(t.metric)} 達到 ${Number(t.need).toLocaleString('en-US')}` : `收集 ${t.need} 種（${t.cat}）`);
+    const prog = got ? '✅ 已解鎖'
+      : `\`${bar(have, t.need)}\` ${Number(have).toLocaleString('en-US')} / ${Number(t.need).toLocaleString('en-US')}`;
+    return `${got ? '✅' : '▫️'} ${t.emoji || ''}**${t.name}**　${buffText(t)}\n　${how}\n　${prog}`
+      + (t.reward_coins ? `　🎁 解鎖獎金 ${Number(t.reward_coins).toLocaleString('en-US')}` : '');
+  });
+
+  const embed = new EmbedBuilder().setColor(brandColor())
+    .setTitle(`📋 全部成就（${owned.size} / ${defs.length} 已解鎖）`)
+    .setDescription(lines.join('\n\n').slice(0, 4000))
+    .setFooter({ text: `第 ${p + 1} / ${pages} 頁｜同時最多裝備 ${Math.max(1, hcfg(gid).title_slots ?? 3)} 個` });
+
+  const nav = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(`achall:${p - 1}`).setLabel('◀ 上一頁').setStyle(ButtonStyle.Secondary).setDisabled(p <= 0),
+    new ButtonBuilder().setCustomId(`achall:${p + 1}`).setLabel('下一頁 ▶').setStyle(ButtonStyle.Secondary).setDisabled(p >= pages - 1),
+    new ButtonBuilder().setCustomId('achback').setLabel('🏅 回成就面板').setStyle(ButtonStyle.Primary));
+  return { embeds: [embed], components: [nav] };
+}
+
 function init(client) {
   for (const [gid] of client.guilds.cache) { try { seedHome(gid); seedTitles(gid); seedAch(gid); } catch {} }
   client.on('interactionCreate', async (i) => {
@@ -293,6 +338,14 @@ function init(client) {
       const gid = i.guildId, uid = i.user.id, uname = i.user.username;
       const eph = { flags: MessageFlags.Ephemeral };
 
+      if (i.isButton() && i.customId.startsWith('achall:')) {
+        const page = parseInt(i.customId.split(':')[1], 10) || 0;
+        return i.update(achAllPanel(gid, uid, uname, page)).catch(() => {});
+      }
+      if (i.isButton() && i.customId === 'achback') {
+        const p = titlePanel(gid, uid, uname);
+        return i.update({ embeds: p.embeds, components: p.components }).catch(() => {});
+      }
       if (i.isStringSelectMenu() && i.customId === 'dexcat')
         return i.update(dexCatPanel(gid, uid, i.values[0])).catch(() => {});
       if (i.isStringSelectMenu() && i.customId === 'titleeq') {
@@ -323,4 +376,4 @@ function init(client) {
   console.log('  ↳ 圖鑑／成就模組已載入（10 類圖鑑＋任務式成就，最多裝備 3 個）');
 }
 
-module.exports = { init, seedTitles, seedAch, markSeen, syncTitles, dexPanel, titlePanel, DEX_CATS, buffText };
+module.exports = { init, seedTitles, seedAch, markSeen, syncTitles, dexPanel, titlePanel, achAllPanel, DEX_CATS, buffText };

@@ -156,7 +156,8 @@ const builders = [
   new SlashCommandBuilder().setName('偷').setDescription('去別人家的牧場偷未收成的產物（有每日次數與成功率）')
     .addUserOption(o => o.setName('對象').setDescription('要偷誰的牧場').setRequired(true)),
   new SlashCommandBuilder().setName('孵化').setDescription('把背包裡的蛋放進孵化室，時間到孵成動物')
-    .addStringOption(o => o.setName('蛋').setDescription('要孵化的蛋名稱（用 /孵化室 查看可孵化清單）').setRequired(true)),
+    .addStringOption(o => o.setName('蛋').setDescription('要孵化的蛋名稱（用 /孵化室 查看可孵化清單）').setRequired(true))
+    .addIntegerOption(o => o.setName('數量').setDescription('一次要放幾顆（不填＝1 顆；有幾格就放幾顆）').setMinValue(1).setMaxValue(50)),
   new SlashCommandBuilder().setName('孵化室').setDescription('查看孵化室，領取孵好的動物到牧場'),
   // ---- 魚缸：只養 SSR 魚，每天要買飼料，會產星幣 ----
   new SlashCommandBuilder().setName('魚缸').setDescription('查看你的魚缸：SSR 魚、飼料剩餘時間與累積的星幣')

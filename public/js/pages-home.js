@@ -2,7 +2,7 @@
 // 房屋 12 階、家具、廚房與食譜、寵物、成就、好感度階級，全部改成後台可增刪改。
 // 以前這些數值都埋在程式的預設清單裡，要調一個家具的加成就得改程式重啟。
 App.page('home', {
-  title: '家園與成就', sub: '房屋階級、家具、廚房料理、寵物能力、成就與好感度，全部可直接改', module: 'home',
+  title: '小屋與成就', sub: '小屋（家園）15 階、簽到、家具、廚房料理、寵物、成就、同居與逛街，全部可直接改', module: 'home',
 
   async render(el) {
     const meta = await GET('/home-meta');
@@ -12,7 +12,7 @@ App.page('home', {
     const metricLabel = (k) => (METRICS.find(m => m.key === k) || {}).label || k;
 
     const TABS = [
-      ['config', '⚙️ 總設定'], ['levels', '🏠 房屋階級'], ['furniture', '🛋️ 家具'],
+      ['config', '⚙️ 總設定'], ['levels', '🏠 小屋階級'], ['furniture', '🛋️ 家具'],
       ['kitchen', '🍳 廚房與料理'], ['pets', '🐾 寵物'], ['ach', '🏅 成就'],
       ['affinity', '💕 好感度'], ['stroll', '🛍️ 逛街角色'], ['players', '👥 玩家現況']
     ];

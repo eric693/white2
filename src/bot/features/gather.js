@@ -1286,6 +1286,12 @@ function init(client) {
         }
         const rows = opts.length ? [new ActionRowBuilder().addComponents(
           new StringSelectMenuBuilder().setCustomId('shopbuy').setPlaceholder('選擇要購買的東西').addOptions(opts.slice(0, 25)))] : [];
+        // 其他商店的入口：以前全部混在一頁，玩家找不到家具跟寵物在哪買
+        rows.push(new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId('adv:facility').setLabel('🏗️ 設施商店').setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder().setCustomId('adv:furniture').setLabel('🛋️ 家具商店').setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder().setCustomId('adv:pets').setLabel('🐾 寵物商店').setStyle(ButtonStyle.Secondary),
+          new ButtonBuilder().setCustomId('adv:shop').setLabel('🎁 特殊商店').setStyle(ButtonStyle.Secondary)));
         embeds[embeds.length - 1].setFooter({
           text: opts.length ? `餘額 ${w0} ${c.currency_name}｜用下方選單購買` : `餘額 ${w0} ${c.currency_name}｜目前沒有可買的東西了`
         });
