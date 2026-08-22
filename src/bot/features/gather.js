@@ -874,7 +874,8 @@ function init(client) {
       const embed = new EmbedBuilder().setColor(brandColor()).setTitle('🗺️ 已切換地圖')
         .setDescription(`你現在在 ${m.emoji || ''}**${m.name}**\n` +
           (cfg(i.guildId).daily_points > 0
-            ? `門票 ${mapCost(m)} 點／次　稀有率 +${m.luck_bonus}%\n今日剩 ${Math.max(0, cfg(i.guildId).daily_points - pointsUsedToday(i.guildId, i.user.id))}/${cfg(i.guildId).daily_points} 點`
+            ? (() => { const st = staminaState(i.guildId, i.user.id);
+                return `門票 ${mapCost(m)} 點／次　稀有率 +${m.luck_bonus}%\n今日體力剩 ${st.left}/${st.max} 點`; })()
             : `每日採集 ${m.daily_limit} 次　稀有率 +${m.luck_bonus}%`) + `\n${m.description || ''}`);
       // 保留選單（重新送一次才能再切換，Discord 不會對「選同一項」送事件）
       const maps2 = db.prepare('SELECT * FROM gather_maps WHERE guild_id=? AND enabled=1 ORDER BY sort, id').all(i.guildId);
@@ -1586,8 +1587,15 @@ function init(client) {
           .setThumbnail(target.displayAvatarURL())
           .addFields(
             { name: '💰 星幣', value: `${w.coins.toLocaleString('en-US')}　累計賺 ${w.total_earned.toLocaleString('en-US')}`, inline: false },
-            { name: '🎣 今日採集', value: (c.daily_points > 0
-                ? `${map ? (map.emoji || '') + map.name : '未選地圖'}　點數 ${Math.max(0, c.daily_points - pointsUsedToday(gid, tid))}/${c.daily_points}${map ? `（門票 ${mapCost(map)} 點／次）` : ''}`
+            // 體力＝採集點數同一池：一定要用 staminaState，不然後台加的個別上限與買來的體力都看不到
+            { name: '⚡ 今日體力（採集點數）', value: (c.daily_points > 0
+                ? (() => {
+                  const st = staminaState(gid, tid);
+                  return `${map ? (map.emoji || '') + map.name : '未選地圖'}　**${st.left}/${st.max}** 點`
+                    + (st.extra ? `（含管理員加給的 ${st.extra}）` : '')
+                    + (st.bonus ? `（含買來的 ${st.bonus}）` : '')
+                    + (map ? `\n　門票 ${mapCost(map)} 點／次，還能採 ${Math.floor(st.left / mapCost(map))} 次` : '');
+                })()
                 : (map ? `${map.emoji || ''}${map.name}　${usedToday}/${map.daily_limit} 次` : `已採 ${usedToday} 次`))
               + (buff ? `　🍀幸運符 +${buff}%` : ''), inline: false },
             { name: '🐔 牧場', value: `${animals}/${ranchMax} 隻　🥚 孵化中 ${incubating}/${hatchMax}`, inline: true },
@@ -1661,11 +1669,17 @@ function init(client) {
         const cur = activeMap(gid, uid);
         const usedToday = totalGathersToday(gid, uid);
         const pool = c.daily_points || 0;
-        const left = pool > 0 ? Math.max(0, pool - pointsUsedToday(gid, uid)) : 0;
+        const stMap = staminaState(gid, uid);
+        const left = pool > 0 ? stMap.left : 0;
         const cap = (m) => pool > 0 ? `門票 ${mapCost(m)} 點（今日還能採 ${Math.floor(left / mapCost(m))} 次）` : `每日 ${m.daily_limit} 次`;
         const lines = maps.map(m => `${m.id === (cur && cur.id) ? '📍' : '　'} ${m.emoji || ''}**${m.name}**　${cap(m)}　稀有率 +${m.luck_bonus}%${m.description ? `\n　　${m.description}` : ''}`);
         const embed = new EmbedBuilder().setColor(brandColor()).setTitle('🗺️ 採集地圖')
-          .setDescription((pool > 0 ? `你今天還有 **${left}／${pool} 點**採集點數。不同地圖的門票不一樣，越稀有的圖一次扣越多點。\n\n` : '') + lines.join('\n'))
+          .setDescription((pool > 0
+            ? `你今天還有 **${left}／${stMap.max} 點**體力`
+              + (stMap.extra ? `（含管理員加給的 ${stMap.extra}）` : '')
+              + (stMap.bonus ? `（含買來的 ${stMap.bonus}）` : '')
+              + `。不同地圖的門票不一樣，越稀有的圖一次扣越多點。\n\n`
+            : '') + lines.join('\n'))
           .setFooter({ text: `目前在：${cur ? (cur.emoji || '') + cur.name : '無'}　今日已採 ${usedToday} 次｜下方可切換` });
         const menu = new StringSelectMenuBuilder().setCustomId('gathermap:pick').setPlaceholder('切換到其他地圖')
           .addOptions(maps.slice(0, 25).map(m => ({
