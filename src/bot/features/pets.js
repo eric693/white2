@@ -12,6 +12,28 @@ const { markSeen } = require('./dex');
 const gcfg = (gid) => guildConfig('gather_config', gid);
 const money = (c, n) => `${c.currency_emoji || '🪙'} ${Number(n).toLocaleString('en-US')} ${c.currency_name || '星幣'}`;
 
+
+// ---- 寵物能力分類（照你們定的七類，但實際只用得到前面幾類）----
+// ① 全防護　② 指定素材加成（一定要寫明是哪一種素材）　③ 股市　④ 商品銷售
+// ⑤ 稀有率　⑥ 生產加速　⑦ 反機率（降低失敗／被偷）
+// 共通規則：所有百分比都是**按親密度比例給**（親密度 50 ＝ 只有一半效果），
+// 而且數字刻意壓小 —— 寵物是長期陪伴，不是三天就養滿的加成機器。
+const PET_CATS = {
+  guard:    { name: '🛡️ 全防護', hint: '降低被偷成功率（牧場與魚缸都算）' },
+  material: { name: '📦 素材加成', hint: '提高指定素材的掉落機率' },
+  stock:    { name: '📈 股市加成', hint: '股市收益提升' },
+  sell:     { name: '💰 銷售加成', hint: '指定類型商品的售價提升' },
+  rare:     { name: '✨ 稀有率提升', hint: '提高稀有物品出現機率' },
+  speed:    { name: '⏱️ 生產加速', hint: '縮短生產與等待時間' },
+  resist:   { name: '🎲 反機率', hint: '降低失敗、事故等負面機率' }
+};
+const catLabel = (p) => {
+  const c = PET_CATS[p.category];
+  if (!c) return '';
+  if (p.category === 'material' && p.target_item) return `📦 ${p.target_item} 掉落率`;
+  return c.name;
+};
+
 // 個性只影響對話語氣與親密度成長速度，不給數值優勢（避免洗個性）
 const PERSONALITIES = ['黏人', '高冷', '貪吃', '愛玩', '膽小', '傲嬌', '穩重', '好奇'];
 const RARITY = { N: '⚪', R: '🟢', SR: '🔵', SSR: '🟣', UR: '🟠' };
@@ -70,7 +92,7 @@ function seedPets(gid) {
 }
 
 const petsOf = (gid, uid) => db.prepare(
-  `SELECT o.*, p.name, p.emoji, p.rarity, p.skill_name, p.buff_type, p.buff_pct, p.feed_hours
+  `SELECT o.*, p.name, p.emoji, p.rarity, p.skill_name, p.buff_type, p.buff_pct, p.feed_hours, p.target_item, p.category
      FROM pet_owned o JOIN pet_defs p ON p.id=o.pet_id
     WHERE o.guild_id=? AND o.user_id=? ORDER BY o.id`).all(gid, uid);
 const petCap = (gid, uid, uname) => {
@@ -130,9 +152,10 @@ function feedPet(gid, uid, ownedId) {
       WHERE o.guild_id=? AND o.user_id=? AND o.id=?`).get(gid, uid, ownedId);
   if (!p) return { error: '找不到這隻寵物。' };
   const now = Date.now();
-  const wait = p.fed_ms + p.feed_hours * 3600000 / 2;   // 半個週期就能再餵一次
+  const wait = p.fed_ms + p.feed_hours * 3600000;   // 要等滿一個餵食週期（以前半個週期就能餵，養太快）
   if (now < wait) return { error: `${p.emoji || ''}${p.nickname || p.name} 現在還不餓，${Math.ceil((wait - now) / 60000)} 分鐘後再來。` };
-  const gain = 8 + Math.floor(Math.random() * 5);
+  // 親密度成長刻意放慢：一次 +4~6（原本 +8~12），養滿要 20 次左右，是長期關係不是三天速成
+  const gain = 4 + Math.floor(Math.random() * 3);
   const exp = p.exp + 10;
   const lvUp = exp >= p.level * 100;
   bumpAch(gid, uid, 'feed_count', 1);
@@ -168,7 +191,10 @@ function petPanel(gid, uid, uname) {
     const pct = Math.floor(p.buff_pct * p.intimacy / 100);
     embed.addFields({
       name: `${RARITY[p.rarity] || ''}${p.emoji || ''}${p.nickname || p.name}　Lv.${p.level}`,
-      value: `${hearts(p.intimacy)} ${p.intimacy}/100　個性：${p.personality}\n技能「${p.skill_name}」→ ${BUFF_TYPES[p.buff_type] || ''} **+${pct}%**（滿親密 ${p.buff_pct}%）`,
+      // 素材類要寫明是哪一種素材（碎石＋X%），不能只寫「素材提升」
+      value: `${hearts(p.intimacy)} ${p.intimacy}/100　個性：${p.personality}\n`
+        + `${catLabel(p) ? catLabel(p) + '　' : ''}技能「${p.skill_name}」\n`
+        + `→ ${p.target_item ? `${p.target_item} 掉落率` : (BUFF_TYPES[p.buff_type] || '')} **+${pct}%**（滿親密度 ${p.buff_pct}%）`,
       inline: false
     });
   }

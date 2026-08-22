@@ -106,6 +106,23 @@ function userBuffs(gid, uid, detail = false) {
   return detail ? { buffs: capped, raw: total, parts, cap } : capped;
 }
 
+/**
+ * 指定素材的掉落加成％（寵物專用）。
+ * 「碎石 +10%」指的是**權重**提高一成，不是保證多挖到一成 —— 一律按親密度比例給，
+ * 親密度 50 就只有一半效果。
+ */
+function itemBoost(gid, uid, itemName) {
+  if (!itemName) return 0;
+  const rows = db.prepare(
+    `SELECT p.buff_pct, o.intimacy FROM pet_owned o JOIN pet_defs p ON p.id = o.pet_id
+      WHERE o.guild_id=? AND o.user_id=? AND p.enabled=1 AND p.target_item = ? AND p.buff_pct > 0`)
+    .all(gid, uid, itemName);
+  let pct = 0;
+  for (const r of rows) pct += Math.floor(r.buff_pct * Math.min(100, Math.max(0, r.intimacy)) / 100);
+  const cap = Math.max(0, hcfg(gid).buff_cap_pct ?? 30);
+  return Math.min(cap, pct);
+}
+
 /** 單一種類的加成％，各系統呼叫這支就好 */
 const buffPct = (gid, uid, type) => userBuffs(gid, uid)[type] || 0;
 
@@ -122,4 +139,4 @@ function grantBuff(gid, uid, type, pct, source, minutes) {
     .run(gid, uid, type, pct, source, expire);
 }
 
-module.exports = { BUFF_TYPES, userBuffs, buffPct, applyBuff, grantBuff };
+module.exports = { BUFF_TYPES, userBuffs, buffPct, itemBoost, applyBuff, grantBuff };

@@ -6,7 +6,7 @@ const { db, guildConfig, logError } = require('../../db');
 const { brandColor } = require('../../util/brand');
 // 行情倍率：財經新聞會改變「賣價」（買價不受影響）。新聞系統關閉時 livePrice 就等於基準價。
 const { livePrice, priceTag } = require('../../util/market');
-const { userBuffs } = require('../../util/buffs');
+const { userBuffs, itemBoost } = require('../../util/buffs');
 const { bump: bumpAch } = require('../../util/achievements');
 
 const cfg = (gid) => guildConfig('gather_config', gid);
@@ -468,6 +468,8 @@ function rollItem(gid, kind, luck, uid) {
   const weighted = items.map(it => {
     const rar = it.rarity;
     let mul = 1 + (luck / 100) * (LUCK_SCALE[rar] ?? 0);
+    // 寵物的「指定素材加成」：碎石＋X%、橡木＋X% 這種，只放大那一項的權重
+    if (uid) { const ib = itemBoost(gid, uid, it.name); if (ib) mul *= 1 + ib / 100; }
     if (rarePct && (rar === 'SR' || rar === 'SSR' || rar === 'UR')) mul *= 1 + rarePct / 100;
     if (commonPct && rar === 'N') mul *= 1 + commonPct / 100;
     if (matPct && (rar === 'N' || rar === 'R')) mul *= 1 + matPct / 100;

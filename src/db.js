@@ -236,6 +236,13 @@ ensureColumns('title_defs', {
   hint: "TEXT NOT NULL DEFAULT ''"          // 顯示給玩家的任務提示
 });
 
+// 寵物能力分類：素材加成要能指定「哪一種素材」（碎石＋X%、橡木＋X%），
+// 而不是只寫模糊的「素材提升」。target_item 有填就是針對那一項的掉落加成。
+ensureColumns('pet_defs', {
+  target_item: "TEXT NOT NULL DEFAULT ''",     // 指定素材名稱（對應 gather_items.name）
+  category:    "TEXT NOT NULL DEFAULT ''"      // guard/material/stock/sell/rare/speed/resist
+});
+
 // 逛街名單：轉盤裡不是「角色」的項目（模擬器、活動介紹…）或不想參與的作者，可以排除
 ensureColumns('wheel_roles', { stroll_ok: 'INTEGER NOT NULL DEFAULT 1' });
 

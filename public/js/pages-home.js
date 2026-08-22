@@ -374,8 +374,21 @@ App.page('home', {
             ${matRows(parseMats(r.materials), 3)}
             <div class="form-row">
               <div class="field"><label>技能名稱</label><input name="skill_name" value="${UI.esc(r.skill_name || '')}" placeholder="牧場守望"></div>
-              <div class="field"><label>能力</label>${buffSelect('buff_type', r.buff_type)}</div>
+              <div class="field"><label>能力分類</label><select name="category">
+                <option value="">— 不分類 —</option>
+                ${[['guard', '🛡️ 全防護'], ['material', '📦 素材加成（要指定素材）'], ['stock', '📈 股市加成'],
+                   ['sell', '💰 銷售加成'], ['rare', '✨ 稀有率提升'], ['speed', '⏱️ 生產加速'], ['resist', '🎲 反機率']]
+                  .map(([k, v]) => `<option value="${k}" ${k === r.category ? 'selected' : ''}>${v}</option>`).join('')}
+              </select></div>
               <div class="field"><label>滿親密度時的 %</label><input name="buff_pct" type="number" min="0" value="${r.buff_pct ?? 0}"></div>
+            </div>
+            <div class="form-row">
+              <div class="field"><label>📦 指定素材（選了就是「這一種素材的掉落率 +X%」）</label>
+                <select name="target_item">
+                  <option value="">— 不指定（用下面的通用能力）—</option>
+                  ${meta.items.map(it => `<option value="${UI.esc(it.name)}" ${it.name === r.target_item ? 'selected' : ''}>${UI.esc((it.emoji || '') + it.name)}</option>`).join('')}
+                </select></div>
+              <div class="field"><label>通用能力（沒指定素材時才用）</label>${buffSelect('buff_type', r.buff_type)}</div>
             </div>
             <div class="hint">能力按親密度比例給：親密度 50 ＝ 只有一半效果，0 ＝ 完全沒效果（不餵就沒用）。
               防竊類（牧場防護／魚缸防護／全域防竊／反擊機率）就是取代看門動物的那一套。</div>
@@ -394,7 +407,9 @@ App.page('home', {
               <td>${Number(r.price).toLocaleString('en-US')}</td>
               <td class="wrap" style="font-size:13px">${matText(r.materials)}</td>
               <td>${UI.esc(r.skill_name || '')}</td>
-              <td>${r.buff_pct ? `${UI.esc(buffLabel(r.buff_type))} +${r.buff_pct}%` : '—'}</td>
+              <td>${r.buff_pct
+        ? `${r.target_item ? UI.esc(r.target_item) + ' 掉落率' : UI.esc(buffLabel(r.buff_type))} +${r.buff_pct}%`
+        : '—'}</td>
               <td>${r.feed_hours}h</td>
               <td>${H.enabledTag(r.enabled)}</td>
               <td><button class="btn tiny secondary" data-edit="${r.id}">編輯</button>
