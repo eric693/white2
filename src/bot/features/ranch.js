@@ -727,7 +727,7 @@ function init(client) {
         }
         const defs = hatchList(gid);
         const embed = new EmbedBuilder().setColor(brandColor()).setTitle(`🐣 ${uname} 的孵化室`)
-          .setDescription(lines.join('\n'));
+          .setDescription(lines.join('\n').slice(0, 4000));
         if (hatched.length) {
           embed.addFields({ name: '本次孵出', value: hatched.map(h => `${h.a.emoji || '🐾'}${h.a.name} → 牧場第 ${h.slot + 1} 格`).join('\n') });
         }
@@ -735,7 +735,10 @@ function init(client) {
           embed.addFields({ name: '💔 孵化失敗（蛋沒了）', value: failed.map(a => `${a.emoji || '🐾'}${a.name}`).join('、') });
         }
         if (blocked.length) {
-          embed.addFields({ name: '⚠️ 牧場已滿，孵好的動物先留在孵化室', value: blocked.map(b => `${b.a.emoji || '🐾'}${b.a.name}`).join('、') + '\n👇 可以直接用下面的選單「賣掉」換星幣（不用先挪牧場），或去空出牧場格子再回來領。' });
+          embed.addFields({ name: `⚠️ 牧場已滿，${blocked.length} 隻孵好的動物先留在孵化室`,
+            value: (blocked.map(b => `${b.a.emoji || '🐾'}${b.a.name}`).join('、').slice(0, 800)
+              + (blocked.length > 25 ? `\n（下面的選單一次最多賣 25 隻，賣完再開一次 \`/孵化室\`）` : '')
+              + '\n👇 可以直接用下面的選單「賣掉」換星幣（不用先挪牧場），或去空出牧場格子再回來領。') });
         }
         // 放蛋選單：只列「你背包裡真的有的蛋」，點一下就放進去，不用打指令
         const owned = defs.filter(d =>
@@ -758,10 +761,13 @@ function init(client) {
           embed.addFields({ name: '🥚 放蛋', value: '你背包裡目前沒有可孵化的蛋。養雞鴨鵝鵪鶉會生蛋，狩獵也可能撿到野鳥蛋。' });
         }
         // 牧場滿了孵好的動物：直接在孵化室賣掉（免挪牧場），回收購買價一半
-        const sellRow = blocked.length ? [new ActionRowBuilder().addComponents(
+        // Discord 的下拉最多 25 個選項，maxValues 也不能超過 ——
+        // 蛋放超過 25 顆的人（真的有）以前會直接讓整個 /孵化室 壞掉（Invalid number value）
+        const sellOpts = blocked.slice(0, 25);
+        const sellRow = sellOpts.length ? [new ActionRowBuilder().addComponents(
           new StringSelectMenuBuilder().setCustomId('hatchsell').setPlaceholder('💰 直接賣掉孵好的動物（牧場滿了免挪）')
-            .setMinValues(1).setMaxValues(blocked.length)
-            .addOptions(blocked.slice(0, 25).map(b => ({
+            .setMinValues(1).setMaxValues(sellOpts.length)
+            .addOptions(sellOpts.map(b => ({
               label: `賣掉 ${b.a.name}`.slice(0, 100),
               description: `回收 ${Math.max(1, Math.floor((b.a.price || 0) * SELL_PCT))} ${gc.currency_name}`.slice(0, 100),
               value: String(b.slot), emoji: b.a.emoji || '🐾'
