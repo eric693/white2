@@ -4,6 +4,7 @@
 // 品質在「下鍋當下」就擲好並存進 cook_queue，領取時才揭曉 —— 避免玩家看到結果才決定要不要領。
 const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
 const { db, guildConfig, logError } = require('../../db');
+const { bump: bumpAch } = require('../../util/achievements');
 const { brandColor } = require('../../util/brand');
 const { wallet, addCoins } = require('./gather');
 const { BUFF_TYPES, buffPct, grantBuff, applyBuff } = require('../../util/buffs');
@@ -189,6 +190,8 @@ function collectCooked(gid, uid) {
         ON CONFLICT(guild_id,user_id,recipe_id,quality) DO UPDATE SET count = count + 1`).run(gid, uid, r.id, q.quality);
       db.prepare('INSERT OR IGNORE INTO dex_seen (guild_id,user_id,cat,key) VALUES (?,?,?,?)').run(gid, uid, 'cook', r.name);
       got.push({ r, q: q.quality });
+      bumpAch(gid, uid, 'cook_count', 1);
+      if (q.quality >= 4) bumpAch(gid, uid, 'cook_perfect', 1);   // 4＝🟠傳說，最高品質
     }
   })();
   return { got };

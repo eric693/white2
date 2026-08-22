@@ -169,7 +169,6 @@ const builders = [
   // ---- 家園系統 ----
   new SlashCommandBuilder().setName('我的家').setDescription('打開你的家園面板（房屋／廚房／家具／寵物／約會）'),
   new SlashCommandBuilder().setName('升級家園').setDescription('用金幣＋木材／礦石把房子升到下一階'),
-  new SlashCommandBuilder().setName('家園加成').setDescription('查看你目前所有加成與來源明細'),
   new SlashCommandBuilder().setName('家園卡').setDescription('把你的家園畫成一張圖（房屋、寵物、稱號、加成一次看完）'),
   new SlashCommandBuilder().setName('簽到').setDescription('回小屋簽到領星幣（連續加碼，房子越大領越多）'),
   new SlashCommandBuilder().setName('家園網頁').setDescription('取得你的個人家園網頁連結（完整漂亮版）'),
@@ -180,8 +179,7 @@ const builders = [
   new SlashCommandBuilder().setName('寵物改名').setDescription('幫你的寵物取個名字')
     .addStringOption(o => o.setName('寵物').setDescription('要改名的寵物').setRequired(true))
     .addStringOption(o => o.setName('名字').setDescription('新名字').setRequired(true)),
-  new SlashCommandBuilder().setName('圖鑑2').setDescription('查看各類收集完成度（收集到門檻會解鎖稱號）'),
-  new SlashCommandBuilder().setName('稱號').setDescription('查看與裝備稱號（同時只能裝備 3 個）'),
+  new SlashCommandBuilder().setName('成就').setDescription('查看成就進度並裝備加成（一個人最多同時帶 3 個）'),
   new SlashCommandBuilder().setName('送禮').setDescription('送東西給角色，提升好感度')
     .addStringOption(o => o.setName('角色').setDescription('打字搜尋角色名字').setRequired(true).setAutocomplete(true)),
   new SlashCommandBuilder().setName('邀請').setDescription('邀請角色來你家作客（需要家園 Lv.6）')

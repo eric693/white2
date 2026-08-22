@@ -10,6 +10,7 @@ const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, MessageFlags } 
 const { db, guildConfig, logError } = require('../../db');
 const { brandColor } = require('../../util/brand');
 const { BUFF_TYPES } = require('../../util/buffs');
+const { metricValue, metricName, bar, METRICS } = require('../../util/achievements');
 const { seedHome, homeOf, NAV } = require('./home');
 
 const hcfg = (gid) => guildConfig('home_config', gid);
@@ -85,6 +86,59 @@ function seedTitles(gid) {
   } catch (e) { logError(gid, '預設稱號建立失敗：', e.message); }
 }
 
+
+// ---- 任務式成就（metric 解鎖）----
+// 跟上面的收集型稱號差別：這些是「去做事」拿到的，而且每一個功能都不一樣 ——
+// 想挖碎石做材料的帶《碎石狂人》，被偷怕了的帶《銅牆鐵壁》，愛煮飯的帶《完美主義》。
+// [分類, 名稱, emoji, metric, 門檻, 加成1, %, 加成2, %, 任務提示, 解鎖獎金]
+const SEED_ACH = [
+  ['mine', '碎石狂人', '🪨', 'gather_mine', 300, 'mine_common_pct', 8, '', 0, '挖礦 300 次', 20000],
+  ['mine', '鑽石獵人', '💎', 'gather_mine', 1000, 'mine_rare_pct', 4, 'sell_pct', 2, '挖礦 1000 次', 80000],
+  ['fish', '老練漁夫', '🐠', 'gather_fish', 200, 'fish_price_pct', 4, '', 0, '釣魚 200 次', 15000],
+  ['fish', '深海垂釣者', '🎣', 'gather_fish', 500, 'fish_rare_pct', 4, '', 0, '釣魚 500 次', 50000],
+  ['forage', '山野行家', '🍃', 'gather_forage', 300, 'forage_rare_pct', 5, '', 0, '採集 300 次', 20000],
+  ['hunt', '老獵人', '🏹', 'gather_hunt', 300, 'hunt_rare_pct', 5, '', 0, '狩獵 300 次', 20000],
+  ['wood', '樵夫', '🪓', 'gather_wood', 300, 'mat_pct', 5, '', 0, '伐木 300 次', 20000],
+  ['craft', '素材商人', '📦', 'craft_count', 100, 'mat_pct', 8, '', 0, '製作 100 次', 25000],
+  ['craft', '鐵匠大師', '🔨', 'craft_count', 300, 'mat_pct', 4, 'sell_pct', 2, '製作 300 次', 60000],
+  ['daily', '全勤生', '📅', 'checkin_best', 30, 'luck_pct', 5, '', 0, '連續簽到 30 天', 30000],
+  ['daily', '皆勤王', '🗓️', 'checkin_total', 100, 'sell_pct', 3, 'energy_pct', 3, '累計簽到 100 天', 100000],
+  ['steal', '神偷', '🥷', 'steal_success', 50, 'steal_pct', 6, '', 0, '偷竊成功 50 次', 30000],
+  ['guard', '銅牆鐵壁', '🛡️', 'defend_success', 30, 'steal_resist_pct', 8, '', 0, '成功擋掉小偷 30 次', 30000],
+  ['guard', '看門專家', '🐕', 'defend_success', 100, 'ranch_resist_pct', 10, 'aqua_resist_pct', 10, '成功擋掉小偷 100 次', 100000],
+  ['cook', '鐵板大廚', '👨‍🍳', 'cook_count', 200, 'cook_price_pct', 5, '', 0, '完成 200 道料理', 40000],
+  ['cook', '完美主義', '✨', 'cook_perfect', 50, 'cook_perfect_pct', 5, '', 0, '做出 50 道完美料理', 60000],
+  ['cook', '米其林', '🌟', 'kitchen_level', 10, 'cook_perfect_pct', 4, 'cook_price_pct', 4, '廚房升到 10 級', 80000],
+  ['farm', '勤奮農夫', '🌾', 'harvest_count', 300, 'speed_pct', 5, '', 0, '收成 300 次', 30000],
+  ['affinity', '送禮達人', '🎁', 'gift_count', 200, 'gift_pct', 6, '', 0, '送禮 200 次', 40000],
+  ['affinity', '萬人迷', '💞', 'affinity_roles', 50, 'gift_pct', 5, 'visit_pct', 4, '跟 50 位角色互動過', 80000],
+  ['pet', '鏟屎官', '🐾', 'feed_count', 300, 'energy_pct', 5, '', 0, '餵寵物 300 次', 30000],
+  ['pet', '寵物大師', '🐕‍🦺', 'pet_intimacy', 100, 'energy_pct', 5, 'luck_pct', 3, '把任一隻寵物養到親密度 100', 60000],
+  ['quest', '任務狂', '📜', 'quest_done', 200, 'quest_pct', 6, '', 0, '完成 200 個任務', 50000],
+  ['charity', '慈善家', '💝', 'donate_coins', 500000, 'luck_pct', 4, 'quest_pct', 3, '累計捐款 50 萬', 0],
+  ['tax', '納稅模範', '🧾', 'tax_paid', 200000, 'sell_pct', 3, '', 0, '累計繳稅 20 萬', 0],
+  ['stock', '當沖之王', '📈', 'stock_trades', 200, 'stock_pct', 5, '', 0, '股市成交 200 筆', 40000],
+  ['stock', '股海贏家', '🏦', 'stock_profit', 1000000, 'stock_pct', 6, '', 0, '股市已實現獲利 100 萬', 0],
+  ['wealth', '富甲一方', '💵', 'total_earned', 10000000, 'sell_pct', 4, '', 0, '累計賺得 1000 萬', 0],
+  ['home', '室內王', '🛋️', 'furniture_placed', 20, 'sell_pct', 3, '', 0, '同時擺出 20 件家具', 40000],
+  ['dex', '收藏狂', '📚', 'dex_total', 100, 'luck_pct', 5, '', 0, '圖鑑總共收集 100 種', 80000]
+];
+
+function seedAch(gid) {
+  try {
+    const has = db.prepare('SELECT 1 FROM title_defs WHERE guild_id=? AND name=?');
+    const ins = db.prepare(`INSERT INTO title_defs
+      (guild_id,cat,name,emoji,metric,need,buff_type,buff_pct,buff2_type,buff2_pct,description,hint,reward_coins,sort)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+    db.transaction(() => {
+      SEED_ACH.forEach(([cat, name, emoji, metric, need, b1, p1, b2, p2, hint, reward], idx) => {
+        if (has.get(gid, name)) return;
+        ins.run(gid, cat, name, emoji, metric, need, b1, p1, b2, p2, hint, hint, reward, 100 + idx);
+      });
+    })();
+  } catch (e) { logError(gid, '預設成就建立失敗：', e.message); }
+}
+
 /** 記一筆「見過」。各系統拿到東西時呼叫這支，賣掉也不會消失。 */
 function markSeen(gid, uid, cat, key) {
   if (!cat || !key) return;
@@ -103,7 +157,9 @@ function syncTitles(gid, uid, uname) {
   const gained = [];
   for (const t of defs) {
     let have = 0;
-    if (t.cat === 'wealth') have = coins;
+    // metric 有填就走成就指標（任務式），沒填才是舊的收集型判定
+    if (t.metric) have = metricValue(gid, uid, t.metric);
+    else if (t.cat === 'wealth') have = coins;
     else if (t.cat === 'home') have = home.level;
     else if (t.cat === 'affinity') have = (db.prepare('SELECT COALESCE(MAX(level),0) n FROM affinity WHERE guild_id=? AND user_id=?').get(gid, uid) || {}).n || 0;
     else have = seenCount(gid, uid, t.cat);
@@ -111,6 +167,8 @@ function syncTitles(gid, uid, uname) {
     const had = db.prepare('SELECT 1 FROM title_owned WHERE guild_id=? AND user_id=? AND title_id=?').get(gid, uid, t.id);
     if (had) continue;
     db.prepare('INSERT OR IGNORE INTO title_owned (guild_id,user_id,title_id,slot) VALUES (?,?,?,-1)').run(gid, uid, t.id);
+    // 任務式成就可以帶一次性獎金（收集型稱號預設 0，不會誤發）
+    if (t.reward_coins > 0) { try { require('./gather').addCoins(gid, uid, uname, t.reward_coins); } catch {} }
     gained.push(t);
   }
   return gained;
@@ -131,7 +189,7 @@ function equipTitle(gid, uid, titleId, on) {
   if (row.slot >= 0) return { error: '這個稱號已經裝備中了。' };
   const slots = Math.max(1, hcfg(gid).title_slots ?? 3);
   const used = db.prepare('SELECT COUNT(*) n FROM title_owned WHERE guild_id=? AND user_id=? AND slot>=0').get(gid, uid).n;
-  if (used >= slots) return { error: `稱號欄位滿了（${used}/${slots}）。先卸下一個再裝，這是刻意的設計 —— 收集再多稱號，同時也只有 ${slots} 個生效。` };
+  if (used >= slots) return { error: `成就欄位滿了（${used}/${slots}）。先卸下一個再裝 —— 這是刻意的設計：解鎖再多成就，同時也只有 ${slots} 個加成生效。` };
   // 找一個沒被占用的欄位編號
   const taken = db.prepare('SELECT slot FROM title_owned WHERE guild_id=? AND user_id=? AND slot>=0').all(gid, uid).map(r => r.slot);
   let s = 0; while (taken.includes(s)) s++;
@@ -193,18 +251,32 @@ function titlePanel(gid, uid, uname) {
   const list = ownedTitles(gid, uid);
   const slots = Math.max(1, hcfg(gid).title_slots ?? 3);
   const used = list.filter(t => t.slot >= 0);
-  const embed = new EmbedBuilder().setColor(brandColor()).setTitle('🏅 稱號')
+  const embed = new EmbedBuilder().setColor(brandColor()).setTitle('🏅 成就')
     .setDescription(list.length
-      ? `你擁有 **${list.length}** 個稱號，同時可裝備 **${used.length} / ${slots}** 個。\n收集再多也只有裝備中的生效 —— 想賺錢就換賺錢的，想攻略角色就換戀愛的。`
-      : '你還沒有任何稱號。\n把圖鑑收集到門檻、把家園蓋高、把角色好感度養起來，都會解鎖稱號。')
-    .setFooter({ text: '稱號由管理員在後台自由增減，這裡顯示的都是後台設定的內容' });
+      ? `你解鎖了 **${list.length}** 個成就，同時可裝備 **${used.length} / ${slots}** 個。\n**只有裝備中的加成生效** —— 想挖材料就帶《碎石狂人》，怕被偷就帶《銅牆鐵壁》，愛煮飯就帶《完美主義》。`
+      : '你還沒有任何成就。\n收集圖鑑、把家蓋高、每天簽到、挖礦釣魚做料理、擋下小偷…每一種都有對應的成就，各自給不同的能力。')
+    .setFooter({ text: `一個人最多同時帶 ${slots} 個成就加成；成就全部後台可增減與調整` });
   if (used.length) embed.addFields({ name: '⭐ 裝備中', value: used.map(t => `${t.emoji || ''}**${t.name}**　${buffText(t)}`).join('\n') });
   const idle = list.filter(t => t.slot < 0);
   if (idle.length) embed.addFields({ name: '📦 未裝備', value: idle.map(t => `${t.emoji || ''}${t.name}　${buffText(t)}`).join('\n').slice(0, 1024) });
 
+  // 差一點就拿到的成就：照完成度排序，只顯示最接近的幾個，讓人知道下一步要做什麼
+  const owned = new Set(list.map(t => t.id));
+  const todo = db.prepare('SELECT * FROM title_defs WHERE guild_id=? AND enabled=1').all(gid)
+    .filter(t => !owned.has(t.id) && t.metric && METRICS[t.metric] && t.need > 0)
+    .map(t => ({ t, have: metricValue(gid, uid, t.metric) }))
+    .sort((a, b) => (b.have / b.t.need) - (a.have / a.t.need))
+    .slice(0, 6);
+  if (todo.length) embed.addFields({
+    name: '🎯 進行中（差一點就到手）',
+    value: todo.map(({ t, have }) =>
+      `${t.emoji || ''}**${t.name}**　${buffText(t)}\n　\`${bar(have, t.need)}\` ${have.toLocaleString('en-US')} / ${t.need.toLocaleString('en-US')}　${t.hint || metricName(t.metric)}`
+    ).join('\n').slice(0, 1024)
+  });
+
   const rows = [NAV('home')];
   if (list.length) rows.push(new ActionRowBuilder().addComponents(
-    new StringSelectMenuBuilder().setCustomId('titleeq').setPlaceholder('裝備／卸下稱號')
+    new StringSelectMenuBuilder().setCustomId('titleeq').setPlaceholder('裝備／卸下成就（最多 3 個）')
       .addOptions(list.slice(0, 25).map(t => ({
         label: `${t.slot >= 0 ? '⭐ ' : ''}${t.emoji || ''}${t.name}`.slice(0, 100),
         description: `${buffText(t)}　→ ${t.slot >= 0 ? '點一下卸下' : '點一下裝備'}`.slice(0, 100),
@@ -214,7 +286,7 @@ function titlePanel(gid, uid, uname) {
 }
 
 function init(client) {
-  for (const [gid] of client.guilds.cache) { try { seedHome(gid); seedTitles(gid); } catch {} }
+  for (const [gid] of client.guilds.cache) { try { seedHome(gid); seedTitles(gid); seedAch(gid); } catch {} }
   client.on('interactionCreate', async (i) => {
     try {
       if (!i.guildId) return;
@@ -233,11 +305,11 @@ function init(client) {
       }
       if (i.isChatInputCommand() && i.commandName === '圖鑑2')
         return i.reply({ ...dexPanel(gid, uid, uname), ...eph }).catch(() => {});
-      if (i.isChatInputCommand() && i.commandName === '稱號') {
+      if (i.isChatInputCommand() && (i.commandName === '成就' || i.commandName === '稱號')) {
         const p = titlePanel(gid, uid, uname);
         await i.reply({ embeds: p.embeds, components: p.components, ...eph }).catch(() => {});
         if (p.gained.length) await i.followUp({
-          content: `🎉 你解鎖了新稱號：\n${p.gained.map(t => `${t.emoji || ''}**${t.name}**　${buffText(t)}`).join('\n')}\n記得裝備才會生效。`,
+          content: `🎉 你解鎖了新成就：\n${p.gained.map(t => `${t.emoji || ''}**${t.name}**　${buffText(t)}`).join('\n')}\n記得裝備才會生效。`,
           ...eph
         }).catch(() => {});
         return;
@@ -248,7 +320,7 @@ function init(client) {
       if (i.replied || i.deferred) await i.followUp(msg).catch(() => {}); else await i.reply(msg).catch(() => {});
     }
   });
-  console.log('  ↳ 圖鑑／稱號模組已載入（10 類圖鑑，稱號全後台可編輯）');
+  console.log('  ↳ 圖鑑／成就模組已載入（10 類圖鑑＋任務式成就，最多裝備 3 個）');
 }
 
-module.exports = { init, seedTitles, markSeen, syncTitles, dexPanel, titlePanel, DEX_CATS, buffText };
+module.exports = { init, seedTitles, seedAch, markSeen, syncTitles, dexPanel, titlePanel, DEX_CATS, buffText };

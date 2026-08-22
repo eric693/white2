@@ -11,6 +11,10 @@ const BUFF_TYPES = {
   fish_rare_pct:   '稀有魚機率',
   fish_price_pct:  '魚類售價',
   mine_rare_pct:   '稀有礦物機率',
+  mine_common_pct: '基礎礦物機率',    // 碎石／黏土／煤炭這類做為材料的低階礦
+  forage_rare_pct: '稀有採集物機率',
+  hunt_rare_pct:   '稀有獵物機率',
+  mat_pct:         '素材掉落機率',    // 全種類的 N／R 素材（打材料用）
   cook_perfect_pct:'完美料理機率',
   cook_price_pct:  '料理售價',
   gift_pct:        '送禮好感',
@@ -68,7 +72,7 @@ function userBuffs(gid, uid, detail = false) {
     add(p.buff_type, pct, `寵物：${p.emoji || ''}${p.nickname || p.name}「${p.skill_name}」`);
   }
 
-  // ④ 稱號：只算「已裝備」的（slot >= 0）。收集再多，同時只有 title_slots 個生效。
+  // ④ 成就（原稱號）：只算「已裝備」的（slot >= 0）。解鎖再多，同時只有 title_slots 個生效。
   // 這裡再 LIMIT 一次裝備上限，不是多餘的：裝備上限本來只在 equipTitle() 擋，
   // 萬一資料被後台或手動改壞（slot 多於上限），加成就會從這裡漏出去。
   const slots = Math.max(1, hcfg(gid).title_slots ?? 3);
@@ -78,8 +82,8 @@ function userBuffs(gid, uid, detail = false) {
       WHERE o.guild_id=? AND o.user_id=? AND o.slot >= 0 AND t.enabled=1
       ORDER BY o.slot LIMIT ?`).all(gid, uid, slots);
   for (const t of titles) {
-    add(t.buff_type, t.buff_pct, `稱號：${t.emoji || ''}${t.name}`);
-    add(t.buff2_type, t.buff2_pct, `稱號：${t.emoji || ''}${t.name}`);
+    add(t.buff_type, t.buff_pct, `成就：${t.emoji || ''}${t.name}`);
+    add(t.buff2_type, t.buff2_pct, `成就：${t.emoji || ''}${t.name}`);
   }
 
   // ⑤ 料理等暫時性加成（過期的順手清掉，不必另外排程）

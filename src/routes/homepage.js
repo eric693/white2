@@ -179,7 +179,7 @@ tr.now{background:#fdf2f8;font-weight:700}
         <div class="stat"><span>🐾 寵物</span><b>${d.pets.length} / ${d.lv.pet_cap || 0}</b></div>
         <div class="stat"><span>🛋️ 家具</span><b>${d.furniture.reduce((a, f) => a + f.placed, 0)} / ${d.lv.furniture_cap || 0}</b></div>
         <div class="stat"><span>🍳 廚房</span><b>${d.kitchen ? 'Lv.' + d.home.kitchen_level : '未建造'}</b></div>
-        <div class="stat"><span>🏅 稱號</span><b>${d.titles.length} 個</b></div>
+        <div class="stat"><span>🏅 成就</span><b>${d.titles.length} 個</b></div>
       </div>
     </div>
   </div>
@@ -210,7 +210,7 @@ tr.now{background:#fdf2f8;font-weight:700}
       <div class="row" style="border:0;padding:2px 0"><span>${esc(x.label)}</span>
         <span class="muted">${x.have} / ${x.total}${x.total && x.have >= x.total ? '　🏅' : ''}</span></div>
       ${bar(x.pct)}</div>`).join('')}
-    <div class="muted" style="margin-top:6px">圖鑑只給能力不給物品：收集到門檻會解鎖稱號</div>
+    <div class="muted" style="margin-top:6px">圖鑑只給能力不給物品：收集到門檻會解鎖成就</div>
   </div>
 </div>
 
@@ -252,12 +252,12 @@ tr.now{background:#fdf2f8;font-weight:700}
   </div>
 
   <div class="card">
-    <h2>🏅 稱號 <span class="muted">裝備 ${d.titles.filter(t => t.slot >= 0).length}/${d.titleSlots}</span></h2>
+    <h2>🏅 成就 <span class="muted">裝備 ${d.titles.filter(t => t.slot >= 0).length}/${d.titleSlots}</span></h2>
     ${d.titles.length ? d.titles.map(t => `<div class="badge" style="${t.slot >= 0 ? 'border:1.5px solid var(--pink)' : 'opacity:.6'}">
       <b>${esc(t.emoji || '')} ${esc(t.name)} ${t.slot >= 0 ? '⭐' : ''}</b>
       <span class="muted">${[t.buff_type && `${BUFF_TYPES[t.buff_type]} +${t.buff_pct}%`, t.buff2_type && `${BUFF_TYPES[t.buff2_type]} +${t.buff2_pct}%`].filter(Boolean).join('、') || '無加成'}</span>
     </div>`).join('')
-    : '<div class="muted">還沒有稱號。收集圖鑑、蓋家園、養好感度都會解鎖。</div>'}
+    : '<div class="muted">還沒有成就。收集圖鑑、蓋家園、每天簽到、做任務都會解鎖，最多同時裝備 3 個。</div>'}
   </div>
 </div>
 

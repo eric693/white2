@@ -120,7 +120,7 @@ async function makeHomeCard(o) {
     ['🐾 寵物', `${o.pets.length} / ${o.petCap}`],
     ['🛋️ 家具', `${o.furniture.placed} / ${o.furniture.cap}`],
     ['🍳 廚房', o.kitchen ? `Lv.${o.kitchen.level}` : '未建造'],
-    ['🏅 稱號', `${o.titles.length} 個`]
+    ['🏅 成就', `${o.titles.length} 個`]
   ];
   const cw = 142, cx0 = W - 40 - cells.length * cw - (cells.length - 1) * 8;
   cells.forEach(([label, val], idx) => {
@@ -202,8 +202,8 @@ async function makeHomeCard(o) {
     ctx.fillText('還沒有寵物　需要家園 Lv.3 鄉間住宅', 38, 476);
   }
 
-  // ---- 右下：稱號 + 加成 ----
-  panel(ctx, 506, 422, 474, 276, '🏅 裝備中的稱號');
+  // ---- 右下：成就 + 加成 ----
+  panel(ctx, 506, 422, 474, 276, '🏅 裝備中的成就');
   {
     let y = 466;
     const eq = (o.titles || []).filter(t => t.equipped).slice(0, 3);
@@ -219,7 +219,7 @@ async function makeHomeCard(o) {
       }
     } else {
       ctx.fillStyle = C.muted; ctx.font = REG(14);
-      ctx.fillText('還沒有裝備稱號（同時最多 3 個）', 524, y + 14);
+      ctx.fillText('還沒有裝備成就（同時最多 3 個）', 524, y + 14);
       y += 40;
     }
     ctx.fillStyle = C.ink; ctx.font = BOLD(15);

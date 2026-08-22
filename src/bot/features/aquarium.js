@@ -6,6 +6,7 @@
 //   3. 未領取的星幣可以被 /偷魚，運氣好連整條魚都會被撈走。
 const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
 const { db, guildConfig, logError } = require('../../db');
+const { bump: bumpAch } = require('../../util/achievements');
 const { brandColor } = require('../../util/brand');
 const { wallet, addCoins, safeMenu } = require('./gather');
 const { facilitySlots, facilityBonus } = require('./facility');
@@ -484,6 +485,7 @@ function init(client) {
         const resist = facilityBonus(gid, to.id, 'aquarium').resist + petResist;
         const successPct = Math.max(0, c.steal_success_pct - resist);
         if (Math.random() * 100 >= successPct) {
+          bumpAch(gid, to.id, 'defend_success', 1);   // 被偷者守住了（魚缸等級＋守衛寵物）
           // 偷失敗被抓 → 罰款（星幣可為負）。可設定賠給受害者或直接沒收。
           const fine = Math.max(0, c.steal_fail_penalty || 0);
           if (fine > 0) {
@@ -507,6 +509,7 @@ function init(client) {
           return await reply({ content: `你把手伸進 ${to.username} 的魚缸，結果打翻了水，只好落跑！${resist ? `（對方防護 -${resist}%）` : ''}${tag}` });
         }
 
+        bumpAch(gid, uid, 'steal_success', 1);
         // 先看能不能整條撈走（小偷要有「自己的空魚缸格」才放得下；沒魚缸就撈不走）
         let fishNote = '', stolenFish = null;
         const myMax = effSlots(gid, uid);

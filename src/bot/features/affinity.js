@@ -6,6 +6,7 @@
 // 這是整條經濟鏈的終點：以前農產品唯一的用途是「賣掉換錢」，現在有了送禮才真的有意義。
 const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
 const { db, guildConfig, logError } = require('../../db');
+const { bump: bumpAch } = require('../../util/achievements');
 const { brandColor } = require('../../util/brand');
 const { absUrl } = require('../../util/url');
 const { localToday } = require('../../util/time');
@@ -95,6 +96,7 @@ function giftItem(gid, uid, uname, rid, itemId) {
         points = MAX(0, points + ?), gift_day = ?, gift_count = CASE WHEN gift_day = ? THEN gift_count + 1 ELSE 1 END`)
       .run(gid, uid, rid, Math.max(0, gain), today, gain, today, today);
   })();
+  bumpAch(gid, uid, 'gift_count', 1);
   const lv = recalcLevel(gid, uid, rid);
   markSeen(gid, uid, 'role', role.name);
   return { role, item: inv, gain, weight, ...lv };

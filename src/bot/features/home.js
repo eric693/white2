@@ -250,7 +250,7 @@ function webPanel(gid, uid, uname) {
   homeOf(gid, uid, uname);   // 確保有家才給連結
   const url = `${PUBLIC_URL}/home/${homeToken(gid, uid)}`;
   const embed = new EmbedBuilder().setColor(brandColor()).setTitle('🖼️ 你的家園．完整網頁版')
-    .setDescription('點下面的按鈕打開你的專屬頁面 —— 房屋、升級進度、廚房、家具、寵物、稱號、好感度、圖鑑全部一頁看完。\n\n這是**唯讀**頁面，所有操作還是回 Discord 這邊點按鈕。資料即時同步，重新整理就是最新的。')
+    .setDescription('點下面的按鈕打開你的專屬頁面 —— 房屋、升級進度、廚房、家具、寵物、成就、好感度、圖鑑全部一頁看完。\n\n這是**唯讀**頁面，所有操作還是回 Discord 這邊點按鈕。資料即時同步，重新整理就是最新的。')
     .setFooter({ text: '這條連結是你專屬的，別人拿到也只會看到你的家，而且改不了任何東西' });
   return {
     embeds: [embed],
@@ -331,7 +331,7 @@ function buffsPanel(gid, uid) {
   const { buffs, parts, cap } = userBuffs(gid, uid, true);
   const embed = new EmbedBuilder().setColor(brandColor()).setTitle('⭐ 你目前的家園加成')
     .setFooter({ text: `每一種加成各自封頂 ${cap}%，收集再多也不會無限疊加` });
-  if (!parts.length) embed.setDescription('你目前沒有任何加成。\n蓋家園、擺家具、養寵物、裝備稱號都會給加成。');
+  if (!parts.length) embed.setDescription('你目前沒有任何加成。\n蓋家園、擺家具、養寵物、裝備成就都會給加成。');
   else {
     embed.setDescription(Object.entries(buffs).map(([t, v]) => `**${BUFF_TYPES[t]}　+${v}%**${v >= cap ? '（已封頂）' : ''}`).join('\n'));
     embed.addFields({ name: '來源明細', value: parts.map(p => `・${p.source} → ${BUFF_TYPES[p.type]} +${p.pct}%`).join('\n').slice(0, 1024) });

@@ -205,6 +205,14 @@ ensureColumns('tax_config', {
   house_pet:     'INTEGER NOT NULL DEFAULT 150'    // 每隻寵物加課
 });
 
+// 稱號改成「成就」：解鎖條件從三種寫死的分類，換成 util/achievements.js 的 metric
+// （metric 留空＝沿用舊的 cat 判定，既有稱號不會壞）
+ensureColumns('title_defs', {
+  metric: "TEXT NOT NULL DEFAULT ''",       // 例：gather_mine、checkin_best、defend_success
+  reward_coins: 'INTEGER NOT NULL DEFAULT 0', // 解鎖時一次性發的獎金
+  hint: "TEXT NOT NULL DEFAULT ''"          // 顯示給玩家的任務提示
+});
+
 // 家園簽到設定：基礎金幣、連續加碼、滿週獎勵
 ensureColumns('home_config', {
   checkin_enabled: 'INTEGER NOT NULL DEFAULT 1',

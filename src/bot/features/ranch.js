@@ -3,6 +3,7 @@
 // 動物用金幣在 /畜牧商店 購買，最多養 max_slots 隻（預設 6）。
 const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, MessageFlags } = require('discord.js');
 const { db, guildConfig, logError } = require('../../db');
+const { bump: bumpAch } = require('../../util/achievements');
 const { brandColor } = require('../../util/brand');
 // 產物賣價會受財經新聞影響（新聞關閉時等於基準價）
 const { livePrice, priceTag } = require('../../util/market');
@@ -162,6 +163,10 @@ function buyAnimal(gid, uid, uname, animalId) {
   const c = rcfg(gid), gc = gcfg(gid);
   const animal = db.prepare('SELECT * FROM ranch_animals WHERE guild_id=? AND enabled=1 AND id=?').get(gid, animalId);
   if (!animal) return { error: '這隻動物已經不在商店裡了。' };
+  // 看門動物停售：防護改由寵物提供，牧場格子留給生產（已經養著的不受影響，照樣看門）
+  if (animal.guard_pct > 0) {
+    return { error: `看門動物已經搬進家裡變成**寵物**了，不再佔用牧場格子。\n去 \`/寵物\` 領養守衛寵物（🪿看門鵝 牧場防護 +8%、🐕牧羊犬 +15%、🐅虎斑貓 魚缸防護 +15%、🦡獴 反擊 +25%、🐺雪狼 全域防竊 +18%）。` };
+  }
   const maxSlots = effRanchSlots(gid, uid, c);
   if (maxSlots <= 0) return { error: '你還沒有牧場！可以用 `/設施商店` 直接買一座，或用 `/製作` 做「牧場」開一格。' };
   const free = freeRanchSlot(gid, uid, maxSlots);
@@ -366,12 +371,19 @@ function init(client) {
           .setDescription(`點下方選單直接買一隻養進牧場（也可以打 \`/飼養 動物名稱\`）。\n你的餘額：**${w.coins.toLocaleString('en-US')} ${gc.currency_name}**　牧場格：**${effRanchSlots(gid, uid, c)}**（用 \`/設施商店\` 擴充）`)];
         if (produce.length) embeds.push(new EmbedBuilder().setColor(0xf1c40f)
           .setTitle('🥚 生產動物').setDescription(produce.map(line).join('\n').slice(0, 4000)));
-        if (guardsList.length) embeds.push(new EmbedBuilder().setColor(0x5865f2)
-          .setTitle('🛡️ 看門動物')
-          .setDescription(guardsList.map(line).join('\n').slice(0, 3600) +
-            '\n\n⚠️ **養多隻不會疊加**：反擊機率只算你身上「最高的那一隻」，所以買 4 隻看門鵝還是 25%，不會變 100%。' +
-            '\n想提高防禦請改養更高機率的看門動物，或去 `/設施商店` 升級牧場等級（那個是另一套，會直接扣小偷的成功率）。'));
-        const opts = animals.map(a => ({
+        // 看門動物已改由寵物提供（不佔牧場格子），商店只留說明、不再販售
+        embeds.push(new EmbedBuilder().setColor(0x5865f2)
+          .setTitle('🛡️ 防竊改看寵物了')
+          .setDescription('看門動物已經**搬進家裡變成寵物**，不再佔用牧場格子 —— 牧場的每一格都能拿去生產。\n\n'
+            + '去 `/寵物` 領養守衛寵物，能力分得很細：\n'
+            + '　🪿 看門鵝　牧場防護 +8%\n'
+            + '　🐕 牧羊犬　牧場防護 +15%\n'
+            + '　🐅 虎斑貓　魚缸防護 +15%\n'
+            + '　🪶 蒼鷺　　魚缸防護 +22%\n'
+            + '　🦡 獴　　　反擊 +25%（小偷會掉星幣賠你）\n'
+            + '　🐺 雪狼　　全域防竊 +18%（牧場魚缸一起顧）\n\n'
+            + '防護是**扣小偷的成功率**，跟 `/設施商店` 的牧場等級可以疊加；寵物要餵、親密度越高效果越足。'));
+        const opts = produce.map(a => ({
           label: a.name.slice(0, 100),
           description: `${a.price.toLocaleString('en-US')} ${gc.currency_name}｜${a.guard_pct > 0 ? `看門 ${a.guard_pct}%` : `每天 ${a.produce_per_day} 產`}`.slice(0, 100),
           value: String(a.id), emoji: a.emoji || '🐾'
@@ -381,6 +393,7 @@ function init(client) {
         return await reply({ embeds: embeds.slice(0, 10), components: rows });
       }
 
+      // 看門動物已停售（改由寵物提供防護），避免玩家又拿生產格子去養鵝
       // ---- 飼養（購買動物）----
       if (name === '飼養') {
         const what = (i.options.getString('動物') || '').trim();
@@ -443,6 +456,7 @@ function init(client) {
           }
         });
         tx();
+        bumpAch(gid, uid, 'harvest_count', 1);
         let value = 0;
         const lines = [...gained.entries()].map(([itemId, n]) => {
           const p = productOf(itemId); if (p) value += n * livePrice(gid, p);
@@ -489,6 +503,7 @@ function init(client) {
         const animalPct = Math.max(0, c.steal_animal_pct - resist);
         const success = Math.random() * 100 < successPct;
         if (!success) {
+          bumpAch(gid, to.id, 'defend_success', 1);     // 被偷者成功守住（守衛寵物／牧場等級的功勞）
           logSteal({ guildId: gid, kind: 'ranch', thiefId: uid, thiefName: uname,
             victimId: to.id, victimName: to.username, result: 'miss', channelId: i.channelId });
           return await reply({ content: `你正要下手，卻被 ${to.username} 的守衛發現，只好空手逃走！${resist ? `（對方防護讓成功率 -${resist}%${petResist ? `，其中寵物擋了 ${petResist}%` : ''}）` : ''}（今日 ${usedToday + 1}/${c.steal_daily_limit}）` });
@@ -609,6 +624,7 @@ function init(client) {
           .setDescription(`${loot}${guardNote}${animalNote}`)
           .setFooter({ text: `約值 ${value.toLocaleString('en-US')} ${gc.currency_name}｜今日 ${usedToday + 1}/${c.steal_daily_limit}` });
 
+        bumpAch(gid, uid, 'steal_success', 1);
         // 後台查得到真兇（前台公告仍匿名）
         logSteal({ guildId: gid, kind: 'ranch', thiefId: uid, thiefName: uname,
           victimId: to.id, victimName: to.username,

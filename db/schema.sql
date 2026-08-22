@@ -1768,3 +1768,14 @@ CREATE TABLE IF NOT EXISTS home_checkin (
   week_mask  INTEGER NOT NULL DEFAULT 0, -- 本週已簽的位元遮罩（bit0=週一）
   PRIMARY KEY (guild_id, user_id)
 );
+
+-- 成就統計：玩家在每件事上的累計次數（挖礦幾次、防守成功幾次…）。
+-- 衍生得出來的數字（身家、房屋階級、圖鑑數）不進這張表，由 util/achievements.js 現算。
+CREATE TABLE IF NOT EXISTS ach_stats (
+  guild_id   TEXT NOT NULL DEFAULT '',
+  user_id    TEXT NOT NULL,
+  metric     TEXT NOT NULL,
+  value      INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  PRIMARY KEY (guild_id, user_id, metric)
+);

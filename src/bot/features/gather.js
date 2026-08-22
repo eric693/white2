@@ -6,6 +6,8 @@ const { db, guildConfig, logError } = require('../../db');
 const { brandColor } = require('../../util/brand');
 // 行情倍率：財經新聞會改變「賣價」（買價不受影響）。新聞系統關閉時 livePrice 就等於基準價。
 const { livePrice, priceTag } = require('../../util/market');
+const { userBuffs } = require('../../util/buffs');
+const { bump: bumpAch } = require('../../util/achievements');
 
 const cfg = (gid) => guildConfig('gather_config', gid);
 const csv = (s) => String(s || '').split(/[\n,]/).map(x => x.trim()).filter(Boolean);
@@ -337,12 +339,29 @@ function endOfTodayMs() {
 }
 
 // ---- 抽掉落：先照權重挑，道具的幸運值只放大 R 以上的權重 ----
-function rollItem(gid, kind, luck) {
+//
+// 稱號／寵物／家具的加成也在這裡生效（以前這些 buff 只是存著、對掉落完全沒作用）：
+//   稀有加成（fish_rare_pct/mine_rare_pct/…）放大 SR 以上的權重 ——「更容易挖到鑽石」
+//   mine_common_pct 放大礦物的 N 級（碎石、黏土、煤炭）——「更容易挖到碎石」
+//   mat_pct 放大所有 N／R 素材 ——「打材料的人專用」
+// 都是改權重、不是保證，所以不會出現「掛上稱號就必中」。
+const RARE_BUFF = { fish: 'fish_rare_pct', mine: 'mine_rare_pct', forage: 'forage_rare_pct', hunt: 'hunt_rare_pct' };
+
+function rollItem(gid, kind, luck, uid) {
   const items = db.prepare('SELECT * FROM gather_items WHERE guild_id=? AND kind=? AND enabled=1').all(gid, kind);
   if (!items.length) return null;
-  const weighted = items.map(it => ({
-    it, w: Math.max(0, it.weight) * (1 + (luck / 100) * (LUCK_SCALE[it.rarity] ?? 0))
-  }));
+  const b = uid ? userBuffs(gid, uid) : {};
+  const rarePct = b[RARE_BUFF[kind]] || 0;                 // 只吃這個種類自己的稀有加成
+  const commonPct = kind === 'mine' ? (b.mine_common_pct || 0) : 0;
+  const matPct = b.mat_pct || 0;
+  const weighted = items.map(it => {
+    const rar = it.rarity;
+    let mul = 1 + (luck / 100) * (LUCK_SCALE[rar] ?? 0);
+    if (rarePct && (rar === 'SR' || rar === 'SSR' || rar === 'UR')) mul *= 1 + rarePct / 100;
+    if (commonPct && rar === 'N') mul *= 1 + commonPct / 100;
+    if (matPct && (rar === 'N' || rar === 'R')) mul *= 1 + matPct / 100;
+    return { it, w: Math.max(0, it.weight) * mul };
+  });
   const total = weighted.reduce((a, x) => a + x.w, 0);
   if (total <= 0) return items[Math.floor(Math.random() * items.length)];
   let r = Math.random() * total;
@@ -413,7 +432,13 @@ function periodKey(period) {
 }
 
 // 玩家做了某件事 → 推進所有符合條件的任務進度
+//
+// 成就統計也掛在這裡：這是全系統唯一「玩家做了什麼」都會經過的地方，
+// 在每個功能各自埋計數器很容易漏，集中在這一支才不會有人漏記。
 function bumpQuests(gid, userId, ev) {
+  if (ev.type === 'gather' && ev.kind) bumpAch(gid, userId, 'gather_' + ev.kind, ev.amount || 1);
+  else if (ev.type === 'craft') bumpAch(gid, userId, 'craft_count', ev.amount || 1);
+  else if (ev.type === 'sell') bumpAch(gid, userId, 'sell_coins', ev.amount || 0);
   const list = db.prepare('SELECT * FROM quests WHERE guild_id=? AND enabled=1').all(gid);
   const done = [];
   for (const q of list) {
@@ -432,6 +457,7 @@ function bumpQuests(gid, userId, ev) {
     ).run(gid, userId, q.id, pk, next, next);
     if (next >= q.goal_count) done.push(q);
   }
+  if (done.length) bumpAch(gid, userId, 'quest_done', done.length);
   return done;
 }
 
@@ -890,7 +916,7 @@ function init(client) {
         // 幸運＝道具幸運 + 抽籤幸運符 + 地圖幸運
         const buffLuck = activeLuck(gid, uid);
         const mapLuck = map ? (map.luck_bonus || 0) : 0;
-        const item = rollItem(gid, kind, (tool.luck || 0) + buffLuck + mapLuck);
+        const item = rollItem(gid, kind, (tool.luck || 0) + buffLuck + mapLuck, uid);
         if (!item) return i.reply({ content: `管理員還沒設定任何${KIND_NAME[kind]}掉落物。`, flags: MessageFlags.Ephemeral });
 
         markUsed(gid, uid, kind, wait, cd.day, cd.usedToday);

@@ -2,6 +2,7 @@
 // 所以寵物一律不產物，能養幾隻由房屋階級決定，技能加成按親密度比例給（不餵就沒效果）。
 const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
 const { db, guildConfig, logError } = require('../../db');
+const { bump: bumpAch } = require('../../util/achievements');
 const { brandColor } = require('../../util/brand');
 const { wallet, addCoins } = require('./gather');
 const { BUFF_TYPES } = require('../../util/buffs');
@@ -134,6 +135,7 @@ function feedPet(gid, uid, ownedId) {
   const gain = 8 + Math.floor(Math.random() * 5);
   const exp = p.exp + 10;
   const lvUp = exp >= p.level * 100;
+  bumpAch(gid, uid, 'feed_count', 1);
   db.prepare('UPDATE pet_owned SET intimacy = MIN(100, intimacy + ?), exp = ?, level = ?, fed_ms = ? WHERE id=?')
     .run(gain, lvUp ? 0 : exp, lvUp ? p.level + 1 : p.level, now, p.id);
   return { fed: p, gain, lvUp };
