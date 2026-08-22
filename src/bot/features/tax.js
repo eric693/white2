@@ -133,9 +133,10 @@ function assess(gid, userId) {
     ? partners.reduce((sum, p) => sum + (c.partner_base || 0) + (c.partner_per_lv || 0) * Math.max(0, p.level), 0)
     : 0;
 
+  const tierMulField = tierMul('field'), tierMulGreen = tierMul('greenhouse');
   const land = c.land_enabled
-    ? Math.floor(fieldTaxed * (c.land_field || 0) * tierMul('field')
-      + greenTaxed * (c.land_greenhouse || 0) * tierMul('greenhouse'))
+    ? Math.floor(fieldTaxed * (c.land_field || 0) * tierMulField
+      + greenTaxed * (c.land_greenhouse || 0) * tierMulGreen)
     : 0;
   const breed = c.breed_enabled ? animalTaxed * (c.breed_animal || 0) + fishTaxed * (c.breed_fish || 0) : 0;
   // 證券稅：持股市值扣掉免稅額後，乘上稅率
@@ -166,7 +167,8 @@ function assess(gid, userId) {
   const arrears = c.no_debt ? Math.max(0, w.tax_arrears || 0) : 0;
   total = curTax + arrears;
   return {
-    wallet: w, balance: w.coins, income, land, breed, stock, spend, house, partner, partnerCount: partners.length, gross, credit, donated, curTax, arrears, total, earned, incomeBase: base,
+    wallet: w, balance: w.coins, income, land, breed, stock, spend, house, partner, partnerCount: partners.length,
+    tierMulField, tierMulGreen, gross, credit, donated, curTax, arrears, total, earned, incomeBase: base,
     counts: { field, green, animals, fish, fieldTaxed, greenTaxed, animalTaxed, fishTaxed, stockVal, stockTaxed, spent, spendTaxed, earned, donated, credit, houseLv, houseTaxedLv, placed, petCount }
   };
 }
@@ -480,7 +482,13 @@ function billEmbed(gid, b, period) {
   // 每項一行、後面括號附計算依據——玩家喜歡這種乾淨版面
   const lines = [];
   if (b.income) lines.push(`💰 所得稅　${money(gid, b.income)}（課稅基準 ${Number(b.incomeBase ?? b.balance).toLocaleString('en-US')}｜餘額 ${b.balance.toLocaleString('en-US')}、本期收入 ${Number(b.earned || 0).toLocaleString('en-US')}）`);
-  if (b.land) lines.push(`🌾 農地稅　${money(gid, b.land)}（農地 ${b.counts.fieldTaxed} 格／溫室 ${b.counts.greenTaxed} 格）`);
+  if (b.land) {
+    // 有等級加成時要寫清楚，不然玩家會覺得「7 格 × 100 應該是 700，怎麼變 979」
+    const tierNote = (b.tierMulField > 1 || b.tierMulGreen > 1)
+      ? `　設施等級加成 ×${(b.counts.greenTaxed > 0 ? b.tierMulGreen : b.tierMulField).toFixed(2)}`
+      : '';
+    lines.push(`🌾 農地稅　${money(gid, b.land)}（農地 ${b.counts.fieldTaxed} 格／溫室 ${b.counts.greenTaxed} 格${tierNote}）`);
+  }
   if (b.breed) lines.push(`🐄 養殖稅　${money(gid, b.breed)}（動物 ${b.counts.animalTaxed} 隻／魚 ${b.counts.fishTaxed} 條）`);
   if (b.partner) lines.push(`💞 伴侶稅　${money(gid, b.partner)}（同居 ${b.partnerCount} 位）`);
   if (b.house) lines.push(`🏡 房屋稅　${money(gid, b.house)}（房屋 Lv.${b.counts.houseLv}｜家具 ${b.counts.placed} 件／寵物 ${b.counts.petCount} 隻）`);
@@ -535,7 +543,8 @@ function infoEmbed(gid, userId, username) {
       : `💰 **所得稅**　免稅 ${money(gid, c.income_free || 0)}，超過的部分累進 ${range}（基準：${baseLabel}）`);
   }
   if (c.stock_enabled) lines.push(`📈 **證券稅**　持股市值 × ${c.stock_pct || 0}%${(c.stock_free || 0) > 0 ? `（${money(gid, c.stock_free)} 以內免稅）` : ''}，負價股不算`);
-  if (c.land_enabled) lines.push(`🌾 **農地稅**　種著的作物：農地 ${money(gid, c.land_field || 0)}／溫室 ${money(gid, c.land_greenhouse || 0)} 每格${c.land_free ? `（前 ${c.land_free} 格免稅）` : ''}`);
+  if (c.land_enabled) lines.push(`🌾 **農地稅**　種著的作物：農地 ${money(gid, c.land_field || 0)}／溫室 ${money(gid, c.land_greenhouse || 0)} 每格${c.land_free ? `（前 ${c.land_free} 格免稅）` : ''}`
+    + (c.land_tier_pct > 0 ? `\n　　⤷ 設施每高一階再 +${c.land_tier_pct}%（Lv.3 的農地＝×${(1 + 2 * c.land_tier_pct / 100).toFixed(2)}）` : ''));
   if (c.breed_enabled) lines.push(`🐄 **養殖稅**　動物 ${money(gid, c.breed_animal || 0)}／隻、魚 ${money(gid, c.breed_fish || 0)}／條${c.breed_free ? `（前 ${c.breed_free} 隻免稅）` : ''}`);
   if (c.partner_enabled) lines.push(`💞 **伴侶稅**　同居角色每位 ${money(gid, c.partner_base || 0)}，好感度每階再加 ${money(gid, c.partner_per_lv || 0)}`);
   if (c.house_enabled) lines.push(`🏡 **房屋稅**　房子越大稅越重（Lv.${(c.house_free || 0) + 1} 起課，指數成長），另加家具 ${money(gid, c.house_furniture || 0)}／件、寵物 ${money(gid, c.house_pet || 0)}／隻`);

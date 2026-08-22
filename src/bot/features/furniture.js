@@ -144,7 +144,24 @@ const placedCount = (gid, uid) =>
   db.prepare('SELECT COALESCE(SUM(placed),0) n FROM home_furniture_owned WHERE guild_id=? AND user_id=?').get(gid, uid).n;
 
 /** 買一件家具：檢查房屋階級、金幣、材料 */
-function buyFurniture(gid, uid, uname, fid) {
+/**
+ * 家具的「純金幣價」＝售價 ＋ 材料折現（市價 ×10）。
+ * 給不想跑採集的人一條路，但一定比自己做材料貴 —— 自己準備材料永遠划算。
+ */
+function cashPrice(gid, f) {
+  const mats = parseMats(f.materials);
+  let extra = 0;
+  for (const m of mats) {
+    const it = db.prepare('SELECT price FROM gather_items WHERE guild_id=? AND name=?').get(gid, m.item);
+    extra += Math.max(1, (it ? it.price : 100)) * 10 * m.count;
+  }
+  return f.price + extra;
+}
+
+/**
+ * 取得家具。mode='craft'＝付售價＋交材料（本來的做法）；mode='buy'＝不用材料，付純金幣價。
+ */
+function buyFurniture(gid, uid, uname, fid, mode = 'craft') {
   const f = db.prepare('SELECT * FROM home_furniture WHERE guild_id=? AND id=? AND enabled=1').get(gid, fid);
   if (!f) return { error: '找不到這件家具。' };
   const home = homeOf(gid, uid, uname);
@@ -154,18 +171,19 @@ function buyFurniture(gid, uid, uname, fid) {
   }
   const gc = gcfg(gid);
   const coins = wallet(gid, uid, uname).coins;
-  const mats = parseMats(f.materials);
+  const mats = mode === 'buy' ? [] : parseMats(f.materials);
+  const cost = mode === 'buy' ? cashPrice(gid, f) : f.price;
   const missing = [];
-  if (coins < f.price) missing.push(`${money(gc, f.price)}（你有 ${coins.toLocaleString('en-US')}）`);
+  if (coins < cost) missing.push(`${money(gc, cost)}（你有 ${coins.toLocaleString('en-US')}）`);
   for (const m of mats) {
     const have = bagCount(gid, uid, m.item);
     if (have < m.count) missing.push(`${m.item} ×${m.count}（你有 ${have}）`);
   }
-  if (missing.length) return { error: `材料不夠，還差：\n🔴 ${missing.join('\n🔴 ')}` };
+  if (missing.length) return { error: `${mode === 'buy' ? '錢不夠' : '材料不夠'}，還差：\n🔴 ${missing.join('\n🔴 ')}` };
   try {
     db.transaction(() => {
-      addCoins(gid, uid, uname, -f.price);
-      takeItems(gid, uid, mats);
+      addCoins(gid, uid, uname, -cost);
+      if (mats.length) takeItems(gid, uid, mats);
       db.prepare(`INSERT INTO home_furniture_owned (guild_id,user_id,furniture_id,count,placed)
         VALUES (?,?,?,1,0) ON CONFLICT(guild_id,user_id,furniture_id) DO UPDATE SET count = count + 1`)
         .run(gid, uid, f.id);
@@ -241,16 +259,26 @@ function catPanel(gid, uid, uname, cat) {
       const mats = parseMats(f.materials).map(m => `${m.item}×${m.count}`).join('、');
       return `${lock}${f.emoji || ''}**${f.name}**　${money(gc, f.price)}${buff}\n　　${mats || '不需材料'}　${f.description}`;
     }).join('\n').slice(0, 4000) || '這個分類還沒有家具。')
-    .setFooter({ text: '用下方選單購買（🔒 的要先升級家園）' });
+    .setFooter({ text: '🔨 用材料製作比較便宜｜💰 直接購買免材料但貴很多（🔒 的要先升級家園）' });
   const buyable = list.filter(f => home.level >= f.min_level).slice(0, 25);
   const rows = [NAV('furn')];
-  if (buyable.length) rows.push(new ActionRowBuilder().addComponents(
-    new StringSelectMenuBuilder().setCustomId('furnbuy').setPlaceholder('選一件買下來')
-      .addOptions(buyable.map(f => ({
-        label: `${f.emoji || ''}${f.name}`.slice(0, 100),
-        description: `${f.price.toLocaleString('en-US')} ${gc.currency_name}`.slice(0, 100),
-        value: String(f.id)
-      })))));
+  // 兩條路：用材料做（便宜）或直接花錢買（不用材料，但貴很多）
+  if (buyable.length) {
+    rows.push(new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder().setCustomId('furnbuy').setPlaceholder('🔨 用材料製作（便宜）')
+        .addOptions(buyable.map(f => ({
+          label: `${f.emoji || ''}${f.name}`.slice(0, 100),
+          description: `${f.price.toLocaleString('en-US')} ${gc.currency_name} ＋ 材料`.slice(0, 100),
+          value: String(f.id)
+        })))));
+    rows.push(new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder().setCustomId('furncash').setPlaceholder('💰 直接購買（不用材料，比較貴）')
+        .addOptions(buyable.map(f => ({
+          label: `${f.emoji || ''}${f.name}`.slice(0, 100),
+          description: `${cashPrice(gid, f).toLocaleString('en-US')} ${gc.currency_name}（免材料）`.slice(0, 100),
+          value: String(f.id)
+        })))));
+  }
   return { embeds: [embed], components: rows };
 }
 
@@ -267,11 +295,14 @@ function init(client) {
       if (i.isStringSelectMenu() && i.customId === 'furncat') {
         return i.update(catPanel(gid, uid, uname, i.values[0])).catch(() => {});
       }
-      if (i.isStringSelectMenu() && i.customId === 'furnbuy') {
-        const out = buyFurniture(gid, uid, uname, parseInt(i.values[0], 10));
+      if (i.isStringSelectMenu() && (i.customId === 'furnbuy' || i.customId === 'furncash')) {
+        const mode = i.customId === 'furncash' ? 'buy' : 'craft';
+        const out = buyFurniture(gid, uid, uname, parseInt(i.values[0], 10), mode);
         if (out.error) return i.reply({ content: out.error, ...eph }).catch(() => {});
         await i.update(furniturePanel(gid, uid, uname)).catch(() => {});
-        return i.followUp({ content: `🎉 買下了 ${out.bought.emoji || ''}**${out.bought.name}**！記得從選單把它擺出來才有加成。`, ...eph }).catch(() => {});
+        return i.followUp({
+          content: `🎉 ${mode === 'buy' ? '買下' : '做好'}了 ${out.bought.emoji || ''}**${out.bought.name}**！記得從選單把它擺出來才有加成。`, ...eph
+        }).catch(() => {});
       }
       if (i.isStringSelectMenu() && i.customId === 'furnplace') {
         const [fid, act] = i.values[0].split(':');

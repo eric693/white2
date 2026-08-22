@@ -72,7 +72,13 @@ function homeOf(gid, uid, uname = '') {
   }
   return row;
 }
-const levelDef = (gid, lv) => db.prepare('SELECT * FROM home_levels WHERE guild_id=? AND level=?').get(gid, lv);
+// 房屋階級。寵物上限刻意壓在 3 隻 —— 養一堆寵物等於加成疊到爆，而且餵食變成負擔。
+const PET_CAP_MAX = 3;
+const levelDef = (gid, lv) => {
+  const row = db.prepare('SELECT * FROM home_levels WHERE guild_id=? AND level=?').get(gid, lv);
+  if (row) row.pet_cap = Math.min(PET_CAP_MAX, row.pet_cap);
+  return row;
+};
 const maxLevel = (gid) => (db.prepare('SELECT MAX(level) m FROM home_levels WHERE guild_id=?').get(gid) || {}).m || 1;
 
 // 背包裡某個物品的數量（用名稱找，家園材料設定寫的是名稱比較好讀）

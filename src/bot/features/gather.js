@@ -494,13 +494,16 @@ function bumpPoints(gid, uid, n) {
      ON CONFLICT(guild_id,user_id,day) DO UPDATE SET used = used + ?`
   ).run(gid, uid, today(), n, n);
 }
-/** 加購體力：只加當天的額度 */
-function addPointsBonus(gid, uid, n) {
+/** 加購體力：只加當天的額度。countAsBought=false 時不算進每日購買上限（例如活動補償） */
+function addPointsBonus(gid, uid, n, countAsBought = true) {
   db.prepare(
-    `INSERT INTO gather_points (guild_id,user_id,day,used,bonus) VALUES (?,?,?,0,?)
-     ON CONFLICT(guild_id,user_id,day) DO UPDATE SET bonus = bonus + ?`
-  ).run(gid, uid, today(), n, n);
+    `INSERT INTO gather_points (guild_id,user_id,day,used,bonus,bought) VALUES (?,?,?,0,?,?)
+     ON CONFLICT(guild_id,user_id,day) DO UPDATE SET bonus = bonus + ?, bought = bought + ?`
+  ).run(gid, uid, today(), n, countAsBought ? n : 0, n, countAsBought ? n : 0);
 }
+/** 今天已經買了幾點體力（擋每日上限用） */
+const staminaBoughtToday = (gid, uid) =>
+  (db.prepare('SELECT bought FROM gather_points WHERE guild_id=? AND user_id=? AND day=?').get(gid, uid, today()) || {}).bought || 0;
 
 /**
  * 今日體力（＝每日採集點數池）。
@@ -612,6 +615,28 @@ const GATHER_CMDS = ['釣魚', '挖礦', '伐木', '採集', '狩獵'];
 // 購買一件道具／一階設施。/購買 指令與商店的下拉選單共用同一套規則。
 function buyThing(gid, uid, uname, kind, id) {
   const c = cfg(gid);
+  if (kind === 'stamina') {
+    const n = Math.max(1, Math.min(5, id));
+    const price = Math.max(1, c.stamina_price || 10000);
+    const dailyMax = Math.max(0, c.stamina_daily_max ?? 5);
+    const bought = staminaBoughtToday(gid, uid);
+    if (bought + n > dailyMax) {
+      return { error: `體力每天最多買 **${dailyMax}** 點，你今天已經買了 ${bought} 點${dailyMax - bought > 0 ? `，最多還能買 ${dailyMax - bought} 點` : ''}。` };
+    }
+    const total = price * n;
+    const w = wallet(gid, uid, uname);
+    if (w.coins < total) return { error: `${c.currency_name}不夠：需要 ${total.toLocaleString('en-US')}，你只有 ${w.coins.toLocaleString('en-US')}。` };
+    db.transaction(() => {
+      addCoins(gid, uid, uname, -total);
+      addPointsBonus(gid, uid, n);
+    })();
+    const st = staminaState(gid, uid);
+    return { embed: new EmbedBuilder().setColor(0x9b59b6).setTitle('⚡ 體力補充完成')
+      .setDescription(`花了 **${total.toLocaleString('en-US')} ${c.currency_name}** 買到 **${n}** 點體力。\n`
+        + `今日體力：**${st.left} / ${st.max}** 點（買來的只有今天有效）\n`
+        + `今天已買 ${bought + n}/${dailyMax} 點。`)
+      .setFooter({ text: `餘額 ${(w.coins - total).toLocaleString('en-US')} ${c.currency_name}` }) };
+  }
   if (kind === 'fac') {
     const fac = require('./facility');
     const r = fac.buy(gid, uid, uname, id);
@@ -1217,29 +1242,27 @@ function init(client) {
         // 每個分類各自一則 Embed、各自一個顏色，一眼就分得出來在看哪一區
         const w0 = w.coins.toLocaleString('en-US');
         const embeds = [new EmbedBuilder().setColor(brandColor()).setTitle('🏪 一般商店')
-          .setDescription(`點最下方的選單直接購買（也可以打 \`/購買 名稱\`）。道具會自動使用你擁有的最高階。\n你的餘額：**${w0} ${c.currency_name}**`)];
+          .setDescription(`賣**工具**與**體力**。點最下方的選單直接購買（也可以打 \`/購買 名稱\`），道具會自動使用你擁有的最高階。\n`
+            + `🏗️ 農地／溫室／牧場／孵化室／魚缸請去 \`/設施商店\`；🛋️ 家具在 \`/家具\`；🐾 寵物在 \`/寵物\`。\n`
+            + `你的餘額：**${w0} ${c.currency_name}**`)];
         for (const k of Object.keys(KIND_NAME)) {
           const txt = list(k);
           if (!txt) continue;
           embeds.push(new EmbedBuilder().setColor(KIND_COLOR[k] || brandColor())
             .setTitle(`${KIND_EMOJI[k]} ${KIND_TOOL[k]}`).setDescription(txt.slice(0, 4000)));
         }
-        // 設施（農地／溫室／牧場／孵化室）也擺進同一個商店，一樣用 /購買 名稱 買
-        const fac = require('./facility');
-        for (const type of fac.TYPE_KEYS) {
-          const defs = fac.defsOf(gid, type);
-          if (!defs.length) continue;
-          const mine = fac.facilitySlots(gid, uid, type);
-          const txt = defs.map(d => {
-            const buffs = [];
-            if (d.speed_pct) buffs.push(`⏩ 時間 -${d.speed_pct}%`);
-            if (d.resist_pct) buffs.push(`🛡️ 被偷 -${d.resist_pct}%`);
-            return `${d.emoji || ''} **${d.name}**　${d.price ? money(c, d.price) : '免費'}${d.slots <= mine ? '　✅ 已擁有' : ''}` +
-              `\n　　共 ${d.slots} 格${buffs.length ? `　${buffs.join('　')}` : ''}${d.description ? `　${d.description}` : ''}`;
-          }).join('\n');
-          embeds.push(new EmbedBuilder().setColor(FAC_COLOR[type] || brandColor())
-            .setTitle(`${fac.TYPES[type].emoji} ${fac.TYPES[type].name}（設施）`).setDescription(txt.slice(0, 4000)));
-        }
+        // 設施（農地／溫室／牧場／孵化室／魚缸）只在 `/設施商店` 賣 ——
+        // 以前跟工具混在同一頁，玩家分不出「一般商店」到底在賣什麼。
+        // 這裡改成賣體力：每天有購買上限，避免有錢人無限刷。
+        const st = staminaState(gid, uid);
+        const stCfg = { price: c.stamina_price || 10000, daily: c.stamina_daily_max ?? 5 };
+        const boughtToday = staminaBoughtToday(gid, uid);
+        embeds.push(new EmbedBuilder().setColor(0x9b59b6).setTitle('⚡ 體力')
+          .setDescription(
+            `**體力補充**　${money(c, stCfg.price)} ／ 1 點\n`
+            + `　　今日體力 **${st.left}/${st.max}** 點${st.bonus ? `（含買來的 ${st.bonus}）` : ''}\n`
+            + `　　今天已買 **${boughtToday}/${stCfg.daily}** 點${boughtToday >= stCfg.daily ? '（已達上限）' : ''}\n`
+            + `　　體力給釣魚、挖礦、伐木、採集、狩獵與逛街共用，每天午夜回滿。`));
         // 買東西的下拉選單（跟設施商店同一套操作感：點一下就買，不必打名稱）
         const opts = [];
         for (const t of tools) {
@@ -1250,14 +1273,14 @@ function init(client) {
             value: `tool:${t.id}`, emoji: t.emoji || undefined
           });
         }
-        for (const type of fac.TYPE_KEYS) {
-          const mine = fac.facilitySlots(gid, uid, type);
-          for (const d of fac.defsOf(gid, type)) {
-            if (d.slots <= mine) continue;
+        // 體力（每天有上限）
+        if (boughtToday < stCfg.daily) {
+          const canBuy = Math.min(stCfg.daily - boughtToday, 5);
+          for (const n of [1, 3, 5].filter(x => x <= canBuy)) {
             opts.push({
-              label: `${fac.TYPES[type].name}：${d.name}（${d.slots} 格）`.slice(0, 100),
-              description: `${d.price.toLocaleString('en-US')} ${c.currency_name}${d.speed_pct ? `｜時間-${d.speed_pct}%` : ''}${d.resist_pct ? `　防竊-${d.resist_pct}%` : ''}`.slice(0, 100),
-              value: `fac:${d.id}`, emoji: d.emoji || fac.TYPES[type].emoji
+              label: `體力 ×${n}`.slice(0, 100),
+              description: `${(stCfg.price * n).toLocaleString('en-US')} ${c.currency_name}｜今天還能買 ${stCfg.daily - boughtToday} 點`.slice(0, 100),
+              value: `stamina:${n}`, emoji: '⚡'
             });
           }
         }
@@ -1656,4 +1679,4 @@ function init(client) {
   console.log('  ↳ 釣魚挖礦模組已載入（冷卻/稀有掉落/商店道具/圖鑑/經濟）');
 }
 
-module.exports = { init, wallet, addCoins, addToBag, seedGuild, seedMaterials, staminaState, bumpPoints, addPointsBonus, menuResult, safeMenu, RARITY, RARITY_LABEL };
+module.exports = { init, wallet, addCoins, addToBag, seedGuild, seedMaterials, staminaState, staminaBoughtToday, bumpPoints, addPointsBonus, menuResult, safeMenu, RARITY, RARITY_LABEL };

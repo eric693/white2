@@ -195,7 +195,30 @@ const partnersOf = (gid, uid) => db.prepare(
      FROM home_partners p JOIN wheel_roles r ON r.id=p.role_id
     WHERE p.guild_id=? AND p.user_id=? ORDER BY p.since`).all(gid, uid);
 
-const partnerSlots = (gid) => Math.max(1, hcfg(gid).partner_slots ?? 1);
+/**
+ * 同居名額：跟著房屋階級長，最多 3 位。
+ * Lv.6 起 1 位、Lv.10 起 2 位、Lv.13 起 3 位（門檻可在後台改 partner_lv2 / partner_lv3）。
+ */
+function partnerSlots(gid, uid, uname) {
+  const c = hcfg(gid);
+  const cap = Math.max(1, Math.min(3, c.partner_slots ?? 3));
+  if (!uid) return cap;
+  const lv = homeOf(gid, uid, uname).level;
+  let n = 1;
+  if (lv >= (c.partner_lv2 ?? 10)) n = 2;
+  if (lv >= (c.partner_lv3 ?? 13)) n = 3;
+  return Math.min(cap, n);
+}
+
+/** 可以邀請同居的候選名單（好感度達標、還沒住進來的） */
+function partnerCandidates(gid, uid) {
+  const need = Math.max(0, hcfg(gid).partner_level ?? 6);
+  return db.prepare(
+    `SELECT a.role_id, a.level, a.points, r.name FROM affinity a JOIN wheel_roles r ON r.id=a.role_id
+      WHERE a.guild_id=? AND a.user_id=? AND a.level >= ? AND r.enabled=1 AND r.stroll_ok=1
+        AND a.role_id NOT IN (SELECT role_id FROM home_partners WHERE guild_id=? AND user_id=?)
+      ORDER BY a.points DESC LIMIT 25`).all(gid, uid, need, gid, uid);
+}
 
 /** 隨機挑一位「願意跟你同居」的角色：好感度要達標，已經同居的不再抽 */
 function pickPartner(gid, uid) {
@@ -246,8 +269,8 @@ const partnerSkillText = (p) => {
   return '—';
 };
 
-/** 請一位角色搬進來（隨機決定是誰） */
-function moveIn(gid, uid, uname) {
+/** 請一位角色搬進來。roleId 有給就是玩家自己挑的；沒給就隨機抽一位。 */
+function moveIn(gid, uid, uname, roleId = 0) {
   const c = hcfg(gid);
   if (!c.partner_enabled) return { error: '目前沒有開放同居。' };
   const home = homeOf(gid, uid, uname);
@@ -255,12 +278,19 @@ function moveIn(gid, uid, uname) {
   if (!def || !def.visit_ok) return { error: `你的家還太簡陋，沒有人願意搬進來。需要家園 **Lv.6 花園別墅**（你現在 Lv.${home.level}）。` };
 
   const cur = partnersOf(gid, uid);
-  const slots = partnerSlots(gid);
+  const slots = partnerSlots(gid, uid, uname);
   if (cur.length >= slots) {
-    return { error: `你家已經住滿了（${cur.length}/${slots} 位）。想換人要先請現在的搬走。` };
+    return { error: `你家已經住滿了（${cur.length}/${slots} 位）。名額跟著房屋階級長 —— 把家蓋更大就能多住一位，或先請現在的搬走。` };
   }
   const need = Math.max(0, c.partner_level ?? 6);
-  const pick = pickPartner(gid, uid);
+  // 指定對象：要確認好感度真的達標，不能靠改 customId 硬塞
+  let pick = null;
+  if (roleId) {
+    pick = partnerCandidates(gid, uid).find(x => x.role_id === roleId) || null;
+    if (!pick) return { error: `這位角色還不願意跟你同居（需要好感度 **${levelName(gid, need)}（Lv.${need}）** 以上，而且不能是已經住進來的）。` };
+  } else {
+    pick = pickPartner(gid, uid);
+  }
   if (!pick) {
     return { error: `目前沒有角色願意搬進來。\n同居需要好感度 **${levelName(gid, need)}（Lv.${need}）**以上 —— 先去 \`/送禮\`、🛍️ 逛街把關係養起來。` };
   }
@@ -285,7 +315,7 @@ function moveOut(gid, uid, roleId) {
 function partnerPanel(gid, uid, uname) {
   const c = hcfg(gid);
   const list = partnersOf(gid, uid);
-  const slots = partnerSlots(gid);
+  const slots = partnerSlots(gid, uid, uname);
   const tc = guildConfig('tax_config', gid);
   const need = Math.max(0, c.partner_level ?? 6);
   const home = homeOf(gid, uid, uname);
@@ -294,9 +324,9 @@ function partnerPanel(gid, uid, uname) {
 
   const e = new EmbedBuilder().setColor(0xeb459e).setTitle('💞 同居')
     .setDescription(
-      `請角色搬進你家一起住。**對象是隨機的** —— 你不能挑要跟誰住，`
-      + `只能決定要不要請他搬走、再碰一次運氣。\n`
+      `請角色搬進你家一起住（目前 ${list.length}/${slots} 位）。\n`
       + `條件：家園 **Lv.6** 以上 ＋ 該角色好感度 **${levelName(gid, need)}（Lv.${need}）** 以上。\n`
+      + `名額跟著房屋階級長：Lv.${c.partner_lv2 ?? 10} 起 2 位、Lv.${c.partner_lv3 ?? 13} 起 3 位。\n`
       + `搬進來的角色會**隨機帶一個能力**（廚藝、礦脈直覺、幫忙收成…），好感度越高越強。\n`
       + `⚠️ 同居要繳**伴侶稅**：每位每期 ${(tc.partner_base || 0).toLocaleString('en-US')} ＋ 好感度每階 ${(tc.partner_per_lv || 0).toLocaleString('en-US')}。`)
     .addFields({ name: '目前同居', value: list.length
@@ -307,13 +337,27 @@ function partnerPanel(gid, uid, uname) {
       : `還沒有人住進來（0/${slots}）` });
 
   const rows = [NAV('love')];
-  const btns = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId('partnerin').setLabel('💞 請角色搬進來（隨機）').setStyle(ButtonStyle.Success)
-      .setDisabled(list.length >= slots || !def || !def.visit_ok));
-  if (list.length) btns.addComponents(
-    new ButtonBuilder().setCustomId(`partnerout:${list[0].role_id}`).setLabel(`請 ${list[0].name} 搬走`).setStyle(ButtonStyle.Secondary));
-  rows.push(btns);
-  return { embeds: [e], components: rows };
+  const cands = partnerCandidates(gid, uid);
+  const full = list.length >= slots;
+  if (!full && cands.length && def && def.visit_ok) {
+    rows.push(new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder().setCustomId('partnerpick').setPlaceholder('選一位請他搬進來')
+        .addOptions(cands.slice(0, 25).map(x => ({
+          label: x.name.slice(0, 100),
+          description: `${levelName(gid, x.level)}（Lv.${x.level}）　好感 ${x.points.toLocaleString('en-US')}`.slice(0, 100),
+          value: String(x.role_id)
+        })))));
+  }
+  if (list.length) {
+    rows.push(new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder().setCustomId('partnermoveout').setPlaceholder('請誰搬走？')
+        .addOptions(list.slice(0, 25).map(p => ({
+          label: p.name.slice(0, 100),
+          description: partnerSkillText(p).slice(0, 100),
+          value: String(p.role_id)
+        })))));
+  }
+  return { embeds: [e], components: rows.slice(0, 5) };
 }
 
 // ---- 面板 ----
@@ -503,8 +547,14 @@ function init(client) {
           seedAffinity(gid);
           return i.reply({ ...partnerPanel(gid, uid, uname), ...eph }).catch(() => {});
         }
-        if (i.isButton() && i.customId === 'partnerin') {
-          const out = moveIn(gid, uid, uname);
+        if (i.isStringSelectMenu() && i.customId === 'partnermoveout') {
+          const out = moveOut(gid, uid, parseInt(i.values[0], 10));
+          if (out.error) return i.reply({ content: out.error, ...eph }).catch(() => {});
+          await i.update(partnerPanel(gid, uid, uname)).catch(() => {});
+          return i.followUp({ content: `**${out.role.name}** 收拾東西搬走了。好感度不會消失，之後想請他回來再邀請一次就好。`, ...eph }).catch(() => {});
+        }
+        if ((i.isButton() && i.customId === 'partnerin') || (i.isStringSelectMenu() && i.customId === 'partnerpick')) {
+          const out = moveIn(gid, uid, uname, i.isStringSelectMenu() ? parseInt(i.values[0], 10) : 0);
           if (out.error) return i.reply({ content: out.error, ...eph }).catch(() => {});
           await i.update(partnerPanel(gid, uid, uname)).catch(() => {});
           const line = adLine(out.role);

@@ -242,7 +242,9 @@ ensureColumns('wheel_roles', { stroll_ok: 'INTEGER NOT NULL DEFAULT 1' });
 // 同居與伴侶稅
 ensureColumns('home_config', {
   partner_enabled: 'INTEGER NOT NULL DEFAULT 1',
-  partner_slots:   'INTEGER NOT NULL DEFAULT 1',    // 最多同時跟幾位角色同居
+  partner_slots:   'INTEGER NOT NULL DEFAULT 3',    // 同居名額上限（實際名額跟著房屋階級長，最多 3）
+  partner_lv2:     'INTEGER NOT NULL DEFAULT 10',   // 房屋到這階可住 2 位
+  partner_lv3:     'INTEGER NOT NULL DEFAULT 13',   // 房屋到這階可住 3 位
   partner_level:   'INTEGER NOT NULL DEFAULT 6',    // 好感度要到幾階才可能同居
   partner_cool_d:  'INTEGER NOT NULL DEFAULT 3'     // 請他搬走後幾天內不能再抽
 });
@@ -258,7 +260,13 @@ ensureColumns('tax_config', {
 });
 
 // 買來的體力：跟每日採集點數共用同一池（daily_points ＋ bonus − used）
-ensureColumns('gather_points', { bonus: 'INTEGER NOT NULL DEFAULT 0' });
+// bought 記今天買了幾點，用來擋每日購買上限
+ensureColumns('gather_points', { bonus: 'INTEGER NOT NULL DEFAULT 0', bought: 'INTEGER NOT NULL DEFAULT 0' });
+// 體力在「一般商店」賣，每天有購買上限（不然有錢人可以無限刷）
+ensureColumns('gather_config', {
+  stamina_price:     'INTEGER NOT NULL DEFAULT 10000',
+  stamina_daily_max: 'INTEGER NOT NULL DEFAULT 5'
+});
 
 // 角色廣告台詞：逛街遇到、抽到、來訪時角色會說的一句話（每位角色自己的口吻）
 ensureColumns('wheel_roles', {
@@ -308,7 +316,7 @@ ensureColumns('facility_owned', { yield_pct: 'INTEGER NOT NULL DEFAULT 0' });
 // 「用金幣代替材料」：給錢多到沒地方花的人一個出海口，但價格是天價（材料市價 × 倍率）
 ensureColumns('home_config', {
   buy_mats_enabled: 'INTEGER NOT NULL DEFAULT 1',
-  buy_mats_mult:    'INTEGER NOT NULL DEFAULT 5000'   // 5000＝材料市價的 50 倍
+  buy_mats_mult:    'INTEGER NOT NULL DEFAULT 50000'  // 50000＝材料市價的 500 倍（天價，錢多的人專用）
 });
 
 // 家園簽到設定：基礎金幣、連續加碼、滿週獎勵

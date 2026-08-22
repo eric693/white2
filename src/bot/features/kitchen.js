@@ -35,7 +35,13 @@ const SEED_KITCHEN = [
   [7, '主廚廚房', '🔪', 480000, [['黑檀木', 250], ['金礦', 90], ['水晶', 40]], 15, '你就是主廚'],
   [8, '星級廚房', '⭐', 750000, [['紫檀木', 280], ['水晶', 90], ['綠寶石', 40]], 19, '米其林等級'],
   [9, '皇家廚房', '👑', 1200000, [['千年神木', 300], ['綠寶石', 100], ['鑽石', 20]], 23, '專為王室服務'],
-  [10, '傳說料理室', '🌟', 2000000, [['世界樹枝', 250], ['龍血木', 150], ['鑽石', 50], ['星辰礦', 30]], 28, '傳說中的廚房']
+  [10, '傳說料理室', '🌟', 2000000, [['世界樹枝', 250], ['龍血木', 150], ['鑽石', 50], ['星辰礦', 30]], 28, '傳說中的廚房'],
+  // ---- 11～15 級：跟房屋一樣延伸到 15 等 ----
+  [11, '雲頂餐廳', '☁️', 3500000, [['月光木', 220], ['世界樹枝', 180], ['星辰礦', 60]], 33, '在雲上開的餐廳'],
+  [12, '星空宴會廳', '🌌', 6000000, [['月光木', 320], ['龍血木', 260], ['隕石', 25]], 38, '一次能招待整個星系'],
+  [13, '神廚工坊', '🔥', 10000000, [['月光木', 450], ['隕石', 60], ['鳳凰羽', 3]], 44, '火候由你決定'],
+  [14, '天界食堂', '🕊️', 18000000, [['月光木', 600], ['世界樹枝', 400], ['獨角獸', 2]], 50, '連神明都排隊'],
+  [15, '永恆廚房', '✨', 35000000, [['月光木', 900], ['龍血木', 600], ['隕石', 150], ['幼龍', 3]], 58, '料理的終點']
 ];
 
 // 食譜：[名稱, emoji, 需要廚房級, 材料, 分鐘, 基礎售價, 基礎好感, buff類型, buff%, buff分鐘, 說明]
@@ -86,11 +92,15 @@ const SEED_RECIPES_2 = [
 
 function seedKitchen(gid) {
   try {
-    if (!db.prepare('SELECT 1 FROM kitchen_levels WHERE guild_id=? LIMIT 1').get(gid)) {
+    {
+      // 逐級補齊：之後加新等級時，既有伺服器也會自動拿到，管理員改過的不會被蓋掉
+      const hasLv = db.prepare('SELECT 1 FROM kitchen_levels WHERE guild_id=? AND level=?');
       const ins = db.prepare('INSERT INTO kitchen_levels (guild_id,level,name,emoji,coins,materials,perfect_pct,description) VALUES (?,?,?,?,?,?,?,?)');
       db.transaction(() => {
-        for (const [lv, name, emoji, coins, mats, perfect, desc] of SEED_KITCHEN)
+        for (const [lv, name, emoji, coins, mats, perfect, desc] of SEED_KITCHEN) {
+          if (hasLv.get(gid, lv)) continue;
           ins.run(gid, lv, name, emoji, coins, JSON.stringify(mats.map(([item, count]) => ({ item, count }))), perfect, desc);
+        }
       })();
     }
     {
@@ -452,7 +462,7 @@ function init(client) {
       if (i.replied || i.deferred) await i.followUp(msg).catch(() => {}); else await i.reply(msg).catch(() => {});
     }
   });
-  console.log('  ↳ 廚房模組已載入（10 級廚房／24 道食譜／5 種品質）');
+  console.log('  ↳ 廚房模組已載入（15 級廚房／36 道食譜／5 種品質）');
 }
 
 module.exports = { init, seedKitchen, kitchenPanel, QUALITY, qLabel };
