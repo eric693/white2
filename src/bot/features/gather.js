@@ -169,6 +169,38 @@ function totalGathersToday(gid, userId) {
   return db.prepare("SELECT COALESCE(SUM(day_count),0) n FROM gather_cooldowns WHERE guild_id=? AND user_id=? AND day=?").get(gid, userId, today()).n;
 }
 
+
+// ---- 後來補的基礎素材 ----
+// 每種採集本來只有 3～5 種 N 級素材，蓋房子／做家具的材料壓力都集中在碎石、松木那幾樣。
+// 這一批走「逐項補齊」而不是 seedGuild 的「這個 kind 有東西就整批跳過」，
+// 所以既有伺服器也會拿到（新增素材時直接往這裡加一行就好）。
+// [kind, 名稱, emoji, 稀有度, 權重, 售價(未除 PRICE_DIV)]
+const SEED_MATERIALS = [
+  ['mine', '砂礫', '⏳', 'N', 230, 4], ['mine', '石灰岩', '🧱', 'N', 200, 6],
+  ['mine', '石英', '⚪', 'N', 190, 9], ['mine', '錫礦', '🥫', 'N', 170, 13],
+  ['wood', '木屑', '🍂', 'N', 240, 3], ['wood', '樹皮', '🟤', 'N', 220, 5],
+  ['wood', '松脂', '🟠', 'N', 190, 9], ['wood', '藤蔓', '🌿', 'N', 180, 11],
+  ['forage', '苔蘚', '🍃', 'N', 230, 4], ['forage', '蘆葦', '🌾', 'N', 210, 6],
+  ['forage', '野花', '🌼', 'N', 195, 8], ['forage', '堅果', '🌰', 'N', 175, 12],
+  ['hunt', '羽毛', '🪶', 'N', 230, 4], ['hunt', '骨頭', '🦴', 'N', 205, 7],
+  ['hunt', '獸皮', '🟫', 'N', 180, 13], ['hunt', '鹿角', '🦌', 'N', 160, 16],
+  ['fish', '海帶', '🌊', 'N', 215, 3], ['fish', '貝殼', '🐚', 'N', 200, 5],
+  ['fish', '河蜆', '🦪', 'N', 185, 8], ['fish', '珊瑚枝', '🪸', 'N', 165, 14]
+];
+
+function seedMaterials(gid) {
+  try {
+    const has = db.prepare('SELECT 1 FROM gather_items WHERE guild_id=? AND kind=? AND name=?');
+    const ins = db.prepare('INSERT INTO gather_items (guild_id,kind,name,emoji,rarity,weight,price) VALUES (?,?,?,?,?,?,?)');
+    db.transaction(() => {
+      for (const [kind, name, emoji, rar, weight, price] of SEED_MATERIALS) {
+        if (has.get(gid, kind, name)) continue;
+        ins.run(gid, kind, name, emoji, rar, weight, Math.max(1, Math.round(price / PRICE_DIV)));
+      }
+    })();
+  } catch (e) { logError(gid, '基礎素材補齊失敗：', e.message); }
+}
+
 function seedGuild(gid) {
   cfg(gid);
   seedMaps(gid);
@@ -195,6 +227,7 @@ function seedGuild(gid) {
     db.prepare('UPDATE gather_config SET seeded=1 WHERE guild_id=?').run(gid);
   });
   try { tx(); } catch (e) { logError(gid, '釣魚挖礦預設內容建立失敗：', e.message); }
+  seedMaterials(gid);
   seedRecipesAndQuests(gid);
   seedToolRecipes(gid);   // 每把 T2/T3 工具都自動有鍛造配方
 }
@@ -1511,4 +1544,4 @@ function init(client) {
   console.log('  ↳ 釣魚挖礦模組已載入（冷卻/稀有掉落/商店道具/圖鑑/經濟）');
 }
 
-module.exports = { init, wallet, addCoins, addToBag, seedGuild, menuResult, safeMenu, RARITY, RARITY_LABEL };
+module.exports = { init, wallet, addCoins, addToBag, seedGuild, seedMaterials, menuResult, safeMenu, RARITY, RARITY_LABEL };
