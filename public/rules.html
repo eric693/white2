@@ -179,7 +179,7 @@
     <a href="#start">新手三步</a>
     <a href="#gather">採集</a>
     <a href="#money">錢與商店</a>
-    <a href="#draw">每日抽籤</a>
+    <a href="#draw">每日簽到</a>
     <a href="#facility">設施等級</a>
     <a href="#ranch">牧場</a>
     <a href="#farm">農地溫室</a>
@@ -289,20 +289,15 @@
 </section>
 
 <section id="draw">
-  <h2><span class="num">04</span>每日抽籤</h2>
-  <p class="sub">🎲 一天一次，免費，午夜重置。</p>
-  <div class="scroll"><table>
-    <thead><tr><th>獎項</th><th class="wrap">內容</th><th class="num">機率</th></tr></thead>
-    <tbody>
-      <tr><td>🥉 銅獎</td><td class="wrap">10 星幣</td><td class="num">34%</td></tr>
-      <tr><td>🥈 銀獎</td><td class="wrap">25 星幣</td><td class="num">26%</td></tr>
-      <tr><td>🥇 金獎</td><td class="wrap">60 星幣</td><td class="num">14%</td></tr>
-      <tr><td>🍀 幸運符</td><td class="wrap">當日稀有率 +20%</td><td class="num">14%</td></tr>
-      <tr><td>🌟 幸運星</td><td class="wrap">當日稀有率 +40%</td><td class="num">8%</td></tr>
-      <tr><td>🎰 頭獎</td><td class="wrap">120 星幣 ＋ 稀有率 +60%</td><td class="num">4%</td></tr>
-    </tbody>
-  </table></div>
-  <p>幸運符只在<strong>當天有效</strong>，效果會和工具、地圖的稀有率<strong>相加</strong>。抽到幸運星那天，記得換去遠古秘境刷 SSR。</p>
+  <h2><span class="num">04</span>每日簽到</h2>
+  <p class="sub">每天回小屋簽到領星幣，取代了原本的每日抽籤。</p>
+  <ul>
+    <li>基礎 <strong>500</strong> 星幣。</li>
+    <li><strong>連續加碼</strong>：每連續一天 +100，第 7 天封頂；斷一天就從頭算。</li>
+    <li><strong>房子越大領越多</strong>：房屋每一階 +10%。</li>
+    <li><strong>整週全簽</strong>再送 3,000。</li>
+  </ul>
+  <p>從 💰 金錢分頁的「📅 每日簽到」或 <code>/簽到</code> 都可以，面板會畫出本週七格，簽過的打勾。</p>
 </section>
 
 <section id="facility">
@@ -696,16 +691,26 @@
   <h3>小屋 15 階</h3>
   <p>用<strong>金幣 ＋ 材料</strong>升級，階級決定：可擺幾件家具、可養幾隻寵物、能不能蓋廚房、能不能同居，還有整體加成。</p>
   <div class="scroll"><table>
-    <thead><tr><th>階段</th><th class="wrap">解鎖</th></tr></thead>
+    <thead><tr><th>階</th><th>房屋</th><th class="wrap">解鎖</th><th class="num">家具</th><th class="num">寵物</th></tr></thead>
     <tbody>
-      <tr><td>Lv.3 鄉間住宅</td><td class="wrap">可以養寵物</td></tr>
-      <tr><td>Lv.4 精緻平房</td><td class="wrap">取得廚房建造資格</td></tr>
-      <tr><td>Lv.6 花園別墅</td><td class="wrap">可以請角色同居（1 位）</td></tr>
-      <tr><td>Lv.10 私人莊園</td><td class="wrap">同居 2 位</td></tr>
-      <tr><td>Lv.13 雲上行館</td><td class="wrap">同居 3 位（上限）</td></tr>
-      <tr><td>Lv.15 永恆星域</td><td class="wrap">家具 100 件、寵物 3 隻、加成拉滿</td></tr>
+      <tr><td>Lv.1</td><td>🛖 破舊小屋</td><td class="wrap">家具擺放開啟</td><td class="num">5</td><td class="num">0</td></tr>
+      <tr><td>Lv.2</td><td>🏠 溫馨木屋</td><td class="wrap">家具上限 +3</td><td class="num">8</td><td class="num">0</td></tr>
+      <tr><td>Lv.3</td><td>🏡 鄉間住宅</td><td class="wrap"><strong>寵物入住 +1</strong></td><td class="num">12</td><td class="num">1</td></tr>
+      <tr><td>Lv.4</td><td>🏠 精緻平房</td><td class="wrap"><strong>廚房功能開啟</strong></td><td class="num">16</td><td class="num">1</td></tr>
+      <tr><td>Lv.5</td><td>🏘️ 雙層住宅</td><td class="wrap">家具上限 +4</td><td class="num">20</td><td class="num">1</td></tr>
+      <tr><td>Lv.6</td><td>🌳 花園別墅</td><td class="wrap"><strong>角色同居 +1</strong></td><td class="num">25</td><td class="num">1</td></tr>
+      <tr><td>Lv.7</td><td>🏢 高級公寓</td><td class="wrap"><strong>寵物入住 +1</strong></td><td class="num">30</td><td class="num">2</td></tr>
+      <tr><td>Lv.8</td><td>🏰 獨棟豪宅</td><td class="wrap"><strong>角色同居 +1</strong></td><td class="num">35</td><td class="num">2</td></tr>
+      <tr><td>Lv.9</td><td>🌊 湖畔豪邸</td><td class="wrap">家具上限 +5</td><td class="num">40</td><td class="num">2</td></tr>
+      <tr><td>Lv.10</td><td>🏛️ 私人莊園</td><td class="wrap">家具上限 +5</td><td class="num">45</td><td class="num">2</td></tr>
+      <tr><td>Lv.11</td><td>🏰 星光城堡</td><td class="wrap">家具上限 +5</td><td class="num">50</td><td class="num">2</td></tr>
+      <tr><td>Lv.12</td><td>🌌 星耀領地</td><td class="wrap"><strong>角色同居 +1</strong></td><td class="num">60</td><td class="num">2</td></tr>
+      <tr><td>Lv.13</td><td>☁️ 雲上行館</td><td class="wrap"><strong>寵物入住 +1</strong></td><td class="num">70</td><td class="num">3</td></tr>
+      <tr><td>Lv.14</td><td>🌠 天空之城</td><td class="wrap">家具上限 +15</td><td class="num">85</td><td class="num">3</td></tr>
+      <tr><td>Lv.15</td><td>✨ 永恆星域</td><td class="wrap"><strong>房屋最高加成解鎖</strong></td><td class="num">100</td><td class="num">3</td></tr>
     </tbody>
   </table></div>
+  <p class="note"><span class="h">滿級總上限</span>🐾 寵物 3 隻｜❤️ 角色同居 3 位｜🪑 家具 100 件｜🍳 廚房已開啟</p>
   <div class="note warn">
     <span class="h">材料不夠也可以用錢硬升</span>
     缺的材料會按<strong>市價的 500 倍</strong>折現，按「💸 用金幣硬升」就能跳過採集。
@@ -745,7 +750,43 @@
   <p>花 <strong>1 點體力</strong>出門，<strong>隨機</strong>遇到一位角色——遇到誰不能挑，這就是逛街的意義。角色會講自己的台詞，好感度自動 +3。</p>
 
   <h3>🎁 送禮</h3>
-  <p>面板點「🎁 送禮」→ 選角色 → 選禮物。<strong>每位角色喜好不同</strong>，送對東西好感加得多；<strong>料理的品質越高加得越多</strong>。木雕、花束這類<strong>工藝禮物</strong>是專門做來送人的，好感度是一般物品的 2~3 倍。</p>
+  <p>面板點「🎁 送禮」→ 選角色 → 選禮物。<strong>只有禮物與料理能送</strong>，礦石魚貨那些是材料，不能拿來送人。</p>
+  <p>好感度 ＝ <strong>禮物的基礎好感 × 角色喜好倍率</strong>。</p>
+  <div class="scroll"><table>
+    <thead><tr><th>禮物</th><th class="num">基礎好感</th><th class="num">售價</th><th class="wrap">哪裡拿</th></tr></thead>
+    <tbody>
+      <tr><td>🌹 玫瑰花</td><td class="num">+5</td><td class="num">3,000</td><td class="wrap">一般商店</td></tr>
+      <tr><td>💐 花束</td><td class="num">+10</td><td class="num">6,000</td><td class="wrap">一般商店</td></tr>
+      <tr><td>🦌 木雕小鹿</td><td class="num">+12</td><td class="num">—</td><td class="wrap"><strong>自己做</strong>（楓木＋樹皮）</td></tr>
+      <tr><td>🍫 巧克力</td><td class="num">+15</td><td class="num">10,000</td><td class="wrap">一般商店</td></tr>
+      <tr><td>🌸 櫻花木梳</td><td class="num">+18</td><td class="num">—</td><td class="wrap"><strong>自己做</strong></td></tr>
+      <tr><td>🧸 玩偶</td><td class="num">+20</td><td class="num">15,000</td><td class="wrap">一般商店</td></tr>
+      <tr><td>🍰 精緻甜點</td><td class="num">+25</td><td class="num">20,000</td><td class="wrap">一般商店</td></tr>
+      <tr><td>🪵 檜木香盒</td><td class="num">+28</td><td class="num">—</td><td class="wrap"><strong>自己做</strong></td></tr>
+      <tr><td>💌 情書</td><td class="num">+30</td><td class="num">26,000</td><td class="wrap">一般商店</td></tr>
+      <tr><td>💐 四季花束</td><td class="num">+35</td><td class="num">—</td><td class="wrap"><strong>自己做</strong>（玫瑰＋百合＋鬱金香）</td></tr>
+      <tr><td>💎 鑽石</td><td class="num">+50</td><td class="num">50,000</td><td class="wrap">一般商店</td></tr>
+      <tr><td>👑 星光花冠</td><td class="num">+70</td><td class="num">—</td><td class="wrap"><strong>自己做</strong>（月光花＋星辰花）</td></tr>
+      <tr><td>💍 珠寶</td><td class="num">+80</td><td class="num">90,000</td><td class="wrap">一般商店</td></tr>
+      <tr><td>👑 奢華禮盒</td><td class="num">+100</td><td class="num">120,000</td><td class="wrap">一般商店</td></tr>
+      <tr><td>🧿 神木護符</td><td class="num">+120</td><td class="num">—</td><td class="wrap"><strong>自己做</strong>（世界樹枝＋千年神木）</td></tr>
+    </tbody>
+  </table></div>
+  <div class="scroll"><table>
+    <thead><tr><th>角色反應</th><th class="num">倍率</th><th class="wrap">範例</th></tr></thead>
+    <tbody>
+      <tr><td>💖 最喜歡</td><td class="num">×2</td><td class="wrap">💎 鑽石 50 × 2 ＝ <strong>+100</strong></td></tr>
+      <tr><td>💕 喜歡</td><td class="num">×1.5</td><td class="wrap">💎 鑽石 50 × 1.5 ＝ <strong>+75</strong></td></tr>
+      <tr><td>🤍 普通</td><td class="num">×1</td><td class="wrap">🌹 玫瑰花 5 × 1 ＝ <strong>+5</strong></td></tr>
+      <tr><td>💔 討厭</td><td class="num">×0.5</td><td class="wrap">🍫 巧克力 15 × 0.5 ＝ <strong>+7</strong></td></tr>
+    </tbody>
+  </table></div>
+  <div class="note warn">
+    <span class="h">喜好要自己試出來</span>
+    每位角色都有 <strong>💖最喜歡 ×3、💕喜歡 ×3、💔討厭 ×2</strong> 的禮物，但<strong>第一次送之前不會顯示</strong>——
+    送過一次才會記進<strong>送禮圖鑑</strong>，下次選單就會標出來。
+  </div>
+  <p>料理也能送，而且<strong>品質越高加得越多</strong>（傳說品質是普通的 3 倍）。</p>
 
   <h3>💞 同居</h3>
   <p>好感度到<strong>曖昧（Lv.6）</strong>以上就能請他搬進你家。名額跟著房屋階級長：Lv.6 起 1 位、Lv.10 起 2 位、Lv.13 起 3 位。</p>
@@ -863,7 +904,7 @@
       <tr><td><code>/飼養 動物</code></td><td class="wrap">直接打動物名購買（不用開商店選單）</td></tr>
       <tr><td><code>/賣出 物品 數量</code></td><td class="wrap">可填物品名、稀有度（N/R/SR/SSR）或「全部」</td></tr>
       <tr><td><code>/地圖</code></td><td class="wrap">切換採集地圖（不用錢也不扣點）</td></tr>
-      <tr><td><code>/抽籤</code></td><td class="wrap">每日抽籤，可能抽到幸運符</td></tr>
+      <tr><td><code>/簽到</code></td><td class="wrap">每日簽到領星幣（連續加碼，房子越大領越多）</td></tr>
       <tr><td><code>/我的家</code></td><td class="wrap">小屋主面板（房屋／廚房／家具／寵物／約會）</td></tr>
       <tr><td><code>/升級家園</code> · <code>/簽到</code></td><td class="wrap">升級小屋／每日簽到領星幣</td></tr>
       <tr><td><code>/廚房</code> · <code>/烹飪</code></td><td class="wrap">蓋廚房、升級、做菜、領料理</td></tr>

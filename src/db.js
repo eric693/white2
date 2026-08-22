@@ -246,6 +246,9 @@ ensureColumns('pet_defs', {
 // 逛街名單：轉盤裡不是「角色」的項目（模擬器、活動介紹…）或不想參與的作者，可以排除
 ensureColumns('wheel_roles', { stroll_ok: 'INTEGER NOT NULL DEFAULT 1' });
 
+// 禮物的「基礎好感」：送禮改成固定基礎值 × 角色喜好倍率，不再用售價開根號亂算
+ensureColumns('gather_items', { gift_aff: 'INTEGER NOT NULL DEFAULT 0' });
+
 // 寵物飼料：餵食要消耗飼料（可在寵物面板直接買），不然餵食只剩冷卻、沒有成本
 ensureColumns('home_config', {
   pet_food_enabled: 'INTEGER NOT NULL DEFAULT 1',

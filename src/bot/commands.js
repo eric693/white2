@@ -131,7 +131,7 @@ const builders = [
   new SlashCommandBuilder().setName('任務').setDescription('查看任務進度並領取獎勵')
     .addStringOption(o => o.setName('動作').setDescription('查看進度或領取獎勵')
       .addChoices({ name: '查看進度', value: 'list' }, { name: '領取獎勵', value: 'claim' })),
-  new SlashCommandBuilder().setName('抽籤').setDescription('每日抽籤：抽星幣或幸運符（當日提升採集稀有率）'),
+  // /抽籤 已下架（改用小屋簽到）—— 程式與獎池資料都還在，要開回來把這行還原即可
   new SlashCommandBuilder().setName('狀態').setDescription('查看你的冒險狀態總覽（星幣/動物/作物/工具耐久…）')
     .addUserOption(o => o.setName('玩家').setDescription('查看其他玩家（不填＝自己）')),
   new SlashCommandBuilder().setName('修理').setDescription('花星幣把壞掉的工具修回滿耐久')

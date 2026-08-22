@@ -92,6 +92,17 @@ function giftWeight(gid, rid, itemName) {
   const p = db.prepare('SELECT weight FROM affinity_prefs WHERE guild_id=? AND role_id=? AND item=?').get(gid, rid, itemName);
   return p ? p.weight : 100;
 }
+// 喜好倍率：200＝最喜歡 ×2、150＝喜歡 ×1.5、100＝普通、50＝討厭 ×0.5
+const LIKE_LABEL = (w) => w >= 200 ? '💖 最喜歡' : w >= 150 ? '💕 喜歡' : w <= 50 ? '💔 討厭' : '🤍 普通';
+/** 記進送禮圖鑑：送過才知道角色喜不喜歡（第一次送之前不顯示） */
+function markGiftDex(gid, uid, rid, item, weight) {
+  try {
+    db.prepare('INSERT OR REPLACE INTO gift_dex (guild_id,user_id,role_id,item,weight) VALUES (?,?,?,?,?)')
+      .run(gid, uid, rid, item, weight);
+  } catch {}
+}
+const knownWeight = (gid, uid, rid, item) =>
+  (db.prepare('SELECT weight FROM gift_dex WHERE guild_id=? AND user_id=? AND role_id=? AND item=?').get(gid, uid, rid, item) || {}).weight;
 
 /** 送一份背包物品 */
 function giftItem(gid, uid, uname, rid, itemId) {
@@ -104,13 +115,14 @@ function giftItem(gid, uid, uname, rid, itemId) {
   if (used >= c.gift_daily_limit) return { error: `你今天送給 **${role.name}** 的禮物已經夠多了（每日 ${c.gift_daily_limit} 次）。明天再來。` };
 
   const inv = db.prepare(
-    `SELECT v.count, it.name, it.emoji, it.price FROM gather_inventory v JOIN gather_items it ON it.id=v.item_id
+    `SELECT v.count, it.name, it.emoji, it.price, it.gift_aff FROM gather_inventory v JOIN gather_items it ON it.id=v.item_id
       WHERE v.guild_id=? AND v.user_id=? AND v.item_id=? AND v.count>0`).get(gid, uid, itemId);
   if (!inv) return { error: '你沒有這個物品。' };
 
   const weight = giftWeight(gid, rid, inv.name);
-  // 好感＝物品價值開根號（避免高價物品直接爆表）× 喜好權重 × 送禮加成
-  const base = Math.max(1, Math.round(Math.sqrt(inv.price) * 3));
+  // 禮物有「基礎好感」就照規格算：基礎值 × 喜好倍率（💖×2／💕×1.5／🤍×1／💔×0.5）。
+  // 沒設基礎好感的舊物品才退回「售價開根號」那套。
+  const base = inv.gift_aff > 0 ? inv.gift_aff : Math.max(1, Math.round(Math.sqrt(inv.price) * 3));
   // gift_pct＝送禮專屬加成；affinity_pct＝所有好感來源的通用加成（寵物／家具／成就都可能給）
   const affBonus = buffPct(gid, uid, 'gift_pct') + buffPct(gid, uid, 'affinity_pct');
   const gain = Math.round(base * weight / 100 * (1 + affBonus / 100));
@@ -123,6 +135,7 @@ function giftItem(gid, uid, uname, rid, itemId) {
       .run(gid, uid, rid, Math.max(0, gain), today, gain, today, today);
   })();
   bumpAch(gid, uid, 'gift_count', 1);
+  markGiftDex(gid, uid, rid, inv.name, weight);   // 送過才會記進送禮圖鑑
   const lv = recalcLevel(gid, uid, rid);
   markSeen(gid, uid, 'role', role.name);
   return { role, item: inv, gain, weight, ...lv };
@@ -207,9 +220,10 @@ function partnerSlots(gid, uid, uname) {
   const cap = Math.max(1, Math.min(3, c.partner_slots ?? 3));
   if (!uid) return cap;
   const lv = homeOf(gid, uid, uname).level;
-  let n = 1;
-  if (lv >= (c.partner_lv2 ?? 10)) n = 2;
-  if (lv >= (c.partner_lv3 ?? 13)) n = 3;
+  // 房屋規格：Lv.6 起 1 位、Lv.8 起 2 位、Lv.12 起 3 位（門檻在後台可調）
+  let n = lv >= (c.partner_level ?? 6) ? 1 : 0;
+  if (lv >= (c.partner_lv2 ?? 8)) n = 2;
+  if (lv >= (c.partner_lv3 ?? 12)) n = 3;
   return Math.min(cap, n);
 }
 
@@ -350,7 +364,7 @@ function partnerPanel(gid, uid, uname) {
     .setDescription(
       `請角色搬進你家一起住（目前 ${list.length}/${slots} 位）。\n`
       + `條件：家園 **Lv.6** 以上 ＋ 該角色好感度 **${levelName(gid, need)}（Lv.${need}）** 以上。\n`
-      + `名額跟著房屋階級長：Lv.${c.partner_lv2 ?? 10} 起 2 位、Lv.${c.partner_lv3 ?? 13} 起 3 位。\n`
+      + `名額跟著房屋階級長：Lv.${c.partner_level ?? 6} 起 1 位、Lv.${c.partner_lv2 ?? 8} 起 2 位、Lv.${c.partner_lv3 ?? 12} 起 3 位。\n`
       + `搬進來的角色會**隨機帶一個能力**（廚藝、礦脈直覺、幫忙收成…），好感度越高越強。\n`
       + `⚠️ 同居要繳**伴侶稅**：每位每期 ${(tc.partner_base || 0).toLocaleString('en-US')} ＋ 好感度每階 ${(tc.partner_per_lv || 0).toLocaleString('en-US')}。`)
     .addFields({ name: '目前同居', value: list.length
@@ -510,9 +524,11 @@ function strollPanel(gid, uid, uname) {
 function giftMenu(gid, uid, uname, rid) {
   const role = roleOf(gid, rid);
   if (!role) return { error: '找不到這位角色。' };
+  // 只列「禮物」與「料理」—— 礦石魚貨那些是材料，不是拿來送人的
   const items = db.prepare(
-    `SELECT v.item_id, v.count, it.name, it.emoji, it.price FROM gather_inventory v JOIN gather_items it ON it.id=v.item_id
-      WHERE v.guild_id=? AND v.user_id=? AND v.count>0 ORDER BY it.price DESC LIMIT 20`).all(gid, uid);
+    `SELECT v.item_id, v.count, it.name, it.emoji, it.price, it.gift_aff FROM gather_inventory v JOIN gather_items it ON it.id=v.item_id
+      WHERE v.guild_id=? AND v.user_id=? AND v.count>0 AND it.gift_aff > 0
+      ORDER BY it.gift_aff LIMIT 20`).all(gid, uid);
   const dishes = db.prepare(
     `SELECT c.recipe_id, c.quality, c.count, r.name, r.emoji FROM cook_inventory c JOIN cook_recipes r ON r.id=c.recipe_id
       WHERE c.guild_id=? AND c.user_id=? AND c.count>0 ORDER BY c.quality DESC LIMIT 5`).all(gid, uid);
@@ -524,15 +540,22 @@ function giftMenu(gid, uid, uname, rid) {
       description: `料理（品質越高好感越多）　持有 ${d.count}`.slice(0, 100),
       value: `dish:${d.recipe_id}:${d.quality}`
     })),
-    ...items.map(it => ({
-      label: `${it.emoji || ''}${it.name}`.slice(0, 100),
-      description: `持有 ${it.count}　價值 ${it.price}`.slice(0, 100),
-      value: `item:${it.item_id}:0`
-    }))
+    ...items.map(it => {
+      // 送過的才顯示角色的喜好，沒送過就寫「還不知道」——這是刻意的，要自己試
+      const known = knownWeight(gid, uid, rid, it.name);
+      const tag = known === undefined ? '？喜好未知' : LIKE_LABEL(known);
+      return {
+        label: `${it.emoji || ''}${it.name}`.slice(0, 100),
+        description: `基礎好感 +${it.gift_aff}　${tag}　持有 ${it.count}`.slice(0, 100),
+        value: `item:${it.item_id}:0`
+      };
+    })
   ].slice(0, 25);
 
   return {
-    embeds: [roleCard(gid, uid, role, `要送什麼給 **${role.name}**？\n每個角色喜好不同，送對東西好感加得多。`)],
+    embeds: [roleCard(gid, uid, role, `要送什麼給 **${role.name}**？\n`
+      + `每位角色都有 💖最喜歡 ×3、💕喜歡 ×3、💔討厭 ×2 的禮物 —— **送過才知道是哪些**。\n`
+      + `倍率：💖 ×2　💕 ×1.5　🤍 ×1　💔 ×0.5`)],
     components: [new ActionRowBuilder().addComponents(
       new StringSelectMenuBuilder().setCustomId(`giftpick:${rid}`).setPlaceholder('選一樣禮物').addOptions(opts))]
   };
@@ -668,7 +691,9 @@ function init(client) {
             ? giftDish(gid, uid, uname, rid, Number(a1), Number(a2))
             : giftItem(gid, uid, uname, rid, Number(a1));
           if (out.error) return i.update({ content: out.error, embeds: [], components: [] }).catch(() => {});
-          const react = out.weight >= 250 ? '眼睛都亮了' : out.weight >= 150 ? '看起來很開心' : out.weight < 0 ? '……表情有點微妙' : '收下了';
+          const react = out.weight >= 200 ? '💖 眼睛都亮了（最喜歡 ×2）'
+            : out.weight >= 150 ? '💕 看起來很開心（喜歡 ×1.5）'
+              : out.weight <= 50 ? '💔 表情有點微妙（討厭 ×0.5）' : '🤍 收下了';
           const what = out.dish ? `${QUALITY[out.quality].emoji}${out.dish.name}` : `${out.item.emoji || ''}${out.item.name}`;
           return i.update({
             content: out.up ? `🎉 **${out.role.name}** 的好感度升到 **${levelName(gid, out.level)}**！` : '',
@@ -712,4 +737,4 @@ function init(client) {
   console.log('  ↳ 好感度模組已載入（接轉盤角色／名字搜尋邀請）');
 }
 
-module.exports = { init, seedAffinity, seedGiftPrefs, lovePanel, strollPanel, stroll, strollEmbed, partnerPanel, partnersOf, moveIn, moveOut, partnerSkillText, partnerSkillPool, DEFAULT_PARTNER_SKILLS, searchRoles };
+module.exports = { init, seedAffinity, seedGiftPrefs, lovePanel, strollPanel, stroll, strollEmbed, partnerPanel, partnersOf, moveIn, moveOut, partnerSkillText, partnerSkillPool, DEFAULT_PARTNER_SKILLS, giftMenu, giftItem, searchRoles };

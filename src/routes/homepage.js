@@ -215,7 +215,7 @@ tr.now{background:#fdf2f8;font-weight:700}
 </div>
 
 <div class="card">
-  <h2>🏠 房屋 12 階</h2>
+  <h2>🏠 房屋 15 階</h2>
   <div style="overflow-x:auto"><table>
     <tr><th>等級</th><th>房屋名稱</th><th>解鎖內容</th><th>家具</th><th>寵物</th></tr>
     ${d.levels.map(l => `<tr class="${l.level === d.home.level ? 'now' : ''}">

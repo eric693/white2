@@ -634,6 +634,20 @@ const GATHER_CMDS = ['釣魚', '挖礦', '伐木', '採集', '狩獵'];
 // 購買一件道具／一階設施。/購買 指令與商店的下拉選單共用同一套規則。
 function buyThing(gid, uid, uname, kind, id) {
   const c = cfg(gid);
+  if (kind === 'gift') {
+    const g = db.prepare("SELECT * FROM gather_items WHERE guild_id=? AND id=? AND kind='gift'").get(gid, id);
+    if (!g) return { error: '這個禮物已經不在商店裡了。' };
+    const w = wallet(gid, uid, uname);
+    if (w.coins < g.price) return { error: `${c.currency_name}不夠：需要 ${g.price.toLocaleString('en-US')}，你只有 ${w.coins.toLocaleString('en-US')}。` };
+    db.transaction(() => {
+      addCoins(gid, uid, uname, -g.price);
+      addToBag(gid, uid, g.id, 1);
+    })();
+    return { embed: new EmbedBuilder().setColor(0xeb459e).setTitle('🎁 買好了')
+      .setDescription(`${g.emoji || ''}**${g.name}** 已經放進背包（基礎好感 **+${g.gift_aff}**）。\n`
+        + '用 `/好感度` 面板的 🎁 送禮送給角色 —— 送到他最喜歡的東西，好感會 ×2。')
+      .setFooter({ text: `餘額 ${(w.coins - g.price).toLocaleString('en-US')} ${c.currency_name}` }) };
+  }
   if (kind === 'stamina') {
     const n = Math.max(1, Math.min(5, id));
     const price = Math.max(1, c.stamina_price || 10000);
@@ -1273,6 +1287,16 @@ function init(client) {
           embeds.push(new EmbedBuilder().setColor(KIND_COLOR[k] || brandColor())
             .setTitle(`${KIND_EMOJI[k]} ${KIND_TOOL[k]}`).setDescription(txt.slice(0, 4000)));
         }
+        // 送角色的禮物：一般商店直接賣（基礎好感固定，倍率看角色喜好）
+        const gifts = db.prepare("SELECT * FROM gather_items WHERE guild_id=? AND kind='gift' AND enabled=1 ORDER BY gift_aff").all(gid);
+        if (gifts.length) {
+          embeds.push(new EmbedBuilder().setColor(0xeb459e).setTitle('🎁 角色禮物')
+            .setDescription(gifts.map(g =>
+              `${g.emoji || ''}**${g.name}**　${money(c, g.price)}　→ 基礎好感 **+${g.gift_aff}**`).join('\n')
+              + '\n\n每位角色都有 💖最喜歡（×2）、💕喜歡（×1.5）、💔討厭（×0.5）的禮物 —— **送過才知道是哪些**。'
+              + '\n用 `/好感度` 面板的 🎁 送禮送出去。'));
+        }
+
         // 設施（農地／溫室／牧場／孵化室／魚缸）只在 `/設施商店` 賣 ——
         // 以前跟工具混在同一頁，玩家分不出「一般商店」到底在賣什麼。
         // 這裡改成賣體力：每天有購買上限，避免有錢人無限刷。
@@ -1295,6 +1319,14 @@ function init(client) {
             value: `tool:${t.id}`, emoji: t.emoji || undefined
           });
         }
+        for (const g of gifts) {
+          opts.push({
+            label: `禮物：${g.name}`.slice(0, 100),
+            description: `${g.price.toLocaleString('en-US')} ${c.currency_name}｜基礎好感 +${g.gift_aff}`.slice(0, 100),
+            value: `gift:${g.id}`, emoji: g.emoji || '🎁'
+          });
+        }
+
         // 體力（每天有上限）
         if (boughtToday < stCfg.daily) {
           const canBuy = Math.min(stCfg.daily - boughtToday, 5);

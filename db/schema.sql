@@ -1938,3 +1938,14 @@ CREATE TABLE IF NOT EXISTS partner_skills (
   sort       INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_partner_skills ON partner_skills(guild_id, enabled);
+
+-- 送禮圖鑑：玩家送過之後才知道角色喜不喜歡（第一次送之前不顯示喜好，要自己試）
+CREATE TABLE IF NOT EXISTS gift_dex (
+  guild_id   TEXT NOT NULL DEFAULT '',
+  user_id    TEXT NOT NULL,
+  role_id    INTEGER NOT NULL,
+  item       TEXT NOT NULL,           -- 禮物名稱
+  weight     INTEGER NOT NULL DEFAULT 100,  -- 當時測到的喜好權重（200/150/100/50）
+  first_at   TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  PRIMARY KEY (guild_id, user_id, role_id, item)
+);

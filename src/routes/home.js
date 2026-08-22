@@ -49,6 +49,7 @@ router.put('/home-config', (req, res) => {
        stroll_enabled=@stroll_enabled, stroll_stamina=@stroll_stamina, stroll_cost=@stroll_cost,
        stroll_points=@stroll_points,
        partner_enabled=@partner_enabled, partner_slots=@partner_slots, partner_level=@partner_level,
+       partner_lv2=@partner_lv2, partner_lv3=@partner_lv3,
        pet_food_enabled=@pet_food_enabled, pet_food_price=@pet_food_price, pet_food_cost=@pet_food_cost
      WHERE guild_id=@guild_id`
   ).run({
@@ -73,6 +74,8 @@ router.put('/home-config', (req, res) => {
     partner_enabled: b.partner_enabled ? 1 : 0,
     partner_slots: int(b.partner_slots, 1, 1),
     partner_level: int(b.partner_level, 6, 0),
+    partner_lv2: int(b.partner_lv2, 8, 0),
+    partner_lv3: int(b.partner_lv3, 12, 0),
     pet_food_enabled: b.pet_food_enabled ? 1 : 0,
     pet_food_price: int(b.pet_food_price, 500, 1),
     pet_food_cost: int(b.pet_food_cost, 1, 1),

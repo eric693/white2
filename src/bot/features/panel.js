@@ -49,7 +49,7 @@ const TABS = {
   home: {
     label: '我的家', emoji: '🏡', color: 0xe91e63,
     title: '🏡 我的家',
-    desc: '把採集、生產的成果變成長期資產。\n房屋 12 階 → 蓋廚房做料理 → 擺家具、養寵物 → 送禮攻略角色 → 收集圖鑑、做任務解成就。\n**所有加成都在這條線上**，用 ⭐ 家園加成 隨時查目前有多少。',
+    desc: '把採集、生產的成果變成長期資產。\n房屋 15 階 → 蓋廚房做料理 → 擺家具、養寵物 → 送禮攻略角色 → 收集圖鑑、做任務解成就。\n**所有加成都在這條線上**，用 ⭐ 家園加成 隨時查目前有多少。',
     rows: [
       [['adv:home', '我的家', '🏠', ButtonStyle.Primary], ['adv:kitchen', '廚房', '🍳'], ['adv:furniture', '家具', '🛋️'], ['adv:pets', '寵物', '🐾'], ['adv:love', '約會', '💕']],
       [['adv:checkin', '簽到', '📅', ButtonStyle.Success], ['adv:dex', '圖鑑', '📖'], ['adv:titles', '成就', '🏅'], ['adv:buffs', '家園加成', '⭐'], ['adv:homeweb', '完整網頁版', '🖼️', ButtonStyle.Primary]]
@@ -69,9 +69,9 @@ const TABS = {
   money: {
     label: '金錢', emoji: '💰', color: 0x9b59b6,
     title: '💰 賺錢與理財',
-    desc: '賣東西、玩股票、繳稅、借錢。\n⚠️ 股價可能跌到**負數**，賣出會倒扣星幣，出場前先看清楚現價。',
+    desc: '賣東西、每日簽到領星幣、玩股票、繳稅、借錢。\n⚠️ 股價可能跌到**負數**，賣出會倒扣星幣，出場前先看清楚現價。',
     rows: [
-      [['adv:sellpick', '賣出', '💰', ButtonStyle.Primary], ['adv:draw', '每日抽籤', '🎲', ButtonStyle.Primary], ['adv:trade', '交易', '🔄', ButtonStyle.Primary]],
+      [['adv:sellpick', '賣出', '💰', ButtonStyle.Primary], ['adv:checkin', '每日簽到', '📅', ButtonStyle.Success], ['adv:trade', '交易', '🔄', ButtonStyle.Primary]],
       [['stk:market', '股市行情', '📈', ButtonStyle.Primary], ['stk:buymenu', '買股', '📥', ButtonStyle.Success], ['stk:sellmenu', '賣股', '📤', ButtonStyle.Danger], ['stk:mine', '我的持股', '📊'], ['stk:news', '財經新聞', '📰']],
       [['adv:tax', '我的稅單', '🧾'], ['adv:charity', '基金會', '❤️'], ['adv:loan', '物資貸款', '🏦']]
     ]

@@ -1,5 +1,5 @@
 // ===== 家園與成就（後台）=====
-// 房屋 12 階、家具、廚房與食譜、寵物、成就、好感度階級，全部改成後台可增刪改。
+// 小屋 15 階、家具、廚房與食譜、寵物、成就、好感度階級，全部改成後台可增刪改。
 // 以前這些數值都埋在程式的預設清單裡，要調一個家具的加成就得改程式重啟。
 App.page('home', {
   title: '小屋與成就', sub: '小屋（家園）15 階、簽到、家具、廚房料理、寵物、成就、同居與逛街，全部可直接改', module: 'home',
@@ -162,8 +162,12 @@ App.page('home', {
             <h3 style="margin-top:18px">💞 同居</h3>
             <div class="field">${H.toggle('partner_enabled', c.partner_enabled ?? 1, '開放同居（角色搬進玩家家裡，每期課伴侶稅）')}</div>
             <div class="form-row">
-              <div class="field"><label>最多同時跟幾位同居</label><input name="partner_slots" type="number" min="1" value="${c.partner_slots ?? 1}"></div>
               <div class="field"><label>好感度要到第幾階才可能同居</label><input name="partner_level" type="number" min="0" value="${c.partner_level ?? 6}"></div>
+              <div class="field"><label>名額上限</label><input name="partner_slots" type="number" min="1" max="3" value="${c.partner_slots ?? 3}"></div>
+            </div>
+            <div class="form-row">
+              <div class="field"><label>房屋到第幾階可住 2 位</label><input name="partner_lv2" type="number" min="1" value="${c.partner_lv2 ?? 8}"></div>
+              <div class="field"><label>房屋到第幾階可住 3 位</label><input name="partner_lv3" type="number" min="1" value="${c.partner_lv3 ?? 12}"></div>
             </div>
             <div class="hint" style="margin-bottom:10px">
               對象是<b>隨機</b>的（玩家不能挑要跟誰住，只能請他搬走再抽一次）—— 可以挑的話所有人都會選同一位。
