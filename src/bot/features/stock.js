@@ -349,6 +349,158 @@ function sell(gid, uid, username, key, sharesRaw) {
   };
 }
 
+
+// ================== 強制清算 ==================
+//
+// 玩家發現的漏洞：負股價的股票「不賣就不用認賠」，於是明明有錢也故意卡著不處理，
+// 那筆負部位就變成沒有成本的死當，回收機制形同虛設；持股上限也一樣，
+// 買進時會擋，但既有超額部位放著不動就永遠不用降下來。
+//
+// 規則：偵測到違規就開始計時 → 到期前幾天私訊警告 → 寬限期滿由系統直接代為賣出。
+//   negative：整筆出清，虧損從錢包倒扣（餘額可為負，跟自己賣是一樣的結果）
+//   over limit：只賣掉超出的部分，從「現價最高的」開始賣（讓玩家保留最想留的低價股…
+//               不，反過來：先賣現價最高的最不痛，因為那是最容易回補的流動部位）
+const DAY_MS = 86400000;
+
+function violationRow(gid, uid, kind, symbolId = 0) {
+  let row = db.prepare('SELECT * FROM stock_violations WHERE guild_id=? AND user_id=? AND kind=? AND symbol_id=?')
+    .get(gid, uid, kind, symbolId);
+  if (!row) {
+    db.prepare('INSERT INTO stock_violations (guild_id,user_id,kind,symbol_id,since_ms) VALUES (?,?,?,?,?)')
+      .run(gid, uid, kind, symbolId, Date.now());
+    row = db.prepare('SELECT * FROM stock_violations WHERE guild_id=? AND user_id=? AND kind=? AND symbol_id=?')
+      .get(gid, uid, kind, symbolId);
+  }
+  return row;
+}
+const clearViolation = (gid, uid, kind, symbolId = 0) =>
+  db.prepare('DELETE FROM stock_violations WHERE guild_id=? AND user_id=? AND kind=? AND symbol_id=?')
+    .run(gid, uid, kind, symbolId);
+
+/** 系統代為賣出（不受單次上限、冷卻、每日次數限制 —— 這是強制執行，不是玩家操作） */
+function forceSell(gid, uid, username, symbolId, shares) {
+  const s = db.prepare('SELECT * FROM stock_symbols WHERE id=? AND guild_id=?').get(symbolId, gid);
+  const h = db.prepare('SELECT * FROM stock_holdings WHERE guild_id=? AND user_id=? AND symbol_id=?').get(gid, uid, symbolId);
+  if (!s || !h || h.shares <= 0) return null;
+  const c = cfg(gid);
+  const n = Math.min(shares, h.shares);
+  const gross = s.price * n;
+  const fee = Math.ceil(Math.max(0, gross) * (c.fee_pct || 0) / 100);
+  const net = gross - fee;
+  const avg = h.shares > 0 ? h.cost_sum / h.shares : 0;
+  const costPart = Math.round(avg * n);
+  const pnl = net - costPart;
+  db.transaction(() => {
+    db.prepare('UPDATE econ_wallets SET coins = coins + ?, total_earned = total_earned + ? WHERE guild_id=? AND user_id=?')
+      .run(net, Math.max(0, net), gid, uid);
+    if (n >= h.shares) {
+      db.prepare('UPDATE stock_holdings SET shares=0, cost_sum=0, realized=realized+? WHERE guild_id=? AND user_id=? AND symbol_id=?')
+        .run(pnl, gid, uid, symbolId);
+    } else {
+      db.prepare('UPDATE stock_holdings SET shares=shares-?, cost_sum=cost_sum-?, realized=realized+? WHERE guild_id=? AND user_id=? AND symbol_id=?')
+        .run(n, costPart, pnl, gid, uid, symbolId);
+    }
+    db.prepare("INSERT INTO stock_trades (guild_id,user_id,username,symbol_id,side,shares,price,fee,pnl,ts) VALUES (?,?,?,?,'sell',?,?,?,?,?)")
+      .run(gid, uid, username || '', symbolId, n, s.price, fee, pnl, Date.now());
+    db.prepare('UPDATE market_config SET burned_total = burned_total + ? WHERE guild_id=?').run(fee, gid);
+  })();
+  return { symbol: s, shares: n, net, fee, pnl };
+}
+
+async function dm(client, uid, content) {
+  try { const u = await client.users.fetch(uid); await u.send(content); } catch { /* 關私訊就算了 */ }
+}
+
+/**
+ * 每天跑一次：檢查所有人的負股價持股與超額持股，該警告的警告、該強制賣的賣。
+ * 只在股市開著、且 force_sell_enabled 時執行。
+ */
+async function enforceHoldings(client, gid) {
+  const c = cfg(gid);
+  if (!c.stock_enabled || !c.force_sell_enabled) return;
+  const now = Date.now();
+  const negDays = Math.max(1, c.force_neg_days || 7);
+  const overDays = Math.max(1, c.force_over_days || 7);
+  const warnDays = Math.max(0, c.force_warn_days || 2);
+
+  // ---- ① 負股價持股 ----
+  const negHoldings = db.prepare(
+    `SELECT h.user_id, h.shares, h.symbol_id, s.name, s.emoji, s.price
+       FROM stock_holdings h JOIN stock_symbols s ON s.id = h.symbol_id
+      WHERE h.guild_id=? AND h.shares > 0 AND s.price <= 0`).all(gid);
+  const stillNeg = new Set();
+  for (const h of negHoldings) {
+    stillNeg.add(`${h.user_id}:${h.symbol_id}`);
+    const v = violationRow(gid, h.user_id, 'neg', h.symbol_id);
+    const dueMs = v.since_ms + negDays * DAY_MS;
+    const uname = (db.prepare('SELECT username FROM econ_wallets WHERE guild_id=? AND user_id=?').get(gid, h.user_id) || {}).username || '';
+    if (now >= dueMs) {
+      const r = forceSell(gid, h.user_id, uname, h.symbol_id, h.shares);
+      clearViolation(gid, h.user_id, 'neg', h.symbol_id);
+      if (r) await dm(client, h.user_id,
+        `⚖️ **強制清算通知**\n你持有的 ${r.symbol.emoji || ''}**${r.symbol.name}** 已經是負股價超過 ${negDays} 天，`
+        + `系統依規定代為出清 **${r.shares}** 股。\n`
+        + `${r.net < 0 ? `已從你的錢包倒扣 **${num(-r.net)}**（餘額可能變負數，去 \`/貸款\` 或多賺一點補回來）。` : `入帳 **${num(r.net)}**。`}\n`
+        + `負股價的部位不能無限期放著不處理 —— 下次記得早點停損。`);
+    } else if (warnDays > 0 && now >= dueMs - warnDays * DAY_MS && now - v.warned_ms > DAY_MS) {
+      db.prepare('UPDATE stock_violations SET warned_ms=? WHERE guild_id=? AND user_id=? AND kind=? AND symbol_id=?')
+        .run(now, gid, h.user_id, 'neg', h.symbol_id);
+      await dm(client, h.user_id,
+        `⚠️ **負股價持股即將被強制清算**\n${h.emoji || ''}**${h.name}** 現價 ${num(h.price)}，你還有 **${num(h.shares)}** 股。\n`
+        + `<t:${Math.floor(dueMs / 1000)}:R> 系統就會代為賣出並從錢包倒扣。要自己處理請用 \`/賣股\`。`);
+    }
+  }
+  // 已經不是負股價（或已賣掉）的就把觀察紀錄清掉，計時重來
+  for (const v of db.prepare("SELECT * FROM stock_violations WHERE guild_id=? AND kind='neg'").all(gid)) {
+    if (!stillNeg.has(`${v.user_id}:${v.symbol_id}`)) clearViolation(gid, v.user_id, 'neg', v.symbol_id);
+  }
+
+  // ---- ② 總持股超過上限 ----
+  if (!(c.max_shares > 0)) {
+    db.prepare("DELETE FROM stock_violations WHERE guild_id=? AND kind='over'").run(gid);
+    return;
+  }
+  const totals = db.prepare(
+    'SELECT user_id, SUM(shares) total FROM stock_holdings WHERE guild_id=? GROUP BY user_id HAVING total > ?')
+    .all(gid, c.max_shares);
+  const stillOver = new Set(totals.map(t => t.user_id));
+  for (const t of totals) {
+    const v = violationRow(gid, t.user_id, 'over', 0);
+    const dueMs = v.since_ms + overDays * DAY_MS;
+    const uname = (db.prepare('SELECT username FROM econ_wallets WHERE guild_id=? AND user_id=?').get(gid, t.user_id) || {}).username || '';
+    const excess = t.total - c.max_shares;
+    if (now >= dueMs) {
+      // 從現價最高的開始賣：那是最容易再買回來的部位，而且賣掉最不虧
+      let left = excess;
+      const mine = db.prepare(
+        `SELECT h.symbol_id, h.shares, s.price, s.name, s.emoji FROM stock_holdings h
+           JOIN stock_symbols s ON s.id=h.symbol_id
+          WHERE h.guild_id=? AND h.user_id=? AND h.shares>0 ORDER BY s.price DESC`).all(gid, t.user_id);
+      const sold = [];
+      for (const m of mine) {
+        if (left <= 0) break;
+        const n = Math.min(left, m.shares);
+        const r = forceSell(gid, t.user_id, uname, m.symbol_id, n);
+        if (r) { sold.push(r); left -= n; }
+      }
+      clearViolation(gid, t.user_id, 'over', 0);
+      if (sold.length) await dm(client, t.user_id,
+        `⚖️ **持股上限強制減碼**\n你的總持股 ${num(t.total)} 股超過上限 ${num(c.max_shares)} 股已超過 ${overDays} 天，`
+        + `系統代為賣出 **${num(excess)}** 股：\n`
+        + sold.map(r => `　${r.symbol.emoji || ''}${r.symbol.name} ${num(r.shares)} 股 → ${num(r.net)}`).join('\n'));
+    } else if (warnDays > 0 && now >= dueMs - warnDays * DAY_MS && now - v.warned_ms > DAY_MS) {
+      db.prepare("UPDATE stock_violations SET warned_ms=? WHERE guild_id=? AND user_id=? AND kind='over' AND symbol_id=0")
+        .run(now, gid, t.user_id);
+      await dm(client, t.user_id,
+        `⚠️ **持股超過上限**\n你目前總共 **${num(t.total)}** 股，上限是 ${num(c.max_shares)} 股。\n`
+        + `<t:${Math.floor(dueMs / 1000)}:R> 之前沒有自己降到上限以內，系統會代為賣出超出的 **${num(excess)}** 股。`);
+    }
+  }
+  for (const v of db.prepare("SELECT * FROM stock_violations WHERE guild_id=? AND kind='over'").all(gid)) {
+    if (!stillOver.has(v.user_id)) clearViolation(gid, v.user_id, 'over', 0);
+  }
+}
+
 // ================== 畫面 ==================
 function marketEmbed(gid) {
   const c = cfg(gid);
@@ -730,6 +882,13 @@ function init(client) {
     }
   }, { timezone: 'Asia/Taipei' });
 
+  // 強制清算：每天早上 10 點檢查一次（負股價死當部位、超過持股上限）
+  cron.schedule('0 10 * * *', () => {
+    for (const [gid] of client.guilds.cache) {
+      enforceHoldings(client, gid).catch(e => logError(gid, '股市強制清算失敗：', e.message));
+    }
+  }, { timezone: 'Asia/Taipei' });
+
   // 新聞生效與發布：每分鐘檢查一次
   cron.schedule('* * * * *', () => {
     for (const [gid] of client.guilds.cache) {
@@ -740,4 +899,4 @@ function init(client) {
   console.log('  ↳ 財經新聞／星幣股市模組已載入（預設關閉，後台開啟）');
 }
 
-module.exports = { init, catchUp, runTick, seedGuild, buy, sell, sparkline };
+module.exports = { init, enforceHoldings, forceSell, catchUp, runTick, seedGuild, buy, sell, sparkline };

@@ -4,9 +4,9 @@ App.page('special', {
 
   async render(el) {
     await H.loadMeta();
-    const [c, items, redeems, shops] = await Promise.all([
+    const [c, items, redeems, shops, grantables] = await Promise.all([
       GET('/special'), GET('/special-items'), GET('/special-redeems'), GET('/special-shops')
-    ]);
+    , GET('/special-grantables').catch(() => [])]);
     const coin = (n) => `🪙 ${Number(n || 0).toLocaleString('en-US')}`;
     const selRoles = (c.admin_roles || '').split(',').filter(Boolean);
     const shopName = (id) => { const s = shops.find(x => x.id == id); return s ? (s.emoji || '') + s.name : '其他'; };
@@ -148,6 +148,14 @@ App.page('special', {
       <div class="field"><label>說明</label><input name="description" value="${UI.esc(it.description || '')}" placeholder="兌換內容說明，會顯示給玩家與管理員"></div>
       <div class="field"><label>排序</label><input name="sort" type="number" value="${it.sort ?? 0}"></div>
       <div class="field"><label>這項的每人上限（0＝跟隨全域設定）</label><input name="per_user_limit" type="number" min="0" value="${it.per_user_limit ?? 0}"></div>
+      <hr style="border:none;border-top:1px solid var(--border);margin:14px 0">
+      <div class="field"><label>📦 兌換後直接發到背包的素材（選了就<b>不需要管理員手動處理</b>）</label>
+        <select name="grant_item_id">
+          <option value="0">— 不發素材（一般虛擬獎勵，通知管理員處理）—</option>
+          ${grantables.map(g => `<option value="${g.id}" ${it.grant_item_id == g.id ? 'selected' : ''}>${UI.esc((g.emoji || '') + g.name)}（原價 ${g.price}）</option>`).join('')}
+        </select>
+        <div class="hint">神秘商店賣素材就用這個：玩家兌換後東西直接進背包，馬上能拿去蓋房子／做家具。</div></div>
+      <div class="field"><label>每份發幾個</label><input name="grant_count" type="number" min="1" value="${it.grant_count ?? 1}"></div>
       <div class="field">${H.toggle('enabled', it.enabled ?? 1, '上架')}</div>`;
 
     const openItem = (it) => {
@@ -183,6 +191,11 @@ App.page('special', {
       <div class="field"><label>這家店的頻道（發布面板＋兌換通知都用這個）</label>${H.chanSelect('channel_id', s.channel_id || '')}</div>
       <div class="field"><label>這家店兌換時要標記的身分組（可複選）</label>${roleBox('data-shoprole', s.notify_roles)}</div>
       <div class="field"><label>說明（顯示在面板上方）</label><input name="description" value="${UI.esc(s.description || '')}"></div>
+      <hr style="border:none;border-top:1px solid var(--border);margin:14px 0">
+      <div class="field"><label>🔒 限定帳號（Discord user ID，逗號分隔；留空＝所有人都看得到）</label>
+        <input name="allow_users" value="${UI.esc(s.allow_users || '')}" placeholder="123456789012345678, 987654321098765432">
+        <div class="hint">神秘商店用這個：只有名單上的帳號會在 <code>/特殊商店</code> 看到這家店，別人直接 <code>/兌換</code> 也會被擋。</div></div>
+      <div class="field"><label>🔒 限定身分組（可複選；跟上面是「或」的關係）</label>${roleBox('data-shopallow', s.allow_roles)}</div>
       <div class="field"><label>排序</label><input name="sort" type="number" value="${s.sort ?? 0}"></div>
       <div class="field">${H.toggle('enabled', s.enabled ?? 1, '啟用')}</div>`;
     const openShop = (s) => UI.modal({
@@ -191,6 +204,7 @@ App.page('special', {
         const b = H.collect(back);
         if (!b.name) { UI.err('請填商店名稱'); return false; }
         b.notify_roles = [...back.querySelectorAll('[data-shoprole]:checked')].map(x => x.value).join(',');
+        b.allow_roles = [...back.querySelectorAll('[data-shopallow]:checked')].map(x => x.value).join(',');
         if (s) await PUT('/special-shops/' + s.id, b); else await POST('/special-shops', b);
         UI.ok('已儲存'); App.go('special');
       }

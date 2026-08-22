@@ -146,11 +146,36 @@ router.delete('/gather-tools/:id', (req, res) => {
 
 // ---- 玩家資料：錢包排行 + 手動增減貨幣 ----
 router.get('/gather-players', (req, res) => {
-  res.json(db.prepare(
+  // 一併帶出每個人的設施等級與規模：管理員要看「誰有幾個農場、誰升到幾階」不必再一個一個查，
+  // 土地稅也是照這些等級課的（tax_config.land_tier_pct）。
+  const rows = db.prepare(
     `SELECT w.*, (SELECT COUNT(*) FROM gather_inventory v
        WHERE v.guild_id=w.guild_id AND v.user_id=w.user_id AND v.total_caught > 0) AS collected
      FROM econ_wallets w WHERE w.guild_id=? ORDER BY w.coins DESC LIMIT 200`
-  ).all(req.guildId));
+  ).all(req.guildId);
+  const fac = db.prepare('SELECT type, tier, slots FROM facility_owned WHERE guild_id=? AND user_id=?');
+  const cnt = (sql) => db.prepare(sql);
+  const plots = cnt('SELECT COUNT(*) n FROM crop_plots WHERE guild_id=? AND user_id=? AND plot_type=?');
+  const animals = cnt('SELECT COUNT(*) n FROM ranch_slots WHERE guild_id=? AND user_id=?');
+  const fish = cnt('SELECT COUNT(*) n FROM aquarium_slots WHERE guild_id=? AND user_id=?');
+  const home = cnt('SELECT level, kitchen_level FROM home_users WHERE guild_id=? AND user_id=?');
+  const shares = cnt('SELECT COALESCE(SUM(shares),0) n FROM stock_holdings WHERE guild_id=? AND user_id=?');
+  res.json(rows.map(w => {
+    const f = {};
+    for (const r of fac.all(req.guildId, w.user_id)) f[r.type] = { tier: r.tier, slots: r.slots };
+    const h = home.get(req.guildId, w.user_id) || {};
+    return {
+      ...w,
+      facilities: f,
+      field_plots: plots.get(req.guildId, w.user_id, 'field').n,
+      greenhouse_plots: plots.get(req.guildId, w.user_id, 'greenhouse').n,
+      animals: animals.get(req.guildId, w.user_id).n,
+      fish: fish.get(req.guildId, w.user_id).n,
+      home_level: h.level || 0,
+      kitchen_level: h.kitchen_level || 0,
+      shares: shares.get(req.guildId, w.user_id).n
+    };
+  }));
 });
 
 router.post('/gather-players/:userId/coins', (req, res) => {

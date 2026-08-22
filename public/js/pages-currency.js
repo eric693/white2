@@ -10,6 +10,15 @@ App.page('currency', {
     ]);
     const coin = (n) => `${c.currency_emoji || '🪙'} ${Number(n || 0).toLocaleString('en-US')}`;
     const total = players.reduce((a, p) => a + (p.coins || 0), 0);
+    // 設施等級一覽：Lv 與「用了幾格 / 總格數」，一眼看得出誰的規模大、誰該課比較多土地稅
+    const USED = { field: 'field_plots', greenhouse: 'greenhouse_plots', ranch: 'animals', aquarium: 'fish' };
+    const fac = (p, type, emoji) => {
+      const f = (p.facilities || {})[type];
+      if (!f) return '';
+      const usedKey = USED[type];
+      const used = usedKey ? p[usedKey] : null;
+      return `<span title="${type}">${emoji}Lv${f.tier}${used != null ? `(${used}/${f.slots})` : ''}</span> `;
+    };
 
     let keyword = '';
     let sort = 'coins';
@@ -31,6 +40,13 @@ App.page('currency', {
           <td style="white-space:nowrap"><b>${coin(p.coins)}</b></td>
           <td style="white-space:nowrap">${coin(p.total_earned)}</td>
           <td>${p.collected} 種</td>
+          <td style="font-size:13px;white-space:nowrap">
+            ${fac(p, 'field', '🌾')}${fac(p, 'greenhouse', '🏡')}${fac(p, 'ranch', '🐔')}${fac(p, 'aquarium', '🐠')}${fac(p, 'hatch', '🥚')}
+          </td>
+          <td style="font-size:13px;white-space:nowrap">
+            ${p.home_level ? `🏠Lv${p.home_level}` : ''}${p.kitchen_level ? ` 🍳Lv${p.kitchen_level}` : ''}
+            ${p.shares ? `<br>📈${Number(p.shares).toLocaleString('en-US')} 股` : ''}
+          </td>
           <td style="white-space:nowrap">
             <button class="btn tiny secondary" data-coins="${p.user_id}" data-name="${UI.esc(p.username || '')}" data-cur="${p.coins}">增減貨幣</button>
             <button class="btn tiny danger" data-wipe="${p.user_id}" data-name="${UI.esc(p.username || '')}">清空</button>
@@ -77,7 +93,9 @@ App.page('currency', {
 
       <div class="card">
         <div class="table-wrap"><table class="list">
-          <thead><tr><th>#</th><th>玩家</th><th>持有</th><th>累計賺取</th><th>圖鑑</th><th></th></tr></thead>
+          <thead><tr><th>#</th><th>玩家</th><th>持有</th><th>累計賺取</th><th>圖鑑</th>
+            <th>設施等級<div class="hint" style="font-weight:400;font-size:11px">農地/溫室/牧場/魚缸/孵化</div></th>
+            <th>家園·股</th><th></th></tr></thead>
           <tbody id="plist">${rowsHTML()}</tbody>
         </table></div>
         <div class="hint" style="margin-top:8px">

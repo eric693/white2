@@ -1881,3 +1881,14 @@ CREATE TABLE IF NOT EXISTS contest_scores (
   PRIMARY KEY (contest_id, user_id)
 );
 CREATE INDEX IF NOT EXISTS idx_contest_scores ON contest_scores(contest_id, score);
+
+-- 股市強制清算的觀察名單：什麼時候開始違規（負股價持股／超過持股上限），寬限期滿就自動處理
+CREATE TABLE IF NOT EXISTS stock_violations (
+  guild_id   TEXT NOT NULL DEFAULT '',
+  user_id    TEXT NOT NULL,
+  kind       TEXT NOT NULL,              -- neg＝持有負股價股票 / over＝總持股超過上限
+  symbol_id  INTEGER NOT NULL DEFAULT 0, -- neg 用；over 固定 0
+  since_ms   INTEGER NOT NULL DEFAULT 0,
+  warned_ms  INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (guild_id, user_id, kind, symbol_id)
+);

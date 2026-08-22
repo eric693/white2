@@ -13,6 +13,22 @@ const csv = (s) => String(s || '').split(/[\n,]/).map(x => x.trim()).filter(Bool
 const money = (c, n) => `${c.currency_emoji || '🪙'} ${Number(n).toLocaleString('en-US')} ${c.currency_name || '星幣'}`;
 
 const shopsOf = (gid) => db.prepare('SELECT * FROM special_shops WHERE guild_id=? AND enabled=1 ORDER BY sort, id').all(gid);
+
+// 神秘商店：可以指定只有某些帳號／身分組看得到、買得到。
+// 兩層都空＝公開商店（原本的行為完全不變）。
+const csvIds = (v) => String(v || '').split(/[\s,;、]+/).map(x => x.trim()).filter(Boolean);
+function shopAllowed(shop, member, userId) {
+  if (!shop) return true;
+  const users = csvIds(shop.allow_users), roles = csvIds(shop.allow_roles);
+  if (!users.length && !roles.length) return true;
+  if (users.includes(String(userId))) return true;
+  if (roles.length && member && member.roles && member.roles.cache) {
+    return roles.some(r => member.roles.cache.has(r));
+  }
+  return false;
+}
+const visibleShops = (gid, member, userId) =>
+  shopsOf(gid).filter(s => shopAllowed(s, member, userId) && (!s.hidden || shopAllowed(s, member, userId)));
 const itemsOfShop = (gid, shopId) => db.prepare('SELECT * FROM special_items WHERE guild_id=? AND enabled=1 AND shop_id=? ORDER BY sort, price').all(gid, shopId);
 
 // 要私訊誰：後台指定的管理員 user_id ＋ 通知身分組裡的成員（去重）
@@ -123,9 +139,16 @@ function qtyCap(gid, item, uid, uname) {
 }
 
 // 共用兌換邏輯：扣星幣、扣庫存、記錄、通知管理員。回傳給玩家看的 embed。
-async function doRedeem(client, gid, item, user, uname, qtyRaw = 1) {
+async function doRedeem(client, gid, item, user, uname, qtyRaw = 1, member = null) {
   const c = scfg(gid), gc = gcfg(gid);
   const qty = Math.max(1, Math.min(QTY_MAX, Math.floor(Number(qtyRaw) || 1)));
+  // 神秘商店的限定名單：直接打 /兌換 商品名稱 也要擋，不能只靠列表藏起來
+  if (item.shop_id) {
+    const sh = db.prepare('SELECT * FROM special_shops WHERE id=? AND guild_id=?').get(item.shop_id, gid);
+    if (sh && !shopAllowed(sh, member, user.id)) {
+      return { error: '這是限定商店的商品，你目前沒有兌換資格。' };
+    }
+  }
   const debt = debtError(gid, user.id, uname);
   if (debt) return { error: debt };
   if (item.stock === 0) return { error: `**${item.name}** 已經兌換完了（庫存 0）。` };
@@ -161,6 +184,24 @@ async function doRedeem(client, gid, item, user, uname, qtyRaw = 1) {
       .run(gid, user.id, uname, item.id, item.name, Math.round(total / qty), qty, total).lastInsertRowid;
   });
   tx();
+
+  // 直接發素材：grant_item_id 有設就把東西直接放進背包，不用等管理員手動處理。
+  // 這是「神秘商店賣素材」的核心 —— 買完立刻能用，跟一般虛擬獎勵的流程分開。
+  if (item.grant_item_id > 0) {
+    const gi = db.prepare('SELECT * FROM gather_items WHERE id=? AND guild_id=?').get(item.grant_item_id, gid);
+    if (gi) {
+      const n = Math.max(1, item.grant_count || 1) * qty;
+      db.prepare(`INSERT INTO gather_inventory (guild_id,user_id,item_id,count) VALUES (?,?,?,?)
+        ON CONFLICT(guild_id,user_id,item_id) DO UPDATE SET count = count + ?`).run(gid, user.id, gi.id, n, n);
+      db.prepare("UPDATE special_redeems SET status='done' WHERE id=?").run(redeemId);   // 自動發放＝當場結案，不進管理員待辦
+      return {
+        embed: new EmbedBuilder().setColor(brandColor()).setTitle('📦 兌換成功（已直接發到背包）')
+          .setDescription(`你用 ${money(gc, total)} 換到 ${gi.emoji || ''}**${gi.name}** × **${n}**\n`
+            + `已經直接放進你的背包，用 \`/背包\` 看得到，可以馬上拿去做東西。`)
+          .setFooter({ text: `餘額 ${(w.coins - total).toLocaleString('en-US')} ${gc.currency_name}｜兌換單 #${redeemId}` })
+      };
+    }
+  }
 
   // 通知目標：優先用商品所屬「商店」綁定的頻道與身分組，其次商品自訂，最後全域預設
   const shop = item.shop_id ? db.prepare('SELECT * FROM special_shops WHERE id=? AND guild_id=?').get(item.shop_id, gid) : null;
@@ -260,7 +301,7 @@ function init(client) {
   // 兌換收尾：扣款 → 回覆玩家 → 刷新面板庫存。
   // 從份數選單來的是自己的暫時訊息（可 update）；直接從商品選單來的是公開面板（只能另外私訊回覆）
   const finishRedeem = async (i, gid, item, shopId, qty) => {
-    const res = await doRedeem(client, gid, item, i.user, i.user.username, qty);
+    const res = await doRedeem(client, gid, item, i.user, i.user.username, qty, i.member);
     const payload = res.error
       ? { content: res.error, embeds: [], components: [] }
       : { content: '', embeds: [res.embed], components: [] };
@@ -337,7 +378,8 @@ function init(client) {
       // ---- 特殊商店：列出各分店與商品 ----
       if (cmdName === '特殊商店') {
         // 頻道限定：這個頻道有綁分店 → 只列那幾間；沒綁的頻道維持列全部
-        const all = shopsOf(gid);
+        // 只列這位玩家「看得到」的分店（神秘商店可以限定帳號／身分組）
+        const all = visibleShops(gid, i.member, uid);
         const here = c.channel_scoped ? all.filter(s => s.channel_id && s.channel_id === i.channelId) : [];
         const shops = here.length ? here : all;
         const scoped = here.length > 0;
@@ -399,7 +441,7 @@ function init(client) {
             return await reply({ content: `「${item.name}」不屬於這個頻道的商店，請到它自己的頻道兌換。` });
           }
         }
-        const res = await doRedeem(client, gid, item, i.user, uname, i.options.getInteger('數量') || 1);
+        const res = await doRedeem(client, gid, item, i.user, uname, i.options.getInteger('數量') || 1, i.member);
         if (res.error) return await reply({ content: res.error });
         // 若該商品所屬分店有發布面板，順手刷新庫存
         if (item.shop_id) publishShop(client, item.shop_id).catch(() => {});

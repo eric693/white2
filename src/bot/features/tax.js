@@ -118,7 +118,15 @@ function assess(gid, userId) {
       + placed * (c.house_furniture || 0) + petCount * (c.house_pet || 0)
     : 0;
 
-  const land = c.land_enabled ? fieldTaxed * (c.land_field || 0) + greenTaxed * (c.land_greenhouse || 0) : 0;
+  // 土地稅：基本額 × 設施等級加成（land_tier_pct% ／階，1 階不加）——
+  // 升到 12 階的大農場產量是入門田的好幾倍，稅當然不該一樣。
+  const tierOf = (type) => (db.prepare('SELECT tier FROM facility_owned WHERE guild_id=? AND user_id=? AND type=?')
+    .get(gid, userId, type) || {}).tier || 1;
+  const tierMul = (type) => 1 + Math.max(0, tierOf(type) - 1) * (c.land_tier_pct || 0) / 100;
+  const land = c.land_enabled
+    ? Math.floor(fieldTaxed * (c.land_field || 0) * tierMul('field')
+      + greenTaxed * (c.land_greenhouse || 0) * tierMul('greenhouse'))
+    : 0;
   const breed = c.breed_enabled ? animalTaxed * (c.breed_animal || 0) + fishTaxed * (c.breed_fish || 0) : 0;
   // 證券稅：持股市值扣掉免稅額後，乘上稅率
   const stockTaxed = Math.max(0, stockVal - (c.stock_free || 0));

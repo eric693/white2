@@ -51,7 +51,9 @@ function itemFields(b) {
     channel_id: b.channel_id || '', role_id: b.role_id || '', image_url: b.image_url || '',
     description: b.description || '', stock: b.stock === '' || b.stock == null ? -1 : int(b.stock, -1),
     sort: int(b.sort, 0), enabled: b.enabled ? 1 : 0, shop_id: int(b.shop_id, 0),
-    per_user_limit: int(b.per_user_limit, 0, 0)
+    per_user_limit: int(b.per_user_limit, 0, 0),
+    // >0＝兌換後直接把這個素材發進背包（神秘商店賣素材用），不必管理員手動處理
+    grant_item_id: int(b.grant_item_id, 0, 0), grant_count: int(b.grant_count, 1, 1)
   };
 }
 
@@ -59,8 +61,8 @@ router.post('/special-items', (req, res) => {
   const b = req.body || {};
   if (!b.name) return res.status(400).json({ error: '請填寫獎勵名稱' });
   const r = db.prepare(
-    `INSERT INTO special_items (guild_id,name,emoji,price,channel_id,role_id,image_url,description,stock,sort,enabled,shop_id,per_user_limit)
-     VALUES (@guild_id,@name,@emoji,@price,@channel_id,@role_id,@image_url,@description,@stock,@sort,@enabled,@shop_id,@per_user_limit)`
+    `INSERT INTO special_items (guild_id,name,emoji,price,channel_id,role_id,image_url,description,stock,sort,enabled,shop_id,per_user_limit,grant_item_id,grant_count)
+     VALUES (@guild_id,@name,@emoji,@price,@channel_id,@role_id,@image_url,@description,@stock,@sort,@enabled,@shop_id,@per_user_limit,@grant_item_id,@grant_count)`
   ).run({ ...itemFields(b), guild_id: req.guildId });
   audit(req.user.name, `新增特殊商品：${b.name}`);
   res.json({ id: r.lastInsertRowid });
@@ -70,7 +72,7 @@ router.put('/special-items/:id', (req, res) => {
   db.prepare(
     `UPDATE special_items SET name=@name, emoji=@emoji, price=@price, channel_id=@channel_id, role_id=@role_id,
        image_url=@image_url, description=@description, stock=@stock, sort=@sort, enabled=@enabled, shop_id=@shop_id,
-       per_user_limit=@per_user_limit
+       per_user_limit=@per_user_limit, grant_item_id=@grant_item_id, grant_count=@grant_count
      WHERE id=@id AND guild_id=@guild_id`
   ).run({ ...itemFields(req.body || {}), id: req.params.id, guild_id: req.guildId });
   audit(req.user.name, `修改特殊商品 #${req.params.id}`);
@@ -78,6 +80,12 @@ router.put('/special-items/:id', (req, res) => {
 });
 
 // ---- 多分店 ----
+// 可以「直接發到背包」的素材清單（神秘商店賣素材用）
+router.get('/special-grantables', (req, res) => {
+  res.json(db.prepare(
+    'SELECT id, name, emoji, kind, price FROM gather_items WHERE guild_id=? AND enabled=1 ORDER BY kind, price').all(req.guildId));
+});
+
 router.get('/special-shops', (req, res) => {
   res.json(db.prepare('SELECT * FROM special_shops WHERE guild_id=? ORDER BY sort, id').all(req.guildId));
 });
@@ -85,6 +93,8 @@ function shopFields(b) {
   return {
     name: b.name || '', emoji: b.emoji || '', description: b.description || '',
     channel_id: b.channel_id || '', notify_roles: csvField(b.notify_roles),
+    allow_users: csvField(b.allow_users), allow_roles: csvField(b.allow_roles),
+    hidden: b.hidden ? 1 : 0,
     sort: int(b.sort, 0), enabled: b.enabled ? 1 : 0
   };
 }
@@ -92,8 +102,8 @@ router.post('/special-shops', (req, res) => {
   const b = req.body || {};
   if (!b.name) return res.status(400).json({ error: '請填寫商店名稱' });
   const r = db.prepare(
-    `INSERT INTO special_shops (guild_id,name,emoji,description,channel_id,notify_roles,sort,enabled)
-     VALUES (@guild_id,@name,@emoji,@description,@channel_id,@notify_roles,@sort,@enabled)`
+    `INSERT INTO special_shops (guild_id,name,emoji,description,channel_id,notify_roles,allow_users,allow_roles,hidden,sort,enabled)
+     VALUES (@guild_id,@name,@emoji,@description,@channel_id,@notify_roles,@allow_users,@allow_roles,@hidden,@sort,@enabled)`
   ).run({ ...shopFields(b), guild_id: req.guildId });
   audit(req.user.name, `新增特殊商店：${b.name}`);
   res.json({ id: r.lastInsertRowid });
@@ -101,7 +111,8 @@ router.post('/special-shops', (req, res) => {
 router.put('/special-shops/:id', (req, res) => {
   db.prepare(
     `UPDATE special_shops SET name=@name, emoji=@emoji, description=@description, channel_id=@channel_id,
-       notify_roles=@notify_roles, sort=@sort, enabled=@enabled WHERE id=@id AND guild_id=@guild_id`
+       notify_roles=@notify_roles, allow_users=@allow_users, allow_roles=@allow_roles, hidden=@hidden,
+       sort=@sort, enabled=@enabled WHERE id=@id AND guild_id=@guild_id`
   ).run({ ...shopFields(req.body || {}), id: req.params.id, guild_id: req.guildId });
   audit(req.user.name, `修改特殊商店 #${req.params.id}`);
   res.json({ ok: true });

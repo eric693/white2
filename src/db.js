@@ -236,6 +236,30 @@ ensureColumns('title_defs', {
   hint: "TEXT NOT NULL DEFAULT ''"          // 顯示給玩家的任務提示
 });
 
+// 土地稅依「設施等級」加成：等級越高的農地／溫室，同樣一格課越多
+// （只按格數課稅的話，升到 12 階的大農場跟入門小田繳一樣的錢）
+ensureColumns('tax_config', { land_tier_pct: 'INTEGER NOT NULL DEFAULT 20' });
+
+// 神秘商店：商品可以「直接發素材到背包」，商店本身可以限定只有某些帳號／身分組看得到
+ensureColumns('special_items', {
+  grant_item_id: 'INTEGER NOT NULL DEFAULT 0',   // >0＝兌換後直接把這個 gather_items 發進背包
+  grant_count:   'INTEGER NOT NULL DEFAULT 1'
+});
+ensureColumns('special_shops', {
+  allow_users: "TEXT NOT NULL DEFAULT ''",       // 逗號分隔的 user_id，空＝不限
+  allow_roles: "TEXT NOT NULL DEFAULT ''",       // 逗號分隔的 role_id，空＝不限
+  hidden:      'INTEGER NOT NULL DEFAULT 0'      // 1＝不在 /特殊商店 列出（只有被允許的人看得到）
+});
+
+// 股市強制清算：負股價的持股與超過上限的持股，寬限期過了就自動處理
+// （玩家發現「不賣就不用認賠」之後，負股價股票變成沒有成本的死當部位，整個回收機制形同虛設）
+ensureColumns('market_config', {
+  force_sell_enabled: 'INTEGER NOT NULL DEFAULT 1',
+  force_neg_days:     'INTEGER NOT NULL DEFAULT 7',   // 負股價持股寬限幾天
+  force_over_days:    'INTEGER NOT NULL DEFAULT 7',   // 超過持股上限寬限幾天
+  force_warn_days:    'INTEGER NOT NULL DEFAULT 2'    // 到期前幾天開始私訊警告
+});
+
 // 設施等級再加一條「產量加成」：升級除了縮短時間，也能直接多產（牧場多產蛋、魚缸多產星幣）
 ensureColumns('facility_defs',  { yield_pct: 'INTEGER NOT NULL DEFAULT 0' });
 ensureColumns('facility_owned', { yield_pct: 'INTEGER NOT NULL DEFAULT 0' });
