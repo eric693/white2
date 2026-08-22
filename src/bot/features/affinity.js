@@ -240,25 +240,46 @@ function pickPartner(gid, uid) {
   return weighted[weighted.length - 1].r;
 }
 
-// 同居能力池：[能力代碼, 顯示名, 基礎%]；skill='harvest' 是特殊能力，不是百分比加成
-const PARTNER_SKILLS = [
-  { skill: 'harvest', name: '🧺 幫忙收成', desc: '每天自動幫你把牧場產物收進背包' },
-  { buff_type: 'cook_perfect_pct', name: '👨‍🍳 廚藝指導', base: 4 },
-  { buff_type: 'cook_price_pct', name: '🍱 擺盤講究', base: 5 },
-  { buff_type: 'mine_rare_pct', name: '⛏️ 礦脈直覺', base: 4 },
-  { buff_type: 'mine_common_pct', name: '🪨 撿石頭高手', base: 8 },
-  { buff_type: 'fish_rare_pct', name: '🎣 看得懂潮汐', base: 4 },
-  { buff_type: 'mat_pct', name: '📦 收集癖', base: 6 },
-  { buff_type: 'sell_pct', name: '💰 會殺價', base: 4 },
-  { buff_type: 'speed_pct', name: '⏱️ 手腳很快', base: 5 },
-  { buff_type: 'luck_pct', name: '🍀 帶來好運', base: 4 },
-  { buff_type: 'steal_resist_pct', name: '🛡️ 睡得很淺', base: 8 },
-  { buff_type: 'affinity_pct', name: '☕ 會泡咖啡', base: 5 }
+// 同居能力池。預設這一份是「開箱即有」，管理員可以在後台勾選要開哪些、調整 % 與權重
+// （partner_skills 有資料時就完全以後台為準）。
+const DEFAULT_PARTNER_SKILLS = [
+  { skill: 'harvest', name: '🧺 幫忙收成', desc: '每天自動幫你把牧場產物收進背包', base: 0, weight: 8 },
+  { buff_type: 'cook_perfect_pct', name: '👨‍🍳 廚藝指導', base: 4, weight: 10 },
+  { buff_type: 'cook_price_pct', name: '🍱 擺盤講究', base: 5, weight: 10 },
+  { buff_type: 'mine_rare_pct', name: '⛏️ 礦脈直覺', base: 4, weight: 10 },
+  { buff_type: 'mine_common_pct', name: '🪨 撿石頭高手', base: 8, weight: 10 },
+  { buff_type: 'fish_rare_pct', name: '🎣 看得懂潮汐', base: 4, weight: 10 },
+  { buff_type: 'mat_pct', name: '📦 收集癖', base: 6, weight: 10 },
+  { buff_type: 'sell_pct', name: '💰 會殺價', base: 4, weight: 10 },
+  { buff_type: 'speed_pct', name: '⏱️ 手腳很快', base: 5, weight: 10 },
+  { buff_type: 'luck_pct', name: '🍀 帶來好運', base: 4, weight: 10 },
+  { buff_type: 'steal_resist_pct', name: '🛡️ 睡得很淺', base: 8, weight: 10 },
+  { buff_type: 'affinity_pct', name: '☕ 會泡咖啡', base: 5, weight: 10 }
 ];
 
-/** 隨機決定同居角色的能力：好感度階級越高，加成越強（每階 +10%） */
-function rollPartnerSkill(level) {
-  const pick = PARTNER_SKILLS[Math.floor(Math.random() * PARTNER_SKILLS.length)];
+/** 目前啟用的能力池：後台有設就以後台為準，沒設就用預設 */
+function partnerSkillPool(gid) {
+  const rows = db.prepare('SELECT * FROM partner_skills WHERE guild_id=? AND enabled=1 ORDER BY sort, id').all(gid);
+  if (rows.length) {
+    return rows.map(r => ({ skill: r.skill || '', buff_type: r.buff_type || '', name: r.name, base: r.base_pct, weight: Math.max(1, r.weight) }));
+  }
+  return DEFAULT_PARTNER_SKILLS.map(x => ({ ...x, weight: x.weight || 10 }));
+}
+
+/** 隨機決定同居角色的能力：好感度階級越高，加成越強（每階 +10%）。pick 有指定就用指定的。 */
+function rollPartnerSkill(level, gid, forceId = 0) {
+  const pool = partnerSkillPool(gid);
+  let pick;
+  if (forceId) {
+    const row = db.prepare('SELECT * FROM partner_skills WHERE id=? AND guild_id=?').get(forceId, gid);
+    if (row) pick = { skill: row.skill || '', buff_type: row.buff_type || '', name: row.name, base: row.base_pct };
+  }
+  if (!pick) {
+    const total = pool.reduce((a, x) => a + x.weight, 0);
+    let n = Math.random() * total;
+    for (const x of pool) { n -= x.weight; if (n <= 0) { pick = x; break; } }
+    pick = pick || pool[pool.length - 1];
+  }
   if (pick.skill) return { skill: pick.skill, buff_type: '', buff_pct: 0, name: pick.name, desc: pick.desc };
   const pct = Math.max(1, Math.round(pick.base * (1 + Math.max(0, level) * 0.1)));
   return { skill: '', buff_type: pick.buff_type, buff_pct: pct, name: pick.name };
@@ -266,8 +287,8 @@ function rollPartnerSkill(level) {
 const partnerSkillText = (p) => {
   if (p.skill === 'harvest') return '🧺 幫忙收成（每天自動收牧場產物）';
   if (p.buff_type && p.buff_pct) {
-    const def = PARTNER_SKILLS.find(x => x.buff_type === p.buff_type);
-    return `${def ? def.name : p.buff_type} ＋${p.buff_pct}%`;
+    const { BUFF_TYPES } = require('../../util/buffs');
+    return `${BUFF_TYPES[p.buff_type] || p.buff_type} ＋${p.buff_pct}%`;
   }
   return '—';
 };
@@ -299,7 +320,7 @@ function moveIn(gid, uid, uname, roleId = 0) {
   }
   // 搬進來的角色會帶一個「隨機能力」：好感度越高給得越強。
   // 有些會幫忙收成（harvest），有些是廚藝／礦石之類的加成 —— 這樣同居才有功能性，不只是繳稅。
-  const skillRoll = rollPartnerSkill(pick.level);
+  const skillRoll = rollPartnerSkill(pick.level, gid);
   db.prepare('INSERT OR IGNORE INTO home_partners (guild_id,user_id,role_id,buff_type,buff_pct,skill) VALUES (?,?,?,?,?,?)')
     .run(gid, uid, pick.role_id, skillRoll.buff_type, skillRoll.buff_pct, skillRoll.skill);
   const role = roleOf(gid, pick.role_id);
@@ -385,6 +406,7 @@ function lovePanel(gid, uid, uname) {
     embeds: [embed],
     components: [NAV('love'), new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId('strollpanel').setLabel('🛍️ 逛街（隨機遇到角色）').setStyle(ButtonStyle.Success),
+      new ButtonBuilder().setCustomId('giftpanel').setLabel('🎁 送禮').setStyle(ButtonStyle.Success),
       new ButtonBuilder().setCustomId('partnerpanel').setLabel('💞 同居').setStyle(ButtonStyle.Primary))]
   };
 }
@@ -489,6 +511,39 @@ function strollPanel(gid, uid, uname) {
   };
 }
 
+
+/** 送禮的物品選單（/送禮 與面板的 🎁 送禮按鈕共用） */
+function giftMenu(gid, uid, uname, rid) {
+  const role = roleOf(gid, rid);
+  if (!role) return { error: '找不到這位角色。' };
+  const items = db.prepare(
+    `SELECT v.item_id, v.count, it.name, it.emoji, it.price FROM gather_inventory v JOIN gather_items it ON it.id=v.item_id
+      WHERE v.guild_id=? AND v.user_id=? AND v.count>0 ORDER BY it.price DESC LIMIT 20`).all(gid, uid);
+  const dishes = db.prepare(
+    `SELECT c.recipe_id, c.quality, c.count, r.name, r.emoji FROM cook_inventory c JOIN cook_recipes r ON r.id=c.recipe_id
+      WHERE c.guild_id=? AND c.user_id=? AND c.count>0 ORDER BY c.quality DESC LIMIT 5`).all(gid, uid);
+  if (!items.length && !dishes.length) return { error: '你的背包是空的，先去採集、種田或做點料理再來送禮。' };
+
+  const opts = [
+    ...dishes.map(d => ({
+      label: `${QUALITY[d.quality].emoji}${d.emoji || ''}${d.name}`.slice(0, 100),
+      description: `料理（品質越高好感越多）　持有 ${d.count}`.slice(0, 100),
+      value: `dish:${d.recipe_id}:${d.quality}`
+    })),
+    ...items.map(it => ({
+      label: `${it.emoji || ''}${it.name}`.slice(0, 100),
+      description: `持有 ${it.count}　價值 ${it.price}`.slice(0, 100),
+      value: `item:${it.item_id}:0`
+    }))
+  ].slice(0, 25);
+
+  return {
+    embeds: [roleCard(gid, uid, role, `要送什麼給 **${role.name}**？\n每個角色喜好不同，送對東西好感加得多。`)],
+    components: [new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder().setCustomId(`giftpick:${rid}`).setPlaceholder('選一樣禮物').addOptions(opts))]
+  };
+}
+
 /** 名字搜尋：這就是「上百隻角色可以挑名字邀請」的實作 */
 function searchRoles(gid, q) {
   const kw = String(q || '').trim();
@@ -545,6 +600,38 @@ function init(client) {
             ...eph
           }).catch(() => {});
         }
+        // 送禮按鈕：兩百多位角色沒辦法全塞進下拉，所以先列「你認識的」讓他挑，
+        // 想送沒互動過的角色還是可以用 /送禮 打名字搜尋。
+        if (i.isButton() && (i.customId === 'giftpanel' || i.customId === 'adv:gift')) {
+          seedAffinity(gid);
+          const known = db.prepare(
+            `SELECT a.role_id, a.points, a.level, r.name FROM affinity a JOIN wheel_roles r ON r.id=a.role_id
+              WHERE a.guild_id=? AND a.user_id=? AND r.enabled=1 ORDER BY a.points DESC LIMIT 25`).all(gid, uid);
+          if (!known.length) {
+            return i.reply({
+              content: '你還沒有跟任何角色互動過。\n先去 🛍️ **逛街**隨機遇幾位，或用 `/送禮 角色:名字` 直接指定（打幾個字就會跳候選）。',
+              ...eph
+            }).catch(() => {});
+          }
+          return i.reply({
+            content: '要送禮給誰？（只列你互動過的角色；想送別人用 `/送禮` 打名字搜尋）',
+            components: [new ActionRowBuilder().addComponents(
+              new StringSelectMenuBuilder().setCustomId('giftwho').setPlaceholder('選一位角色')
+                .addOptions(known.map(k => ({
+                  label: k.name.slice(0, 100),
+                  description: `${levelName(gid, k.level)}（Lv.${k.level}）　好感 ${k.points.toLocaleString('en-US')}`.slice(0, 100),
+                  value: String(k.role_id)
+                }))))],
+            ...eph
+          }).catch(() => {});
+        }
+        if (i.isStringSelectMenu() && i.customId === 'giftwho') {
+          const rid = parseInt(i.values[0], 10);
+          const out = giftMenu(gid, uid, uname, rid);
+          if (out.error) return i.update({ content: out.error, components: [], embeds: [] }).catch(() => {});
+          return i.update({ ...out, embeds: out.embeds || [] }).catch(() => {});
+        }
+
         // 同居：面板／搬進來／搬走
         if (i.isButton() && (i.customId === 'partnerpanel' || i.customId === 'adv:partner')) {
           seedAffinity(gid);
@@ -618,35 +705,10 @@ function init(client) {
         }).catch(() => {});
       }
 
-      // 送禮：列出背包物品與做好的料理讓玩家挑
-      const items = db.prepare(
-        `SELECT v.item_id, v.count, it.name, it.emoji, it.price FROM gather_inventory v JOIN gather_items it ON it.id=v.item_id
-          WHERE v.guild_id=? AND v.user_id=? AND v.count>0 ORDER BY it.price DESC LIMIT 20`).all(gid, uid);
-      const dishes = db.prepare(
-        `SELECT c.recipe_id, c.quality, c.count, r.name, r.emoji FROM cook_inventory c JOIN cook_recipes r ON r.id=c.recipe_id
-          WHERE c.guild_id=? AND c.user_id=? AND c.count>0 ORDER BY c.quality DESC LIMIT 5`).all(gid, uid);
-      if (!items.length && !dishes.length)
-        return i.reply({ content: '你的背包是空的，先去採集、種田或做點料理再來送禮。', ...eph }).catch(() => {});
-
-      const opts = [
-        ...dishes.map(d => ({
-          label: `${QUALITY[d.quality].emoji}${d.emoji || ''}${d.name}`.slice(0, 100),
-          description: `料理（品質越高好感越多）　持有 ${d.count}`.slice(0, 100),
-          value: `dish:${d.recipe_id}:${d.quality}`
-        })),
-        ...items.map(it => ({
-          label: `${it.emoji || ''}${it.name}`.slice(0, 100),
-          description: `持有 ${it.count}　價值 ${it.price}`.slice(0, 100),
-          value: `item:${it.item_id}:0`
-        }))
-      ].slice(0, 25);
-
-      return i.reply({
-        embeds: [roleCard(gid, uid, role, `要送什麼給 **${role.name}**？\n每個角色喜好不同，送對東西好感加得多。`)],
-        components: [new ActionRowBuilder().addComponents(
-          new StringSelectMenuBuilder().setCustomId(`giftpick:${rid}`).setPlaceholder('選一樣禮物').addOptions(opts))],
-        ...eph
-      }).catch(() => {});
+      // 送禮：列出背包物品與做好的料理讓玩家挑（跟面板的 🎁 送禮按鈕同一支）
+      const menu = giftMenu(gid, uid, uname, rid);
+      if (menu.error) return i.reply({ content: menu.error, ...eph }).catch(() => {});
+      return i.reply({ ...menu, ...eph }).catch(() => {});
     } catch (e) {
       logError(i.guildId, '好感度指令失敗：', e.message);
       const msg = { content: '執行失敗，管理員可到後台的系統錯誤紀錄查看原因。', flags: MessageFlags.Ephemeral };
@@ -656,4 +718,4 @@ function init(client) {
   console.log('  ↳ 好感度模組已載入（接轉盤角色／名字搜尋邀請）');
 }
 
-module.exports = { init, seedAffinity, seedGiftPrefs, lovePanel, strollPanel, stroll, strollEmbed, partnerPanel, partnersOf, moveIn, moveOut, partnerSkillText, searchRoles };
+module.exports = { init, seedAffinity, seedGiftPrefs, lovePanel, strollPanel, stroll, strollEmbed, partnerPanel, partnersOf, moveIn, moveOut, partnerSkillText, partnerSkillPool, DEFAULT_PARTNER_SKILLS, searchRoles };

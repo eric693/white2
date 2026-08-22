@@ -17,7 +17,9 @@ const TABS = {
   gather: {
     label: '冒險', emoji: '🎣', color: 0x3498db,
     title: '🎣 出門冒險',
-    desc: '出門找素材。每個動作各有冷卻，工具會耗損，記得 `/修理`。\n撿到的東西會自動記進 **📖 圖鑑**，賣掉也不會消失。',
+    desc: '出門找素材。每個動作各有冷卻，工具會耗損，記得 `/修理`。\n'
+      + '每次採集會扣 **⚡ 體力**（跟逛街共用，每天午夜回滿）—— 剩多少按 📊 查看狀態就看得到。\n'
+      + '撿到的東西會自動記進 **📖 圖鑑**，賣掉也不會消失。',
     rows: [
       [['adv:fish', '釣魚', '🎣'], ['adv:mine', '挖礦', '⛏️'], ['adv:wood', '伐木', '🪓'], ['adv:forage', '採集', '🧺'], ['adv:hunt', '狩獵', '🏹']],
       [['adv:bag', '背包', '🎒'], ['adv:status', '查看狀態', '📊'], ['adv:map', '地圖', '🗺️'], ['adv:quest', '任務', '📜', ButtonStyle.Primary]]
@@ -71,7 +73,7 @@ const TABS = {
     rows: [
       [['adv:sellpick', '賣出', '💰', ButtonStyle.Primary], ['adv:draw', '每日抽籤', '🎲', ButtonStyle.Primary], ['adv:trade', '交易', '🔄', ButtonStyle.Primary]],
       [['stk:market', '股市行情', '📈', ButtonStyle.Primary], ['stk:buymenu', '買股', '📥', ButtonStyle.Success], ['stk:sellmenu', '賣股', '📤', ButtonStyle.Danger], ['stk:mine', '我的持股', '📊'], ['stk:news', '財經新聞', '📰']],
-      [['adv:tax', '稅務', '🧾'], ['adv:charity', '基金會', '❤️'], ['adv:loan', '物資貸款', '🏦']]
+      [['adv:tax', '我的稅單', '🧾'], ['adv:charity', '基金會', '❤️'], ['adv:loan', '物資貸款', '🏦']]
     ]
   }
 };

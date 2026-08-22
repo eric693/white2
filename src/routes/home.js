@@ -145,6 +145,15 @@ const TABLES = {
       sort: int(b.sort, 0, 0), enabled: b.enabled ? 1 : 0
     })
   },
+  // 同居角色的能力池：勾選要開哪些、調 % 與被抽中的權重
+  'home-partner-skills': {
+    table: 'partner_skills', order: 'sort, id',
+    fields: (b) => ({
+      name: str(b.name), skill: b.skill === 'harvest' ? 'harvest' : '',
+      buff_type: buff(b.buff_type), base_pct: int(b.base_pct, 0, 0),
+      weight: int(b.weight, 10, 1), sort: int(b.sort, 0, 0), enabled: b.enabled ? 1 : 0
+    })
+  },
   'home-affinity-levels': {
     table: 'affinity_levels', order: 'level',
     fields: (b) => ({
@@ -189,6 +198,22 @@ for (const [path, def] of Object.entries(TABLES)) {
     res.json({ ok: true });
   });
 }
+
+// 把程式內建的預設能力池寫進資料庫（讓管理員可以在上面增刪改）
+router.post('/home-partner-skills/seed', (req, res) => {
+  const gid = req.guildId;
+  const { DEFAULT_PARTNER_SKILLS } = require('../bot/features/affinity');
+  const has = db.prepare('SELECT COUNT(*) n FROM partner_skills WHERE guild_id=?').get(gid).n;
+  if (has) return res.status(400).json({ error: '已經有能力設定了，請直接編輯（或先刪光再匯入）。' });
+  const ins = db.prepare(
+    'INSERT INTO partner_skills (guild_id,name,skill,buff_type,base_pct,weight,sort) VALUES (?,?,?,?,?,?,?)');
+  db.transaction(() => {
+    (DEFAULT_PARTNER_SKILLS || []).forEach((x, idx) =>
+      ins.run(gid, x.name, x.skill || '', x.buff_type || '', x.base || 0, x.weight || 10, idx));
+  })();
+  audit(req.user.name, '匯入同居能力預設池');
+  res.json({ ok: true, count: (DEFAULT_PARTNER_SKILLS || []).length });
+});
 
 // ---------- 逛街角色名單 ----------
 // 轉盤裡不是「角色」的項目（模擬器、活動介紹）或不想出場的作者，可以整批排除。

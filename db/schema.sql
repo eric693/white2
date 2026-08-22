@@ -1923,3 +1923,18 @@ CREATE TABLE IF NOT EXISTS player_limits (
   updated_at     TEXT NOT NULL DEFAULT (datetime('now','localtime')),
   PRIMARY KEY (guild_id, user_id)
 );
+
+-- 同居角色的能力池：管理員勾選哪些能力會被隨機抽到，也可以直接指定給某位角色。
+-- 空的時候用程式內建的預設池（開箱即用）。
+CREATE TABLE IF NOT EXISTS partner_skills (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id   TEXT NOT NULL DEFAULT '',
+  name       TEXT NOT NULL DEFAULT '',      -- 顯示名稱（例：👨‍🍳 廚藝指導）
+  skill      TEXT NOT NULL DEFAULT '',      -- harvest＝幫忙收成（特殊能力）
+  buff_type  TEXT NOT NULL DEFAULT '',      -- 一般加成用 BUFF_TYPES 的 key
+  base_pct   INTEGER NOT NULL DEFAULT 0,    -- 基礎 %（好感度每階再 +10%）
+  weight     INTEGER NOT NULL DEFAULT 10,   -- 被抽中的權重
+  enabled    INTEGER NOT NULL DEFAULT 1,
+  sort       INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_partner_skills ON partner_skills(guild_id, enabled);

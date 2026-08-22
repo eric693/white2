@@ -625,12 +625,35 @@ function init(client) {
       }
       return;
     }
-    if (!i.isButton() || i.customId !== 'adv:tax') return;
+    // 面板的 🧾 按鈕：玩家真正想看的是「我這期要繳多少」，而不是稅制說明。
+    // 所以預設開自己的稅單，稅制規則改成稅單下面的一顆按鈕。
+    if (!i.isButton() || (i.customId !== 'adv:tax' && i.customId !== 'taxrules')) return;
     try {
-      return await i.reply({ embeds: [infoEmbed(i.guildId, i.user.id, i.user.username)], components: arrearsRow(i.guildId, i.user.id), flags: MessageFlags.Ephemeral });
+      const gid = i.guildId, c = cfg(gid);
+      if (i.customId === 'taxrules') {
+        return await i.reply({ embeds: [infoEmbed(gid, i.user.id, i.user.username)], flags: MessageFlags.Ephemeral });
+      }
+      if (!c.enabled) return await i.reply({ content: '這個伺服器目前沒有開徵稅金。', flags: MessageFlags.Ephemeral });
+      if (isExempt(gid, i.user.id, i.member)) {
+        return await i.reply({ content: '✅ 你在免稅名單內，不會被課稅。', flags: MessageFlags.Ephemeral });
+      }
+      const a = assess(gid, i.user.id);
+      if (!a) return await i.reply({ content: '找不到錢包資料（先玩一下再來看稅單吧）。', flags: MessageFlags.Ephemeral });
+      const last = db.prepare('SELECT * FROM tax_records WHERE guild_id=? AND user_id=? ORDER BY id DESC LIMIT 1').get(gid, i.user.id);
+      const emb = billEmbed(gid, a, null)
+        .setTitle(`🧾 ${i.member?.displayName || i.user.username} 的稅單預估`)
+        .setFooter({
+          text: last
+            ? `上期（${last.period}）實繳 ${last.paid.toLocaleString('en-US')}　·　下次結算：${nextRunText(c)}`
+            : `下次結算：${nextRunText(c)}`
+        });
+      const rows = arrearsRow(gid, i.user.id);
+      const extra = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('taxrules').setLabel('📖 稅制說明').setStyle(ButtonStyle.Secondary));
+      return await i.reply({ embeds: [emb], components: [...rows, extra], flags: MessageFlags.Ephemeral });
     } catch (e) {
-      logError(i.guildId, '稅務面板失敗：', e && e.stack ? e.stack : e);
-      if (!i.replied && !i.deferred) i.reply({ content: '查詢稅務資訊時發生錯誤。', flags: MessageFlags.Ephemeral }).catch(() => {});
+      logError(i.guildId, '稅單面板失敗：', e && e.stack ? e.stack : e);
+      if (!i.replied && !i.deferred) i.reply({ content: '查詢稅單時發生錯誤。', flags: MessageFlags.Ephemeral }).catch(() => {});
     }
   });
 
@@ -675,7 +698,7 @@ function init(client) {
   }, { timezone: 'Asia/Taipei' });
 
   client._runTax = (gid, opts) => runGuild(client, gid, opts);
-  console.log('  ↳ 稅金模組已載入（農地稅／養殖稅／房屋稅／所得稅，每分鐘檢查結算時間；面板 🧾稅務）');
+  console.log('  ↳ 稅金模組已載入（農地稅／養殖稅／房屋稅／所得稅，每分鐘檢查結算時間；面板 🧾我的稅單）');
 }
 
 const DOW = ['日', '一', '二', '三', '四', '五', '六'];

@@ -14,7 +14,7 @@ App.page('home', {
     const TABS = [
       ['config', '⚙️ 總設定'], ['levels', '🏠 小屋階級'], ['furniture', '🛋️ 家具'],
       ['kitchen', '🍳 廚房與料理'], ['pets', '🐾 寵物'], ['ach', '🏅 成就'],
-      ['affinity', '💕 好感度'], ['stroll', '🛍️ 逛街角色'], ['players', '👥 玩家現況']
+      ['affinity', '💕 好感度'], ['partner', '💞 同居能力'], ['stroll', '🛍️ 逛街角色'], ['players', '👥 玩家現況']
     ];
     let tab = sessionStorage.getItem('w2_home_tab') || 'config';
     if (!TABS.some(t => t[0] === tab)) tab = 'config';
@@ -500,6 +500,60 @@ App.page('home', {
                   <button class="btn tiny danger" data-del="${r.id}">刪除</button></td></tr>`).join('')}
             </tbody></table></div>`;
         body.querySelector('#add').onclick = () => c.open();
+        bindRows(body, c, rows);
+        return;
+      }
+
+      if (tab === 'partner') {
+        const rows = await GET('/home-partner-skills');
+        const c = crud('home-partner-skills', '新增同居能力',
+          (r = {}) => `
+            <div class="form-row">
+              <div class="field"><label>顯示名稱</label><input name="name" value="${UI.esc(r.name || '')}" placeholder="👨‍🍳 廚藝指導"></div>
+              <div class="field"><label>被抽中的權重</label><input name="weight" type="number" min="1" value="${r.weight ?? 10}">
+                <div class="hint">越大越常抽到（其他都 10 的話，設 20 就是兩倍機率）。</div></div>
+            </div>
+            <div class="field"><label>特殊能力</label><select name="skill">
+              <option value="" ${r.skill !== 'harvest' ? 'selected' : ''}>— 一般加成（用下面的設定）—</option>
+              <option value="harvest" ${r.skill === 'harvest' ? 'selected' : ''}>🧺 幫忙收成（每天自動收牧場產物）</option>
+            </select></div>
+            <div class="form-row">
+              <div class="field"><label>加成種類</label>${buffSelect('buff_type', r.buff_type)}</div>
+              <div class="field"><label>基礎 %</label><input name="base_pct" type="number" min="0" value="${r.base_pct ?? 0}">
+                <div class="hint">實際給的 ＝ 基礎 % ×（1 ＋ 好感度階級 × 10%）。</div></div>
+              <div class="field"><label>排序</label><input name="sort" type="number" value="${r.sort ?? 0}"></div>
+            </div>
+            <div class="field">${H.toggle('enabled', r.id ? r.enabled : 1, '啟用（會被抽到）')}</div>`,
+          (back) => H.collect(back));
+
+        body.innerHTML = `
+          <div class="toolbar">
+            <button class="btn" id="add">＋ 新增能力</button>
+            ${rows.length ? '' : '<button class="btn secondary" id="seed">📥 匯入預設 12 種能力</button>'}
+            <div class="spacer" style="flex:1"></div><span class="hint">共 ${rows.length} 種</span>
+          </div>
+          <div class="hint" style="margin-bottom:10px">
+            角色搬進玩家家裡時，會從這裡<b>隨機</b>抽一個能力。不想出現的取消「啟用」就好；
+            清單是空的時候會用程式內建的預設池（按上面的按鈕可以匯入成可編輯的資料）。
+          </div>
+          <div class="table-wrap"><table class="list">
+            <thead><tr><th>能力</th><th>類型</th><th>基礎 %</th><th>權重</th><th>狀態</th><th></th></tr></thead>
+            <tbody>${rows.length ? rows.map(r => `<tr>
+              <td>${UI.esc(r.name)}</td>
+              <td>${r.skill === 'harvest' ? '🧺 幫忙收成' : UI.esc(buffLabel(r.buff_type))}</td>
+              <td>${r.skill === 'harvest' ? '—' : '+' + r.base_pct + '%'}</td>
+              <td>${r.weight}</td>
+              <td>${H.enabledTag(r.enabled)}</td>
+              <td><button class="btn tiny secondary" data-edit="${r.id}">編輯</button>
+                  <button class="btn tiny danger" data-del="${r.id}">刪除</button></td></tr>`).join('')
+        : '<tr><td colspan="6" class="hint">目前使用程式內建的預設池（廚藝指導、礦脈直覺、幫忙收成…共 12 種）。按上面的按鈕匯入就能編輯。</td></tr>'}
+            </tbody></table></div>`;
+        body.querySelector('#add').onclick = () => c.open();
+        const seedBtn = body.querySelector('#seed');
+        if (seedBtn) seedBtn.onclick = async () => {
+          const r = await POST('/home-partner-skills/seed', {});
+          UI.ok(`已匯入 ${r.count} 種`); draw();
+        };
         bindRows(body, c, rows);
         return;
       }
