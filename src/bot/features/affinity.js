@@ -215,26 +215,10 @@ function lovePanel(gid, uid, uname) {
 // 逛街改成消耗體力的隨機遇見：花 1 點體力出門，隨機碰到一位角色，
 // 他會講自己的台詞（後台每位角色可設三句，隨機挑一句），並自動加一點好感度。
 // 已經熟的角色權重會降低一點，讓沒見過的角色更容易冒出來 —— 這樣兩百多隻才真的都會出場。
-const staminaRow = (gid, uid) => {
-  const today = localToday();
-  let row = db.prepare('SELECT * FROM stroll_stamina WHERE guild_id=? AND user_id=?').get(gid, uid);
-  if (!row) {
-    db.prepare('INSERT INTO stroll_stamina (guild_id,user_id,day,used,met) VALUES (?,?,?,0,0)').run(gid, uid, today);
-    row = { guild_id: gid, user_id: uid, day: today, used: 0, met: 0 };
-  }
-  if (row.day !== today) {   // 跨日自動回滿
-    db.prepare('UPDATE stroll_stamina SET day=?, used=0, met=0 WHERE guild_id=? AND user_id=?').run(today, gid, uid);
-    row = { ...row, day: today, used: 0, met: 0 };
-  }
-  return row;
-};
-
-/** 今日體力上限：基礎值 ＋ 家具／寵物的「體力恢復」加成（終於讓 energy_pct 有實際用途） */
-function staminaMax(gid, uid) {
-  const c = hcfg(gid);
-  const base = Math.max(1, c.stroll_stamina || 10);
-  return base + Math.floor(base * buffPct(gid, uid, 'energy_pct') / 100);
-}
+// 逛街用的體力＝「每日採集點數」那一池（釣魚挖礦也在扣同一池）。
+// 這是刻意共用的：體力就是每天唯一的行動額度，玩家得自己決定要拿去挖礦還是去逛街。
+// 而且體力**不吃任何加成** —— 家具寵物再多也不會多給體力，只能去特殊商店花錢買。
+const { staminaState, bumpPoints } = require('./gather');
 
 /** 隨機挑一位角色：見過越多次的權重越低，讓沒遇過的優先出場 */
 function pickRole(gid, uid) {
@@ -264,11 +248,11 @@ const adLine = (r) => {
 function stroll(gid, uid, uname) {
   const c = hcfg(gid);
   if (!c.stroll_enabled) return { error: '現在沒有開放逛街。' };
-  const row = staminaRow(gid, uid);
-  const max = staminaMax(gid, uid);
+  const st = staminaState(gid, uid);
   const cost = Math.max(1, c.stroll_cost || 1);
-  if (row.used + cost > max) {
-    return { error: `體力不夠了（今天 ${row.used}/${max}）。明天就會回滿 —— 想要更多體力可以擺「體力恢復」的家具、養對應的寵物。` };
+  if (st.max <= 0) return { error: '這個伺服器沒有啟用每日體力，逛街暫時關閉（管理員可在釣魚挖礦設定「每日採集點數」）。' };
+  if (cost > st.left) {
+    return { error: `體力不夠了（今天剩 ${st.left}/${st.max} 點，逛一次要 ${cost} 點）。\n體力每天午夜回滿，急著用可以去 \`/特殊商店\` 買體力。` };
   }
   const role = pickRole(gid, uid);
   if (!role) return { error: '這個伺服器還沒有任何角色。' };
@@ -276,10 +260,8 @@ function stroll(gid, uid, uname) {
   const gain = Math.max(0, c.stroll_points || 3);
   const bonus = Math.floor(gain * buffPct(gid, uid, 'gift_pct') / 100);   // 送禮加成也吃在偶遇上
   const points = gain + bonus;
-  const today = localToday();
   db.transaction(() => {
-    db.prepare('UPDATE stroll_stamina SET used=used+?, met=met+1, day=? WHERE guild_id=? AND user_id=?')
-      .run(cost, today, gid, uid);
+    bumpPoints(gid, uid, cost);   // 扣的是共用的每日體力池
     db.prepare(`INSERT INTO affinity (guild_id,user_id,role_id,points,level) VALUES (?,?,?,?,0)
       ON CONFLICT(guild_id,user_id,role_id) DO UPDATE SET points = points + ?`).run(gid, uid, role.id, points, points);
   })();
@@ -287,8 +269,8 @@ function stroll(gid, uid, uname) {
   markSeen(gid, uid, 'role', role.name);
   bumpAch(gid, uid, 'stroll_count', 1);
 
-  const after = staminaRow(gid, uid);
-  return { role, points, lv, used: after.used, max, met: after.met, line: adLine(role) };
+  const after = staminaState(gid, uid);
+  return { role, points, lv, left: after.left, max: after.max, line: adLine(role) };
 }
 
 function strollEmbed(gid, uid, out) {
@@ -298,30 +280,29 @@ function strollEmbed(gid, uid, out) {
     .setDescription((out.line ? `💬 **「${out.line}」**\n\n` : '')
       + (out.role.intro ? `${String(out.role.intro).slice(0, 300)}\n\n` : '')
       + `好感度 **+${out.points}** → 目前 ${a.points.toLocaleString('en-US')} 點（${levelName(gid, a.level)}）`)
-    .setFooter({ text: `體力 ${out.used}/${out.max}｜今天遇到 ${out.met} 位｜想加深關係就用 /送禮` });
+    .setFooter({ text: `體力剩 ${out.left}/${out.max}｜想加深關係就用 /送禮` });
   if (out.role.image_url) e.setThumbnail(absUrl(out.role.image_url));
   return e;
 }
 
 /** 逛街面板：一顆按鈕連續逛，體力用完為止 */
 function strollPanel(gid, uid, uname) {
-  const row = staminaRow(gid, uid);
-  const max = staminaMax(gid, uid);
+  const st = staminaState(gid, uid);
   const total = db.prepare('SELECT COUNT(*) n FROM wheel_roles WHERE guild_id=? AND enabled=1').get(gid).n;
   const seen = db.prepare('SELECT COUNT(*) n FROM affinity WHERE guild_id=? AND user_id=? AND points>0').get(gid, uid).n;
   const e = new EmbedBuilder().setColor(0xeb459e).setTitle('🛍️ 逛街')
     .setDescription(`出門走走，**隨機**遇到街上的角色 —— 遇到誰不能挑，這就是逛街的意義。\n`
-      + `每次消耗 **${Math.max(1, hcfg(gid).stroll_cost || 1)}** 點體力，遇到就自動加好感度。`)
+      + `每次消耗 **${Math.max(1, hcfg(gid).stroll_cost || 1)}** 點體力，遇到就自動加好感度。\n`
+      + `體力跟釣魚挖礦**共用同一池**，用完就等明天（或去 \`/特殊商店\` 買）。`)
     .addFields(
-      { name: '今日體力', value: `${max - row.used} / ${max}`, inline: true },
-      { name: '今天遇到', value: `${row.met} 位`, inline: true },
+      { name: '今日體力', value: `${st.left} / ${st.max}${st.bonus ? `（含買來的 ${st.bonus}）` : ''}`, inline: true },
       { name: '你認識的角色', value: `${seen} / ${total} 位`, inline: true })
-    .setFooter({ text: '體力每天回滿；擺「體力恢復」家具或養對應寵物可以提高上限' });
+    .setFooter({ text: '體力跟釣魚挖礦共用同一池，每天午夜回滿；不受任何加成影響，不夠可以到 /特殊商店 買' });
   return {
     embeds: [e],
     components: [NAV('love'), new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId('strollgo').setLabel('🛍️ 出門逛街').setStyle(ButtonStyle.Success)
-        .setDisabled(row.used >= max))]
+        .setDisabled(st.left <= 0))]
   };
 }
 

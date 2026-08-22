@@ -156,6 +156,10 @@ App.page('special', {
         </select>
         <div class="hint">神秘商店賣素材就用這個：玩家兌換後東西直接進背包，馬上能拿去蓋房子／做家具。</div></div>
       <div class="field"><label>每份發幾個</label><input name="grant_count" type="number" min="1" value="${it.grant_count ?? 1}"></div>
+      <div class="field"><label>⚡ 每份補多少「今日體力」（0＝不是體力商品）</label>
+        <input name="grant_stamina" type="number" min="0" value="${it.grant_stamina ?? 0}">
+        <div class="hint">體力跟釣魚挖礦的每日採集點數<b>共用同一池</b>，買來的只有當天有效。
+          例：價格 10000、每份補 1 點 ＝ 一點體力一萬星幣。</div></div>
       <div class="field">${H.toggle('enabled', it.enabled ?? 1, '上架')}</div>`;
 
     const openItem = (it) => {

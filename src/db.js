@@ -236,6 +236,9 @@ ensureColumns('title_defs', {
   hint: "TEXT NOT NULL DEFAULT ''"          // 顯示給玩家的任務提示
 });
 
+// 買來的體力：跟每日採集點數共用同一池（daily_points ＋ bonus − used）
+ensureColumns('gather_points', { bonus: 'INTEGER NOT NULL DEFAULT 0' });
+
 // 角色廣告台詞：逛街遇到、抽到、來訪時角色會說的一句話（每位角色自己的口吻）
 ensureColumns('wheel_roles', {
   ad_line:  "TEXT NOT NULL DEFAULT ''",   // 主要台詞（打招呼／宣傳自己）
@@ -259,7 +262,8 @@ ensureColumns('tax_config', { land_tier_pct: 'INTEGER NOT NULL DEFAULT 20' });
 // 神秘商店：商品可以「直接發素材到背包」，商店本身可以限定只有某些帳號／身分組看得到
 ensureColumns('special_items', {
   grant_item_id: 'INTEGER NOT NULL DEFAULT 0',   // >0＝兌換後直接把這個 gather_items 發進背包
-  grant_count:   'INTEGER NOT NULL DEFAULT 1'
+  grant_count:   'INTEGER NOT NULL DEFAULT 1',
+  grant_stamina: 'INTEGER NOT NULL DEFAULT 0'    // >0＝兌換後直接加這麼多點「今日體力」
 });
 ensureColumns('special_shops', {
   allow_users: "TEXT NOT NULL DEFAULT ''",       // 逗號分隔的 user_id，空＝不限

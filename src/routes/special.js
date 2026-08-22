@@ -53,7 +53,8 @@ function itemFields(b) {
     sort: int(b.sort, 0), enabled: b.enabled ? 1 : 0, shop_id: int(b.shop_id, 0),
     per_user_limit: int(b.per_user_limit, 0, 0),
     // >0＝兌換後直接把這個素材發進背包（神秘商店賣素材用），不必管理員手動處理
-    grant_item_id: int(b.grant_item_id, 0, 0), grant_count: int(b.grant_count, 1, 1)
+    grant_item_id: int(b.grant_item_id, 0, 0), grant_count: int(b.grant_count, 1, 1),
+    grant_stamina: int(b.grant_stamina, 0, 0)
   };
 }
 
@@ -61,8 +62,8 @@ router.post('/special-items', (req, res) => {
   const b = req.body || {};
   if (!b.name) return res.status(400).json({ error: '請填寫獎勵名稱' });
   const r = db.prepare(
-    `INSERT INTO special_items (guild_id,name,emoji,price,channel_id,role_id,image_url,description,stock,sort,enabled,shop_id,per_user_limit,grant_item_id,grant_count)
-     VALUES (@guild_id,@name,@emoji,@price,@channel_id,@role_id,@image_url,@description,@stock,@sort,@enabled,@shop_id,@per_user_limit,@grant_item_id,@grant_count)`
+    `INSERT INTO special_items (guild_id,name,emoji,price,channel_id,role_id,image_url,description,stock,sort,enabled,shop_id,per_user_limit,grant_item_id,grant_count,grant_stamina)
+     VALUES (@guild_id,@name,@emoji,@price,@channel_id,@role_id,@image_url,@description,@stock,@sort,@enabled,@shop_id,@per_user_limit,@grant_item_id,@grant_count,@grant_stamina)`
   ).run({ ...itemFields(b), guild_id: req.guildId });
   audit(req.user.name, `新增特殊商品：${b.name}`);
   res.json({ id: r.lastInsertRowid });
@@ -72,7 +73,7 @@ router.put('/special-items/:id', (req, res) => {
   db.prepare(
     `UPDATE special_items SET name=@name, emoji=@emoji, price=@price, channel_id=@channel_id, role_id=@role_id,
        image_url=@image_url, description=@description, stock=@stock, sort=@sort, enabled=@enabled, shop_id=@shop_id,
-       per_user_limit=@per_user_limit, grant_item_id=@grant_item_id, grant_count=@grant_count
+       per_user_limit=@per_user_limit, grant_item_id=@grant_item_id, grant_count=@grant_count, grant_stamina=@grant_stamina
      WHERE id=@id AND guild_id=@guild_id`
   ).run({ ...itemFields(req.body || {}), id: req.params.id, guild_id: req.guildId });
   audit(req.user.name, `修改特殊商品 #${req.params.id}`);

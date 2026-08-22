@@ -485,11 +485,34 @@ function rollItem(gid, kind, luck, uid) {
 // gather_config.daily_points = 0 時不啟用，沿用舊的「地圖每日次數」。
 const pointsUsedToday = (gid, uid) =>
   (db.prepare('SELECT used FROM gather_points WHERE guild_id=? AND user_id=? AND day=?').get(gid, uid, today()) || {}).used || 0;
+// 買來的體力（特殊商店賣的那個）。當天有效，跟每日點數同一池。
+const pointsBonusToday = (gid, uid) =>
+  (db.prepare('SELECT bonus FROM gather_points WHERE guild_id=? AND user_id=? AND day=?').get(gid, uid, today()) || {}).bonus || 0;
 function bumpPoints(gid, uid, n) {
   db.prepare(
     `INSERT INTO gather_points (guild_id,user_id,day,used) VALUES (?,?,?,?)
      ON CONFLICT(guild_id,user_id,day) DO UPDATE SET used = used + ?`
   ).run(gid, uid, today(), n, n);
+}
+/** 加購體力：只加當天的額度 */
+function addPointsBonus(gid, uid, n) {
+  db.prepare(
+    `INSERT INTO gather_points (guild_id,user_id,day,used,bonus) VALUES (?,?,?,0,?)
+     ON CONFLICT(guild_id,user_id,day) DO UPDATE SET bonus = bonus + ?`
+  ).run(gid, uid, today(), n, n);
+}
+
+/**
+ * 今日體力（＝每日採集點數池）。
+ * 採集、挖礦、逛街…全部共用這一池，這是刻意的：體力就是每天唯一的行動額度，
+ * 而且**不吃任何加成** —— 家具寵物再多也不會讓你今天多逛幾條街，只能花錢買。
+ */
+function staminaState(gid, uid) {
+  const c = cfg(gid);
+  const base = Math.max(0, c.daily_points || 0);
+  const bonus = pointsBonusToday(gid, uid);
+  const used = pointsUsedToday(gid, uid);
+  return { base, bonus, used, max: base + bonus, left: Math.max(0, base + bonus - used) };
 }
 const mapCost = (map) => Math.max(1, (map && map.cost) || 1);
 
@@ -1003,12 +1026,13 @@ function init(client) {
         const cost = mapCost(map);
         if (pool > 0) {
           // 點數制：所有地圖共用一個每日點數池，高階地圖一次扣比較多點
-          const used = pointsUsedToday(gid, uid);
-          if (used + cost > pool) {
-            const left = Math.max(0, pool - used);
+          // （買來的體力也算在這一池裡，所以用 staminaState 而不是只看 used）
+          const st = staminaState(gid, uid);
+          if (cost > st.left) {
+            const left = st.left;
             return i.reply({
-              content: `今日採集點數不足：剩 **${left}／${pool}** 點，${map ? `${map.emoji || ''}${map.name}` : '這裡'}每次要 **${cost}** 點。\n` +
-                (left > 0 ? '可以用 `/地圖` 換去便宜一點的圖，或明天再來。' : '明天午夜（台灣時間）重置。'),
+              content: `今日體力不足：剩 **${left}／${staminaState(gid, uid).max}** 點，${map ? `${map.emoji || ''}${map.name}` : '這裡'}每次要 **${cost}** 點。\n` +
+                (left > 0 ? '可以用 `/地圖` 換去便宜一點的圖，或明天再來。' : '明天午夜（台灣時間）重置；急著用可以去 `/特殊商店` 買體力。'),
               flags: MessageFlags.Ephemeral
             });
           }
@@ -1629,4 +1653,4 @@ function init(client) {
   console.log('  ↳ 釣魚挖礦模組已載入（冷卻/稀有掉落/商店道具/圖鑑/經濟）');
 }
 
-module.exports = { init, wallet, addCoins, addToBag, seedGuild, seedMaterials, menuResult, safeMenu, RARITY, RARITY_LABEL };
+module.exports = { init, wallet, addCoins, addToBag, seedGuild, seedMaterials, staminaState, bumpPoints, addPointsBonus, menuResult, safeMenu, RARITY, RARITY_LABEL };

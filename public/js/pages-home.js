@@ -127,10 +127,13 @@ App.page('home', {
             <h3 style="margin-top:18px">🛍️ 逛街（隨機遇到角色）</h3>
             <div class="field">${H.toggle('stroll_enabled', c.stroll_enabled ?? 1, '開放逛街（玩家在好感度面板點「逛街」隨機遇到角色）')}</div>
             <div class="form-row">
-              <div class="field"><label>每日體力</label><input name="stroll_stamina" type="number" min="1" value="${c.stroll_stamina ?? 10}">
-                <div class="hint">每天回滿。家具／寵物的「體力恢復」加成會讓上限變多。</div></div>
-              <div class="field"><label>逛一次消耗</label><input name="stroll_cost" type="number" min="1" value="${c.stroll_cost ?? 1}"></div>
+              <div class="field"><label>逛一次消耗幾點體力</label><input name="stroll_cost" type="number" min="1" value="${c.stroll_cost ?? 1}"></div>
               <div class="field"><label>遇到就加的好感點數</label><input name="stroll_points" type="number" min="0" value="${c.stroll_points ?? 3}"></div>
+            </div>
+            <div class="hint" style="margin-bottom:8px">
+              體力＝「釣魚挖礦」頁的<b>每日採集點數</b>那一池（目前設定就是玩家每天的總行動額度），
+              釣魚、挖礦、逛街共用，而且<b>不受任何加成影響</b>。要讓玩家能多動，
+              就調高每日採集點數，或在特殊商店上架「體力」商品讓他們花錢買。
             </div>
             <div class="hint" style="margin-bottom:10px">
               遇到誰是隨機的（玩家不能挑）；沒遇過的角色權重比較高，兩百多位角色才會輪流出場。

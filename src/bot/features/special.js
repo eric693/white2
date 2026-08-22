@@ -185,6 +185,21 @@ async function doRedeem(client, gid, item, user, uname, qtyRaw = 1, member = nul
   });
   tx();
 
+  // 直接加體力：買體力就是這條路（跟每日採集點數同一池，當天有效）
+  if (item.grant_stamina > 0) {
+    const n = item.grant_stamina * qty;
+    require('./gather').addPointsBonus(gid, user.id, n);
+    db.prepare("UPDATE special_redeems SET status='done' WHERE id=?").run(redeemId);
+    const st = require('./gather').staminaState(gid, user.id);
+    return {
+      embed: new EmbedBuilder().setColor(brandColor()).setTitle('⚡ 體力補充完成')
+        .setDescription(`你用 ${money(gc, total)} 換到 **${n}** 點體力。\n`
+          + `今日體力：**${st.left} / ${st.max}** 點（買來的部分只有今天有效，明天午夜一起重置）。\n`
+          + `體力可以拿去釣魚挖礦，也可以在好感度面板 🛍️ 逛街遇角色。`)
+        .setFooter({ text: `餘額 ${(w.coins - total).toLocaleString('en-US')} ${gc.currency_name}｜兌換單 #${redeemId}` })
+    };
+  }
+
   // 直接發素材：grant_item_id 有設就把東西直接放進背包，不用等管理員手動處理。
   // 這是「神秘商店賣素材」的核心 —— 買完立刻能用，跟一般虛擬獎勵的流程分開。
   if (item.grant_item_id > 0) {
