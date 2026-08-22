@@ -377,7 +377,7 @@ App.page('home', {
               <div class="field"><label>能力分類</label><select name="category">
                 <option value="">— 不分類 —</option>
                 ${[['guard', '🛡️ 全防護'], ['material', '📦 素材加成（要指定素材）'], ['stock', '📈 股市加成'],
-                   ['sell', '💰 銷售加成'], ['rare', '✨ 稀有率提升'], ['speed', '⏱️ 生產加速'], ['resist', '🎲 反機率']]
+                   ['sell', '💰 銷售加成'], ['rare', '✨ 稀有率提升'], ['speed', '⏱️ 生產加速'], ['resist', '🎲 反機率'], ['affinity', '💕 好感度加成']]
                   .map(([k, v]) => `<option value="${k}" ${k === r.category ? 'selected' : ''}>${v}</option>`).join('')}
               </select></div>
               <div class="field"><label>滿親密度時的 %</label><input name="buff_pct" type="number" min="0" value="${r.buff_pct ?? 0}"></div>

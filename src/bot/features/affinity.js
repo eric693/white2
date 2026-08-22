@@ -111,7 +111,9 @@ function giftItem(gid, uid, uname, rid, itemId) {
   const weight = giftWeight(gid, rid, inv.name);
   // 好感＝物品價值開根號（避免高價物品直接爆表）× 喜好權重 × 送禮加成
   const base = Math.max(1, Math.round(Math.sqrt(inv.price) * 3));
-  const gain = Math.round(base * weight / 100 * (1 + buffPct(gid, uid, 'gift_pct') / 100));
+  // gift_pct＝送禮專屬加成；affinity_pct＝所有好感來源的通用加成（寵物／家具／成就都可能給）
+  const affBonus = buffPct(gid, uid, 'gift_pct') + buffPct(gid, uid, 'affinity_pct');
+  const gain = Math.round(base * weight / 100 * (1 + affBonus / 100));
 
   db.transaction(() => {
     db.prepare('UPDATE gather_inventory SET count = count - 1 WHERE guild_id=? AND user_id=? AND item_id=?').run(gid, uid, itemId);
@@ -140,7 +142,8 @@ function giftDish(gid, uid, uname, rid, recipeId, quality) {
   if (!row || row.count <= 0) return { error: '你沒有這份料理。' };
   const r = db.prepare('SELECT * FROM cook_recipes WHERE guild_id=? AND id=?').get(gid, recipeId);
   const weight = giftWeight(gid, rid, r.name);
-  const gain = Math.round(r.affinity_base * QUALITY[quality].aff * weight / 100 * (1 + buffPct(gid, uid, 'gift_pct') / 100));
+  const gain = Math.round(r.affinity_base * QUALITY[quality].aff * weight / 100
+    * (1 + (buffPct(gid, uid, 'gift_pct') + buffPct(gid, uid, 'affinity_pct')) / 100));
 
   db.transaction(() => {
     db.prepare('UPDATE cook_inventory SET count = count - 1 WHERE guild_id=? AND user_id=? AND recipe_id=? AND quality=?').run(gid, uid, recipeId, quality);
@@ -176,7 +179,7 @@ function inviteRole(gid, uid, uname, rid) {
   if (!ok) return { role, refused: true, chance };
 
   // 來訪本身也給好感（比送禮少，但穩定）
-  const gain = 20 + a.level * 5;
+  const gain = Math.round((20 + a.level * 5) * (1 + buffPct(gid, uid, 'affinity_pct') / 100));
   db.prepare('UPDATE affinity SET points = points + ? WHERE guild_id=? AND user_id=? AND role_id=?').run(gain, gid, uid, rid);
   const lv = recalcLevel(gid, uid, rid);
   markSeen(gid, uid, 'role', role.name);
@@ -250,7 +253,7 @@ const PARTNER_SKILLS = [
   { buff_type: 'speed_pct', name: '⏱️ 手腳很快', base: 5 },
   { buff_type: 'luck_pct', name: '🍀 帶來好運', base: 4 },
   { buff_type: 'steal_resist_pct', name: '🛡️ 睡得很淺', base: 8 },
-  { buff_type: 'energy_pct', name: '☕ 會泡咖啡', base: 5 }
+  { buff_type: 'affinity_pct', name: '☕ 會泡咖啡', base: 5 }
 ];
 
 /** 隨機決定同居角色的能力：好感度階級越高，加成越強（每階 +10%） */
@@ -438,7 +441,7 @@ function stroll(gid, uid, uname) {
   if (!role) return { error: '這個伺服器還沒有任何角色。' };
 
   const gain = Math.max(0, c.stroll_points || 3);
-  const bonus = Math.floor(gain * buffPct(gid, uid, 'gift_pct') / 100);   // 送禮加成也吃在偶遇上
+  const bonus = Math.floor(gain * (buffPct(gid, uid, 'gift_pct') + buffPct(gid, uid, 'affinity_pct')) / 100);
   const points = gain + bonus;
   db.transaction(() => {
     bumpPoints(gid, uid, cost);   // 扣的是共用的每日體力池

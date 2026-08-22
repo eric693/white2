@@ -108,7 +108,7 @@ const TABLES = {
       min_level: int(b.min_level, 1, 1), price: int(b.price, 0, 0), materials: mats(b.materials),
       skill_name: str(b.skill_name), buff_type: buff(b.buff_type), buff_pct: int(b.buff_pct, 0, 0),
       // 能力分類；material 類要指定是哪一種素材（碎石＋X%），不能只寫「素材提升」
-      category: ['guard', 'material', 'stock', 'sell', 'rare', 'speed', 'resist'].includes(b.category) ? b.category : '',
+      category: ['guard', 'material', 'stock', 'sell', 'rare', 'speed', 'resist', 'affinity'].includes(b.category) ? b.category : '',
       target_item: str(b.target_item),
       feed_hours: int(b.feed_hours, 24, 1), description: str(b.description),
       sort: int(b.sort, 0, 0), enabled: b.enabled ? 1 : 0

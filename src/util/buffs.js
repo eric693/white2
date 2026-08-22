@@ -25,11 +25,12 @@ const BUFF_TYPES = {
   ranch_resist_pct:'牧場防護',      // 只擋 /偷（取代看門動物佔格子）
   aqua_resist_pct: '魚缸防護',      // 只擋 /偷魚
   guard_bite_pct:  '反擊機率',      // 被偷時反咬小偷，讓他掉星幣
-  energy_pct:      '體力恢復',
+  affinity_pct:    '角色好感度',    // 送禮／逛街／來訪拿到的好感點數加成（原本的「體力恢復」拿掉了：
+                                    // 體力是每天固定的行動額度，能被加成就失去意義）
   luck_pct:        '幸運',          // 抽籤／轉蛋／稀有掉落的通用運氣
   quest_pct:       '任務獎勵',
   steal_pct:       '偷竊成功率',
-  xp_pct:          '經驗值'
+  rest_pct:        '休息效率'       // 保留給之後的體力以外用途；目前不建議使用
 };
 
 const hcfg = (gid) => guildConfig('home_config', gid);
