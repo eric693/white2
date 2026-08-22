@@ -165,7 +165,7 @@ App.page('welcome', {
         <div class="field"><label>發送頻道</label>${H.chanSelect('join_channel', c.join_channel)}</div>
         <div class="field"><label>歡迎訊息</label><textarea name="join_message" rows="6">${UI.esc(c.join_message)}</textarea>
           ${H.mentionPicker('join_message')}
-          <div class="hint">可用變數：<code>{user}</code> 標記本人、<code>{username}</code> 名稱、<code>{server}</code> 伺服器名、<code>{count}</code> 成員數。
+          <div class="hint">可用變數：<code>{user}</code> 標記本人、<code>{name}</code> <b>暱稱（帳號名）</b>、<code>{nickname}</code> 伺服器暱稱、<code>{username}</code> 帳號名、<code>{id}</code> 使用者 ID、<code>{server}</code> 伺服器名、<code>{count}</code> 成員數。。
             用上方下拉可插入頻道連結與身分組標記。</div></div>
         <div class="field"><label>標題（可空）</label><input name="join_title" value="${UI.esc(c.join_title || '')}">
           ${H.emojiInsert('join_title')}</div>
@@ -188,7 +188,7 @@ App.page('welcome', {
         <div class="field"><label>卡圖背景（建議 1000×400，留空用漸層底）</label>${H.uploadField('card_bg', c.card_bg || '', { label: '背景圖' })}
           ${H.cropButton('card_bg', 2.5, '裁切背景範圍（選要露出哪一塊）')}</div>
         <div class="field"><label>卡圖主標題</label><input name="card_title" value="${UI.esc(c.card_title || '')}">
-          <div class="hint">可用 <code>{username}</code>、<code>{server}</code>、<code>{count}</code></div></div>
+          <div class="hint">可用 <code>{name}</code>（暱稱＋帳號名，最好認）、<code>{nickname}</code>、<code>{username}</code>、<code>{id}</code>、<code>{server}</code>、<code>{count}</code></div></div>
         <div class="field"><label>卡圖副標題</label><input name="card_sub" value="${UI.esc(c.card_sub || '')}">
           <div class="hint"><code>{count}</code> 會帶入目前成員數，做成「Member #338」的效果</div></div>
         <div class="field"><label>背景暗化程度（0～0.9，讓文字看得清楚）</label>
@@ -201,7 +201,7 @@ App.page('welcome', {
         <div class="field"><label>通知頻道</label>${H.chanSelect('leave_channel', c.leave_channel)}</div>
         <div class="field"><label>離開訊息</label><textarea name="leave_message">${UI.esc(c.leave_message)}</textarea>
           ${H.mentionPicker('leave_message')}
-          <div class="hint">可用 <code>{username}</code>、<code>{count}</code>（目前成員數）；用上方下拉可插入頻道連結與身分組標記。</div></div>
+          <div class="hint">可用 <code>{name}</code>（暱稱＋帳號名，最好認）、<code>{nickname}</code>、<code>{username}</code>、<code>{id}</code>、<code>{count}</code>（目前成員數）；用上方下拉可插入頻道連結與身分組標記。</div></div>
         <div class="field"><label>伺服器貼圖（最多 3 張，可不選）</label>${H.stickerField('leave_stickers', c.leave_stickers)}</div>
         <div class="field">${H.toggle('leave_use_embed', c.leave_use_embed ?? 1, '以 Embed 樣式發送（取消則發純文字，左邊那條顏色框會消失）')}</div>
         <div class="field">${H.toggle('leave_card_enabled', c.leave_card_enabled, '產生離群卡圖（背景＋玩家頭像＋文字）')}</div>

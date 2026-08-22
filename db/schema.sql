@@ -1892,3 +1892,13 @@ CREATE TABLE IF NOT EXISTS stock_violations (
   warned_ms  INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (guild_id, user_id, kind, symbol_id)
 );
+
+-- 逛街體力：每天一池，逛街遇到角色要花體力（家具的「體力恢復」加成會讓上限變多）
+CREATE TABLE IF NOT EXISTS stroll_stamina (
+  guild_id TEXT NOT NULL DEFAULT '',
+  user_id  TEXT NOT NULL,
+  day      TEXT NOT NULL DEFAULT '',
+  used     INTEGER NOT NULL DEFAULT 0,
+  met      INTEGER NOT NULL DEFAULT 0,   -- 今天遇到幾位角色（顯示用）
+  PRIMARY KEY (guild_id, user_id)
+);

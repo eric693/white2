@@ -32,6 +32,7 @@ const METRICS = {
   feed_count:    { name: '餵食寵物', unit: '次' },
   quest_done:    { name: '完成任務', unit: '個' },
   robbed_count:  { name: '被偷次數（受害者）', unit: '次' },
+  stroll_count:  { name: '逛街次數', unit: '次' },
   fish_caught:   { name: '養進魚缸的魚', unit: '隻' },
 
   // ---- 衍生型：現算現有的資料 ----

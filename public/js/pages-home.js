@@ -124,6 +124,24 @@ App.page('home', {
               實際領到 ＝ 基礎 ＋ 連續天數×加碼（封頂） ＋ 基礎×房屋階級×每階%；整週全簽再加獎勵。
               斷一天連續就從頭算。
             </div>
+            <h3 style="margin-top:18px">🛍️ 逛街（隨機遇到角色）</h3>
+            <div class="field">${H.toggle('stroll_enabled', c.stroll_enabled ?? 1, '開放逛街（玩家在好感度面板點「逛街」隨機遇到角色）')}</div>
+            <div class="form-row">
+              <div class="field"><label>每日體力</label><input name="stroll_stamina" type="number" min="1" value="${c.stroll_stamina ?? 10}">
+                <div class="hint">每天回滿。家具／寵物的「體力恢復」加成會讓上限變多。</div></div>
+              <div class="field"><label>逛一次消耗</label><input name="stroll_cost" type="number" min="1" value="${c.stroll_cost ?? 1}"></div>
+              <div class="field"><label>遇到就加的好感點數</label><input name="stroll_points" type="number" min="0" value="${c.stroll_points ?? 3}"></div>
+            </div>
+            <div class="hint" style="margin-bottom:10px">
+              遇到誰是隨機的（玩家不能挑）；沒遇過的角色權重比較高，兩百多位角色才會輪流出場。
+              角色會講的台詞在「角色轉盤」那一頁每位角色各自設定。
+            </div>
+
+            <h3 style="margin-top:18px">💸 用金幣代替材料</h3>
+            <div class="field">${H.toggle('buy_mats_enabled', c.buy_mats_enabled ?? 1, '允許用金幣硬升家園／廚房（材料折現）')}</div>
+            <div class="field"><label>材料折現倍率 %（5000＝市價的 50 倍）</label><input name="buy_mats_mult" type="number" min="100" value="${c.buy_mats_mult ?? 5000}">
+              <div class="hint">刻意設成天價：這是給錢多到沒地方花的人用的出海口，自己去挖永遠比較划算。</div></div>
+
             <button class="btn" id="save">儲存設定</button>
           </div>`;
         body.querySelector('#save').onclick = async () => {

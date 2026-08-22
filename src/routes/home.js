@@ -44,7 +44,10 @@ router.put('/home-config', (req, res) => {
     `UPDATE home_config SET enabled=@enabled, title_slots=@title_slots, visit_enabled=@visit_enabled,
        gift_daily_limit=@gift_daily_limit, visit_daily_limit=@visit_daily_limit, buff_cap_pct=@buff_cap_pct,
        checkin_enabled=@checkin_enabled, checkin_base=@checkin_base, checkin_streak=@checkin_streak,
-       checkin_max=@checkin_max, checkin_week=@checkin_week, checkin_home_pct=@checkin_home_pct
+       checkin_max=@checkin_max, checkin_week=@checkin_week, checkin_home_pct=@checkin_home_pct,
+       buy_mats_enabled=@buy_mats_enabled, buy_mats_mult=@buy_mats_mult,
+       stroll_enabled=@stroll_enabled, stroll_stamina=@stroll_stamina, stroll_cost=@stroll_cost,
+       stroll_points=@stroll_points
      WHERE guild_id=@guild_id`
   ).run({
     enabled: b.enabled ? 1 : 0,
@@ -59,6 +62,12 @@ router.put('/home-config', (req, res) => {
     checkin_max: int(b.checkin_max, 7, 1),
     checkin_week: int(b.checkin_week, 3000, 0),
     checkin_home_pct: int(b.checkin_home_pct, 10, 0),
+    buy_mats_enabled: b.buy_mats_enabled ? 1 : 0,
+    buy_mats_mult: int(b.buy_mats_mult, 5000, 100),
+    stroll_enabled: b.stroll_enabled ? 1 : 0,
+    stroll_stamina: int(b.stroll_stamina, 10, 1),
+    stroll_cost: int(b.stroll_cost, 1, 1),
+    stroll_points: int(b.stroll_points, 3, 0),
     guild_id: req.guildId
   });
   audit(req.user.name, '更新家園設定');

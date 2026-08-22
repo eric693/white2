@@ -248,6 +248,56 @@ const PLAYER_TABLES = [
   'crop_plots', 'crop_unlocks', 'special_redeems', 'facility_owned',
   'aquarium_slots', 'aquarium_steal'
 ];
+// 分區重置：管理員勾選要清哪幾塊（整個系統重來 vs 只把股市砍掉重練，需求完全不同）
+const RESET_GROUPS = {
+  wallet:    { label: '錢包與轉帳', tables: ['econ_wallets', 'econ_transfers'] },
+  bag:       { label: '背包與工具', tables: ['gather_inventory', 'gather_user_tools', 'gather_cooldowns', 'gather_user_map', 'gather_points'] },
+  quest:     { label: '任務與抽籤', tables: ['quest_progress', 'lottery_draws', 'luck_buffs'] },
+  trade:     { label: '以物易物', tables: ['trades'] },
+  ranch:     { label: '牧場與孵化室', tables: ['ranch_slots', 'ranch_steal', 'ranch_incubator', 'ranch_unlocks'] },
+  crop:      { label: '農地與溫室', tables: ['crop_plots', 'crop_unlocks'] },
+  aquarium:  { label: '魚缸', tables: ['aquarium_slots', 'aquarium_steal'] },
+  facility:  { label: '設施等級', tables: ['facility_owned'] },
+  shop:      { label: '兌換紀錄', tables: ['special_redeems'] },
+  home:      { label: '家園／廚房／家具／寵物', tables: ['home_users', 'home_furniture_owned', 'pet_owned', 'cook_inventory', 'cook_queue', 'home_buffs', 'home_checkin'] },
+  ach:       { label: '成就與圖鑑', tables: ['title_owned', 'dex_seen', 'ach_stats'] },
+  affinity:  { label: '好感度與逛街體力', tables: ['affinity', 'stroll_stamina'] },
+  stock:     { label: '股票持股與成交', tables: ['stock_holdings', 'stock_trades', 'stock_user_state', 'stock_violations'] },
+  tax:       { label: '稅單與普發紀錄', tables: ['tax_records', 'tax_reliefs', 'tax_liquidations'] },
+  loan:      { label: '貸款', tables: ['loans', 'loan_collaterals'] },
+  charity:   { label: '捐款紀錄', tables: ['charity_donations'] },
+  auction:   { label: '拍賣出價紀錄', tables: ['auction_bids'] },
+  contest:   { label: '大賽分數', tables: ['contest_scores'] }
+};
+
+function wipeGroups(gid, groups, userId) {
+  const picked = (Array.isArray(groups) ? groups : []).filter(g => RESET_GROUPS[g]);
+  let cleared = 0;
+  const detail = {};
+  db.transaction(() => {
+    for (const g of picked) {
+      let n = 0;
+      for (const t of RESET_GROUPS[g].tables) {
+        try {
+          n += userId
+            ? db.prepare(`DELETE FROM ${t} WHERE guild_id=? AND user_id=?`).run(gid, userId).changes
+            : db.prepare(`DELETE FROM ${t} WHERE guild_id=?`).run(gid).changes;
+        } catch {
+          // 有些表的欄位不是 user_id（trades 用 from_id/to_id、auction_bids 沒有 guild 專屬清法）
+          try {
+            n += userId
+              ? db.prepare(`DELETE FROM ${t} WHERE guild_id=? AND (from_id=? OR to_id=?)`).run(gid, userId, userId).changes
+              : db.prepare(`DELETE FROM ${t} WHERE guild_id=?`).run(gid).changes;
+          } catch { /* 這張表沒有 guild_id 就跳過 */ }
+        }
+      }
+      detail[RESET_GROUPS[g].label] = n;
+      cleared += n;
+    }
+  })();
+  return { cleared, detail, groups: picked };
+}
+
 function wipePlayers(gid, userId) {
   let cleared = 0;
   const tx = db.transaction(() => {
@@ -269,7 +319,19 @@ function wipePlayers(gid, userId) {
   return cleared;
 }
 
+// 可勾選的重置項目清單（給前端畫勾選框）
+router.get('/gather-reset-groups', (req, res) => {
+  res.json(Object.entries(RESET_GROUPS).map(([key, g]) => ({ key, label: g.label, tables: g.tables.length })));
+});
+
 router.post('/gather-players/reset', (req, res) => {
+  const b = req.body || {};
+  // 有勾選就只清勾的；沒帶 groups＝維持舊行為（全部清空）
+  if (Array.isArray(b.groups) && b.groups.length) {
+    const r = wipeGroups(req.guildId, b.groups, b.user_id || null);
+    audit(req.user.name, `分區重置${b.user_id ? `（玩家 ${b.user_id}）` : ''}：${r.groups.join('、')}（清除 ${r.cleared} 筆）`, 'gather');
+    return res.json({ ok: true, cleared: r.cleared, detail: r.detail });
+  }
   const cleared = wipePlayers(req.guildId, null);
   audit(req.user.name, `清空全部玩家資料（清除 ${cleared} 筆）`, 'gather');
   res.json({ ok: true, cleared });

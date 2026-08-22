@@ -134,8 +134,13 @@ App.page('wheels', {
 
     const roleForm = (r = {}) => `
       <div class="field"><label>角色名稱</label><input name="name" value="${UI.esc(r.name || '')}"></div>
-      <div class="field"><label>廣告台詞</label><textarea name="intro">${UI.esc(r.intro || '')}</textarea>
+      <div class="field"><label>角色介紹（抽到／遇到時顯示）</label><textarea name="intro">${UI.esc(r.intro || '')}</textarea>
         ${H.emojiInsert('intro')}</div>
+      <div class="field"><label>💬 廣告台詞（玩家逛街遇到時角色會說的話）</label>
+        <input name="ad_line" value="${UI.esc(r.ad_line || '')}" placeholder="欸？你也來逛街喔，好巧。">
+        <input name="ad_line2" value="${UI.esc(r.ad_line2 || '')}" placeholder="第二句（可留空）" style="margin-top:6px">
+        <input name="ad_line3" value="${UI.esc(r.ad_line3 || '')}" placeholder="第三句（可留空）" style="margin-top:6px">
+        <div class="hint">填幾句就隨機講哪一句，角色才不會每次都同一句。全部留空＝只顯示介紹。</div></div>
       <div class="field"><label>作者</label><input name="author" value="${UI.esc(r.author || '')}" placeholder="角色作者名稱"></div>
       <div class="field"><label>角色標籤</label>${tagPicker('tags', r.tags)}</div>
       <div class="field"><label>角色圖片</label>${H.uploadField('image_url', r.image_url || '', { label: '角色圖' })}</div>

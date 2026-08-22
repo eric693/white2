@@ -33,7 +33,11 @@ function wheelFields(b) {
     no_repeat: b.no_repeat ? 1 : 0, exclude_chatted: b.exclude_chatted ? 1 : 0,
     card_enabled: b.card_enabled ? 1 : 0, card_bg: b.card_bg || '',
     card_sign: b.card_sign ? 1 : 0, card_date: b.card_date ? 1 : 0,
-    start_at: b.start_at || '', end_at: b.end_at || ''
+    start_at: b.start_at || '', end_at: b.end_at || '',
+    // 逛街／偶遇時角色會說的話：填幾句就隨機講哪一句（都留空＝不講話，只顯示介紹）
+    ad_line: String(b.ad_line || '').slice(0, 200),
+    ad_line2: String(b.ad_line2 || '').slice(0, 200),
+    ad_line3: String(b.ad_line3 || '').slice(0, 200)
   };
 }
 
@@ -56,7 +60,8 @@ router.put('/wheels/:id', (req, res) => {
     `UPDATE role_wheels SET name=@name, description=@description, image_url=@image_url, tags=@tags,
        enabled=@enabled, listed=@listed, daily_limit=@daily_limit, no_repeat=@no_repeat,
        exclude_chatted=@exclude_chatted, card_enabled=@card_enabled, card_bg=@card_bg, card_sign=@card_sign, card_date=@card_date,
-       start_at=@start_at, end_at=@end_at WHERE id=@id AND guild_id=@guild_id`
+       start_at=@start_at, end_at=@end_at, ad_line=@ad_line, ad_line2=@ad_line2, ad_line3=@ad_line3
+     WHERE id=@id AND guild_id=@guild_id`
   ).run({ ...wheelFields(req.body || {}), id: req.params.id, guild_id: req.guildId });
   audit(req.user.name, `修改轉盤 #${req.params.id}`);
   res.json({ ok: true });
@@ -87,7 +92,11 @@ function roleFields(b) {
     chat_link: b.chat_link || '', sort: parseInt(b.sort, 10) || 0,
     author: b.author || '', links: b.links || '[]', tags: csvField(b.tags),
     weight: Math.max(1, parseInt(b.weight, 10) || 1), enabled: b.enabled ? 1 : 0,
-    start_at: b.start_at || '', end_at: b.end_at || ''
+    start_at: b.start_at || '', end_at: b.end_at || '',
+    // 逛街／偶遇時角色會說的話：填幾句就隨機講哪一句（都留空＝不講話，只顯示介紹）
+    ad_line: String(b.ad_line || '').slice(0, 200),
+    ad_line2: String(b.ad_line2 || '').slice(0, 200),
+    ad_line3: String(b.ad_line3 || '').slice(0, 200)
   };
 }
 
@@ -97,9 +106,9 @@ router.post('/wheels/:id/roles', (req, res) => {
   if (!ownsWheel(req, res)) return;
   const info = db.prepare(
     `INSERT INTO wheel_roles (guild_id, wheel_id, name, image_url, intro, chat_link, sort, author, links,
-       tags, weight, enabled, start_at, end_at)
+       tags, weight, enabled, start_at, end_at, ad_line, ad_line2, ad_line3)
      VALUES (@guild_id,@wheel_id,@name,@image_url,@intro,@chat_link,@sort,@author,@links,
-       @tags,@weight,@enabled,@start_at,@end_at)`
+       @tags,@weight,@enabled,@start_at,@end_at,@ad_line,@ad_line2,@ad_line3)`
   ).run({ ...roleFields(b), wheel_id: req.params.id, guild_id: req.guildId });
   audit(req.user.name, `轉盤 #${req.params.id} 新增角色：${b.name}`);
   res.json({ id: info.lastInsertRowid });
@@ -109,7 +118,8 @@ router.put('/wheel-roles/:roleId', (req, res) => {
   db.prepare(
     `UPDATE wheel_roles SET name=@name, image_url=@image_url, intro=@intro, chat_link=@chat_link,
        sort=@sort, author=@author, links=@links, tags=@tags, weight=@weight, enabled=@enabled,
-       start_at=@start_at, end_at=@end_at WHERE id=@id AND guild_id=@guild_id`
+       start_at=@start_at, end_at=@end_at, ad_line=@ad_line, ad_line2=@ad_line2, ad_line3=@ad_line3
+     WHERE id=@id AND guild_id=@guild_id`
   ).run({ ...roleFields(req.body || {}), id: req.params.roleId, guild_id: req.guildId });
   audit(req.user.name, `修改轉盤角色 #${req.params.roleId}`);
   res.json({ ok: true });

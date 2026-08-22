@@ -201,7 +201,128 @@ function lovePanel(gid, uid, uname) {
     value: list.map(a => `**${a.name}**　${levelName(gid, a.level)}（Lv.${a.level}）　${a.points.toLocaleString('en-US')} 點${a.visits ? `　來訪 ${a.visits} 次` : ''}`).join('\n').slice(0, 1024)
   });
   else embed.addFields({ name: '你還沒有跟任何角色互動', value: '用 `/送禮 角色:名字` 開始 —— 打幾個字就會跳出候選名單。' });
-  return { embeds: [embed], components: [NAV('love')] };
+  return {
+    embeds: [embed],
+    components: [NAV('love'), new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('strollpanel').setLabel('🛍️ 逛街（隨機遇到角色）').setStyle(ButtonStyle.Success))]
+  };
+}
+
+
+// ================== 逛街：隨機遇到角色 ==================
+//
+// 你們有兩百多位角色，用「選單挑一位」永遠只會挑到那幾個熟面孔。
+// 逛街改成消耗體力的隨機遇見：花 1 點體力出門，隨機碰到一位角色，
+// 他會講自己的台詞（後台每位角色可設三句，隨機挑一句），並自動加一點好感度。
+// 已經熟的角色權重會降低一點，讓沒見過的角色更容易冒出來 —— 這樣兩百多隻才真的都會出場。
+const staminaRow = (gid, uid) => {
+  const today = localToday();
+  let row = db.prepare('SELECT * FROM stroll_stamina WHERE guild_id=? AND user_id=?').get(gid, uid);
+  if (!row) {
+    db.prepare('INSERT INTO stroll_stamina (guild_id,user_id,day,used,met) VALUES (?,?,?,0,0)').run(gid, uid, today);
+    row = { guild_id: gid, user_id: uid, day: today, used: 0, met: 0 };
+  }
+  if (row.day !== today) {   // 跨日自動回滿
+    db.prepare('UPDATE stroll_stamina SET day=?, used=0, met=0 WHERE guild_id=? AND user_id=?').run(today, gid, uid);
+    row = { ...row, day: today, used: 0, met: 0 };
+  }
+  return row;
+};
+
+/** 今日體力上限：基礎值 ＋ 家具／寵物的「體力恢復」加成（終於讓 energy_pct 有實際用途） */
+function staminaMax(gid, uid) {
+  const c = hcfg(gid);
+  const base = Math.max(1, c.stroll_stamina || 10);
+  return base + Math.floor(base * buffPct(gid, uid, 'energy_pct') / 100);
+}
+
+/** 隨機挑一位角色：見過越多次的權重越低，讓沒遇過的優先出場 */
+function pickRole(gid, uid) {
+  const roles = db.prepare('SELECT id, name, image_url, intro, author, ad_line, ad_line2, ad_line3 FROM wheel_roles WHERE guild_id=? AND enabled=1').all(gid);
+  if (!roles.length) return null;
+  const met = new Map(db.prepare('SELECT role_id, points FROM affinity WHERE guild_id=? AND user_id=?').all(gid, uid)
+    .map(r => [r.role_id, r.points]));
+  const weighted = roles.map(r => {
+    const p = met.get(r.id) || 0;
+    // 沒遇過＝權重 10；已經很熟的降到 1（不會完全遇不到，只是機率低）
+    const w = p <= 0 ? 10 : Math.max(1, 10 - Math.floor(Math.log10(p + 1) * 3));
+    return { r, w };
+  });
+  const total = weighted.reduce((a, x) => a + x.w, 0);
+  let n = Math.random() * total;
+  for (const x of weighted) { n -= x.w; if (n <= 0) return x.r; }
+  return weighted[weighted.length - 1].r;
+}
+
+const adLine = (r) => {
+  const lines = [r.ad_line, r.ad_line2, r.ad_line3].filter(x => x && x.trim());
+  if (!lines.length) return '';
+  return lines[Math.floor(Math.random() * lines.length)];
+};
+
+/** 出門逛街一次 */
+function stroll(gid, uid, uname) {
+  const c = hcfg(gid);
+  if (!c.stroll_enabled) return { error: '現在沒有開放逛街。' };
+  const row = staminaRow(gid, uid);
+  const max = staminaMax(gid, uid);
+  const cost = Math.max(1, c.stroll_cost || 1);
+  if (row.used + cost > max) {
+    return { error: `體力不夠了（今天 ${row.used}/${max}）。明天就會回滿 —— 想要更多體力可以擺「體力恢復」的家具、養對應的寵物。` };
+  }
+  const role = pickRole(gid, uid);
+  if (!role) return { error: '這個伺服器還沒有任何角色。' };
+
+  const gain = Math.max(0, c.stroll_points || 3);
+  const bonus = Math.floor(gain * buffPct(gid, uid, 'gift_pct') / 100);   // 送禮加成也吃在偶遇上
+  const points = gain + bonus;
+  const today = localToday();
+  db.transaction(() => {
+    db.prepare('UPDATE stroll_stamina SET used=used+?, met=met+1, day=? WHERE guild_id=? AND user_id=?')
+      .run(cost, today, gid, uid);
+    db.prepare(`INSERT INTO affinity (guild_id,user_id,role_id,points,level) VALUES (?,?,?,?,0)
+      ON CONFLICT(guild_id,user_id,role_id) DO UPDATE SET points = points + ?`).run(gid, uid, role.id, points, points);
+  })();
+  const lv = recalcLevel(gid, uid, role.id);
+  markSeen(gid, uid, 'role', role.name);
+  bumpAch(gid, uid, 'stroll_count', 1);
+
+  const after = staminaRow(gid, uid);
+  return { role, points, lv, used: after.used, max, met: after.met, line: adLine(role) };
+}
+
+function strollEmbed(gid, uid, out) {
+  const a = db.prepare('SELECT points, level FROM affinity WHERE guild_id=? AND user_id=? AND role_id=?').get(gid, uid, out.role.id) || { points: 0, level: 0 };
+  const e = new EmbedBuilder().setColor(0xeb459e)
+    .setTitle(`🛍️ 你在街上遇到了 ${out.role.name}`)
+    .setDescription((out.line ? `💬 **「${out.line}」**\n\n` : '')
+      + (out.role.intro ? `${String(out.role.intro).slice(0, 300)}\n\n` : '')
+      + `好感度 **+${out.points}** → 目前 ${a.points.toLocaleString('en-US')} 點（${levelName(gid, a.level)}）`)
+    .setFooter({ text: `體力 ${out.used}/${out.max}｜今天遇到 ${out.met} 位｜想加深關係就用 /送禮` });
+  if (out.role.image_url) e.setThumbnail(absUrl(out.role.image_url));
+  return e;
+}
+
+/** 逛街面板：一顆按鈕連續逛，體力用完為止 */
+function strollPanel(gid, uid, uname) {
+  const row = staminaRow(gid, uid);
+  const max = staminaMax(gid, uid);
+  const total = db.prepare('SELECT COUNT(*) n FROM wheel_roles WHERE guild_id=? AND enabled=1').get(gid).n;
+  const seen = db.prepare('SELECT COUNT(*) n FROM affinity WHERE guild_id=? AND user_id=? AND points>0').get(gid, uid).n;
+  const e = new EmbedBuilder().setColor(0xeb459e).setTitle('🛍️ 逛街')
+    .setDescription(`出門走走，**隨機**遇到街上的角色 —— 遇到誰不能挑，這就是逛街的意義。\n`
+      + `每次消耗 **${Math.max(1, hcfg(gid).stroll_cost || 1)}** 點體力，遇到就自動加好感度。`)
+    .addFields(
+      { name: '今日體力', value: `${max - row.used} / ${max}`, inline: true },
+      { name: '今天遇到', value: `${row.met} 位`, inline: true },
+      { name: '你認識的角色', value: `${seen} / ${total} 位`, inline: true })
+    .setFooter({ text: '體力每天回滿；擺「體力恢復」家具或養對應寵物可以提高上限' });
+  return {
+    embeds: [e],
+    components: [NAV('love'), new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('strollgo').setLabel('🛍️ 出門逛街').setStyle(ButtonStyle.Success)
+        .setDisabled(row.used >= max))]
+  };
 }
 
 /** 名字搜尋：這就是「上百隻角色可以挑名字邀請」的實作 */
@@ -244,6 +365,22 @@ function init(client) {
         return i.respond(searchRoles(gid, i.options.getFocused())).catch(() => {});
       }
       if (!i.isChatInputCommand()) {
+        // 逛街：面板與「出門」按鈕（隨機遇到角色，消耗體力）
+        if (i.isButton() && (i.customId === 'strollpanel' || i.customId === 'adv:stroll')) {
+          seedAffinity(gid);
+          return i.reply({ ...strollPanel(gid, uid, uname), ...eph }).catch(() => {});
+        }
+        if (i.isButton() && i.customId === 'strollgo') {
+          const out = stroll(gid, uid, uname);
+          if (out.error) return i.reply({ content: out.error, ...eph }).catch(() => {});
+          // 更新面板（體力／遇到人數），再把這次遇到誰單獨貼出來
+          await i.update(strollPanel(gid, uid, uname)).catch(() => {});
+          return i.followUp({
+            embeds: [strollEmbed(gid, uid, out)],
+            content: out.lv && out.lv.up ? `🎉 **${out.role.name}** 的好感度升到 **${levelName(gid, out.lv.level)}**！` : '',
+            ...eph
+          }).catch(() => {});
+        }
         // 送禮的物品選單
         if (i.isStringSelectMenu() && i.customId.startsWith('giftpick:')) {
           const rid = parseInt(i.customId.split(':')[1], 10);
@@ -321,4 +458,4 @@ function init(client) {
   console.log('  ↳ 好感度模組已載入（接轉盤角色／名字搜尋邀請）');
 }
 
-module.exports = { init, seedAffinity, lovePanel, searchRoles };
+module.exports = { init, seedAffinity, seedGiftPrefs, lovePanel, strollPanel, stroll, strollEmbed, searchRoles };

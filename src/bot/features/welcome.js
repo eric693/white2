@@ -9,9 +9,16 @@ const cfg = (gid) => guildConfig('welcome_config', gid);
 
 function fill(tpl, member) {
   const user = member.user || member;
+  // {nickname}＝伺服器暱稱（沒設就退回顯示名稱／帳號名）。
+  // 退出通知只寫帳號名的話，管理員常常認不出那是誰 —— 大家在群裡叫的是暱稱。
+  const nick = member.nickname || member.displayName || user.globalName || user.username;
+  const both = nick && nick !== user.username ? `${nick}（${user.username}）` : user.username;
   return String(tpl || '')
     .replace(/{user}/g, `<@${user.id}>`)
+    .replace(/{nickname}/g, nick)
+    .replace(/{name}/g, both)          // 暱稱（帳號名）：一眼認得出是誰
     .replace(/{username}/g, user.username)
+    .replace(/{id}/g, user.id)
     .replace(/{server}/g, member.guild ? member.guild.name : '')
     .replace(/{count}/g, member.guild ? String(member.guild.memberCount) : '');
 }

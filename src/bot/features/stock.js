@@ -377,8 +377,12 @@ const clearViolation = (gid, uid, kind, symbolId = 0) =>
   db.prepare('DELETE FROM stock_violations WHERE guild_id=? AND user_id=? AND kind=? AND symbol_id=?')
     .run(gid, uid, kind, symbolId);
 
-/** 系統代為賣出（不受單次上限、冷卻、每日次數限制 —— 這是強制執行，不是玩家操作） */
-function forceSell(gid, uid, username, symbolId, shares) {
+/**
+ * 系統代為賣出（不受單次上限、冷卻、每日次數限制 —— 這是強制執行，不是玩家操作）。
+ * capToZero=true 時，倒扣最多只扣到「錢包歸零」為止，不會把人扣成負債：
+ * 強制清算是系統動手，把玩家推進負債再去借貸太狠，留給他從零開始重來。
+ */
+function forceSell(gid, uid, username, symbolId, shares, capToZero = true) {
   const s = db.prepare('SELECT * FROM stock_symbols WHERE id=? AND guild_id=?').get(symbolId, gid);
   const h = db.prepare('SELECT * FROM stock_holdings WHERE guild_id=? AND user_id=? AND symbol_id=?').get(gid, uid, symbolId);
   if (!s || !h || h.shares <= 0) return null;
@@ -386,7 +390,14 @@ function forceSell(gid, uid, username, symbolId, shares) {
   const n = Math.min(shares, h.shares);
   const gross = s.price * n;
   const fee = Math.ceil(Math.max(0, gross) * (c.fee_pct || 0) / 100);
-  const net = gross - fee;
+  let net = gross - fee;
+  // 賣到錢包歸零為止：倒扣金額不超過他現在的餘額（原本會扣成負數）
+  let waived = 0;
+  if (capToZero && net < 0) {
+    const bal = (db.prepare('SELECT coins FROM econ_wallets WHERE guild_id=? AND user_id=?').get(gid, uid) || { coins: 0 }).coins;
+    const maxTake = Math.max(0, bal);
+    if (-net > maxTake) { waived = -net - maxTake; net = -maxTake; }
+  }
   const avg = h.shares > 0 ? h.cost_sum / h.shares : 0;
   const costPart = Math.round(avg * n);
   const pnl = net - costPart;
@@ -404,7 +415,7 @@ function forceSell(gid, uid, username, symbolId, shares) {
       .run(gid, uid, username || '', symbolId, n, s.price, fee, pnl, Date.now());
     db.prepare('UPDATE market_config SET burned_total = burned_total + ? WHERE guild_id=?').run(fee, gid);
   })();
-  return { symbol: s, shares: n, net, fee, pnl };
+  return { symbol: s, shares: n, net, fee, pnl, waived };
 }
 
 async function dm(client, uid, content) {
@@ -440,7 +451,10 @@ async function enforceHoldings(client, gid) {
       if (r) await dm(client, h.user_id,
         `⚖️ **強制清算通知**\n你持有的 ${r.symbol.emoji || ''}**${r.symbol.name}** 已經是負股價超過 ${negDays} 天，`
         + `系統依規定代為出清 **${r.shares}** 股。\n`
-        + `${r.net < 0 ? `已從你的錢包倒扣 **${num(-r.net)}**（餘額可能變負數，去 \`/貸款\` 或多賺一點補回來）。` : `入帳 **${num(r.net)}**。`}\n`
+        + `${r.net < 0
+          ? `已從你的錢包扣掉 **${num(-r.net)}**`
+            + (r.waived > 0 ? `（餘額已歸零；不足的 ${num(r.waived)} 不再追討，這次算你逃過一劫）。` : '。')
+          : `入帳 **${num(r.net)}**。`}\n`
         + `負股價的部位不能無限期放著不處理 —— 下次記得早點停損。`);
     } else if (warnDays > 0 && now >= dueMs - warnDays * DAY_MS && now - v.warned_ms > DAY_MS) {
       db.prepare('UPDATE stock_violations SET warned_ms=? WHERE guild_id=? AND user_id=? AND kind=? AND symbol_id=?')

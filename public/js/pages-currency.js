@@ -5,8 +5,9 @@ App.page('currency', {
   title: '貨幣與玩家', sub: '所有玩家的餘額一覽，直接搜尋名字就能增減貨幣', module: 'gather',
 
   async render(el) {
-    const [c, players, transfers] = await Promise.all([
-      GET('/gather'), GET('/gather-players'), GET('/econ-transfers').catch(() => [])
+    const [c, players, transfers, resetGroups] = await Promise.all([
+      GET('/gather'), GET('/gather-players'), GET('/econ-transfers').catch(() => []),
+      GET('/gather-reset-groups').catch(() => [])
     ]);
     const coin = (n) => `${c.currency_emoji || '🪙'} ${Number(n || 0).toLocaleString('en-US')}`;
     const total = players.reduce((a, p) => a + (p.coins || 0), 0);
@@ -105,6 +106,23 @@ App.page('currency', {
       </div>
 
       <div class="card">
+        <h3>🧹 重置系統</h3>
+        <div class="hint" style="margin-bottom:10px">
+          勾選要清掉的部分 —— 想整個重來就全勾，只想把股市砍掉重練就只勾股票。
+          管理員設定好的內容（掉落物、商店、動物、配方、成就定義…）一律保留。<b>無法復原。</b>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:4px" id="rsgroups">
+          ${resetGroups.map(g => `<label class="switch"><input type="checkbox" data-rs value="${g.key}"> ${UI.esc(g.label)}</label>`).join('')}
+        </div>
+        <div style="display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;align-items:flex-end">
+          <button class="btn small secondary" id="rsall">全選／全不選</button>
+          <div class="field" style="max-width:260px;margin:0"><label>只重置某位玩家（留空＝全服）</label>
+            <input id="rsuser" placeholder="貼上 Discord user ID"></div>
+          <button class="btn danger" id="rsgo">執行重置</button>
+        </div>
+      </div>
+
+      <div class="card">
         <h3>最近轉帳</h3>
         <div class="table-wrap"><table class="list">
           <thead><tr><th>時間</th><th>從</th><th>給</th><th>金額</th><th>手續費</th></tr></thead>
@@ -124,6 +142,22 @@ App.page('currency', {
     };
     el.querySelector('#kw').oninput = (e) => { keyword = e.target.value; paint(); };
     el.querySelector('#sort').onchange = (e) => { sort = e.target.value; paint(); };
+
+    const rsBoxes = () => [...el.querySelectorAll('[data-rs]')];
+    el.querySelector('#rsall').onclick = () => {
+      const allOn = rsBoxes().every(x => x.checked);
+      rsBoxes().forEach(x => { x.checked = !allOn; });
+    };
+    el.querySelector('#rsgo').onclick = async () => {
+      const groups = rsBoxes().filter(x => x.checked).map(x => x.value);
+      if (!groups.length) return UI.err('請至少勾選一項');
+      const user_id = el.querySelector('#rsuser').value.trim();
+      const names = groups.map(g => (resetGroups.find(x => x.key === g) || {}).label).join('、');
+      if (!await UI.confirm(`確定要重置：${names}${user_id ? `\n（只針對玩家 ${user_id}）` : '\n（全服所有玩家）'}？無法復原。`)) return;
+      const r = await POST('/gather-players/reset', { groups, user_id: user_id || null });
+      UI.ok(`已清除 ${Number(r.cleared).toLocaleString('en-US')} 筆`);
+      App.go('currency');
+    };
 
     function bind() {
       el.querySelectorAll('[data-coins]').forEach(b => b.onclick = () => {

@@ -236,6 +236,22 @@ ensureColumns('title_defs', {
   hint: "TEXT NOT NULL DEFAULT ''"          // 顯示給玩家的任務提示
 });
 
+// 角色廣告台詞：逛街遇到、抽到、來訪時角色會說的一句話（每位角色自己的口吻）
+ensureColumns('wheel_roles', {
+  ad_line:  "TEXT NOT NULL DEFAULT ''",   // 主要台詞（打招呼／宣傳自己）
+  ad_line2: "TEXT NOT NULL DEFAULT ''",   // 第二句（隨機二選一，讓角色不會每次都講同一句）
+  ad_line3: "TEXT NOT NULL DEFAULT ''"
+});
+
+// 逛街體力：每天回滿，逛一次消耗 1 點
+ensureColumns('home_config', {
+  stroll_enabled:  'INTEGER NOT NULL DEFAULT 1',
+  stroll_stamina:  'INTEGER NOT NULL DEFAULT 10',   // 每日體力上限
+  stroll_cost:     'INTEGER NOT NULL DEFAULT 1',    // 逛一次消耗
+  stroll_points:   'INTEGER NOT NULL DEFAULT 3',    // 遇到就自動加的好感點數
+  stroll_gift_pct: 'INTEGER NOT NULL DEFAULT 25'    // 有多少機率遇到「想要東西」的角色（可即時送禮加碼）
+});
+
 // 土地稅依「設施等級」加成：等級越高的農地／溫室，同樣一格課越多
 // （只按格數課稅的話，升到 12 階的大農場跟入門小田繳一樣的錢）
 ensureColumns('tax_config', { land_tier_pct: 'INTEGER NOT NULL DEFAULT 20' });
