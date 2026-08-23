@@ -136,4 +136,20 @@ router.delete('/auctions/:id', (req, res) => {
   res.json({ ok: true, refunded: active.length });
 });
 
+// 一鍵清除已結束／流標／已取消的場次（進行中與排程中的不動）。
+// 出價紀錄一起刪掉 —— 錢在成交或取消時就已經結清，這裡刪的只是歷史列表。
+router.delete('/auctions-ended', (req, res) => {
+  const gid = req.guildId;
+  const done = db.prepare(
+    "SELECT id FROM auctions WHERE guild_id=? AND status IN ('ended','failed','cancelled')").all(gid).map(r => r.id);
+  if (!done.length) return res.json({ ok: true, removed: 0 });
+  db.transaction(() => {
+    const delBids = db.prepare('DELETE FROM auction_bids WHERE auction_id=?');
+    const delA = db.prepare('DELETE FROM auctions WHERE id=? AND guild_id=?');
+    for (const id of done) { delBids.run(id); delA.run(id, gid); }
+  })();
+  audit(req.user.name, `清除已結束拍賣場次 ${done.length} 場`, 'gather', '', gid);
+  res.json({ ok: true, removed: done.length });
+});
+
 module.exports = router;

@@ -47,7 +47,10 @@ App.page('auction', {
       <div class="card">
         <div style="display:flex;justify-content:space-between;align-items:center">
           <h3 style="margin:0">🔨 拍賣場次</h3>
-          <button class="btn small" id="add">＋ 開一場拍賣</button>
+          <div style="display:flex;gap:6px">
+            <button class="btn small secondary" id="clr">🧹 清除已結束</button>
+            <button class="btn small" id="add">＋ 開一場拍賣</button>
+          </div>
         </div>
         <div class="table-wrap" style="margin-top:10px"><table class="list">
           <thead><tr><th>標的</th><th>類別</th><th>起標／直購</th><th>另收材料</th><th>時間</th><th>狀態</th><th>目前／成交</th><th></th></tr></thead>
@@ -102,12 +105,9 @@ App.page('auction', {
       }
       return o;
     };
-    // datetime-local 需要本地時間字串
-    const toLocalInput = (ms) => {
-      if (!ms) return '';
-      const d = new Date(ms - new Date().getTimezoneOffset() * 60000);
-      return d.toISOString().slice(0, 16);
-    };
+    // 拍賣是整點開場的，時間只給選到「時」——分鐘填了也沒有意義，反而容易填錯
+    const toDateInput = (ms) => { if (!ms) return ''; const d = new Date(ms); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; };
+    const toHourInput = (ms) => (ms ? String(new Date(ms).getHours()) : '');
 
     const form = (r = {}) => `
       <div class="form-row">
@@ -129,7 +129,14 @@ App.page('auction', {
       </div>
       ${matRows(parseMats(r.mats_cost))}
       <div class="form-row">
-        <div class="field"><label>開始時間（留空＝馬上）</label><input name="start_at" type="datetime-local" value="${toLocalInput(r.start_ts)}"></div>
+        <div class="field"><label>開始時間（只選整點，留空＝馬上）</label>
+          <div style="display:flex;gap:6px">
+            <input name="start_date" type="date" style="flex:1" value="${toDateInput(r.start_ts)}">
+            <select name="start_hour" style="width:110px">
+              <option value="">時</option>
+              ${Array.from({ length: 24 }, (_, h) => `<option value="${h}" ${String(h) === toHourInput(r.start_ts) ? 'selected' : ''}>${String(h).padStart(2, '0')}:00</option>`).join('')}
+            </select>
+          </div></div>
         <div class="field"><label>持續（小時）</label><input name="duration_h" type="number" min="0.25" step="0.25" value="${r.end_ts && r.start_ts ? ((r.end_ts - r.start_ts) / 3600000).toFixed(2) : 24}"></div>
       </div>
       <div class="hint">出價會當場鎖款、被超越自動退回；結束前 ${c.antisnipe_min ?? 3} 分鐘內有人出價會自動延長 ${c.extend_min ?? 3} 分鐘。</div>`;
@@ -158,6 +165,11 @@ App.page('auction', {
         onOk: async (back) => {
           const b = H.collect(back);
           b.mats_cost = collectMats(back);
+          if (b.start_date && b.start_hour === '') { UI.err('請選開始的整點時間'); return false; }
+          if (!b.start_date && b.start_hour !== '') { UI.err('請選開始日期'); return false; }
+          // 後端吃的是 start_at（可被 Date.parse 解析），這裡組成本地整點時間
+          b.start_at = b.start_date ? `${b.start_date}T${String(parseInt(b.start_hour, 10)).padStart(2, '0')}:00` : '';
+          delete b.start_date; delete b.start_hour;
           try {
             if (r.id) { const out = await PUT('/auctions/' + r.id, b); if (out.locked) UI.ok('已有人出價，價格與標的維持原樣'); }
             else await POST('/auctions', b);
@@ -172,6 +184,11 @@ App.page('auction', {
     };
 
     el.querySelector('#add').onclick = () => open();
+    el.querySelector('#clr').onclick = async () => {
+      if (!await UI.confirm('清除所有「已成交／流標／已取消」的場次？進行中與排程中的不會動，錢在成交或取消時就已經結清，這裡刪的只是歷史列表。')) return;
+      const out = await DEL('/auctions-ended');
+      UI.ok(out.removed ? `已清除 ${out.removed} 場` : '沒有已結束的場次'); App.go('auction');
+    };
     el.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => open(rows.find(x => x.id == b.dataset.edit)));
     el.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
       if (!await UI.confirm('取消這場拍賣？還鎖著的競標金會全額退回出價者。')) return;
