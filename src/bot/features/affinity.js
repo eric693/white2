@@ -546,19 +546,28 @@ function strollPanel(gid, uid, uname) {
 // 你們有兩百多位角色，之前寫死 LIMIT 125 又只放得下 5 行，第 101 位之後的人根本選不到。
 const GIFT_PER_ROW = 25, GIFT_ROWS = 4, GIFT_PER_PAGE = GIFT_PER_ROW * GIFT_ROWS;
 
-function giftWhoPanel(gid, uid, page = 0) {
+function giftWhoPanel(gid, uid, page = 0, all = false) {
   const known = db.prepare(
     `SELECT a.role_id, a.points, a.level, r.name FROM affinity a JOIN wheel_roles r ON r.id=a.role_id
       WHERE a.guild_id=? AND a.user_id=? AND r.enabled=1 ORDER BY a.points DESC`).all(gid, uid);
-  if (!known.length) {
-    return { error: '你還沒有跟任何角色互動過。\n先去 🛍️ **逛街**隨機遇幾位，或用 `/送禮 角色:名字` 直接指定（打幾個字就會跳候選）。' };
+  // 「全部角色」模式：把還沒相遇的也列出來（依名字排序），這樣不用靠自動完成的 25 筆上限也選得到人
+  const list = all
+    ? db.prepare(`SELECT id role_id, name FROM wheel_roles WHERE guild_id=? AND enabled=1 ORDER BY name`).all(gid)
+        .map(r => { const k = known.find(x => x.role_id === r.role_id); return { ...r, points: k ? k.points : 0, level: k ? k.level : 0, met: !!k }; })
+    : known.map(k => ({ ...k, met: true }));
+  if (!list.length) {
+    return all
+      ? { error: '這個伺服器還沒有建立任何角色。' }
+      : { error: '你還沒有跟任何角色互動過。\n先去 🛍️ **逛街**隨機遇幾位，或按下面的「👥 全部角色」直接挑。' };
   }
-  const pages = Math.ceil(known.length / GIFT_PER_PAGE);
+  const pages = Math.ceil(list.length / GIFT_PER_PAGE);
   const p = Math.max(0, Math.min(pages - 1, page));
-  const slice = known.slice(p * GIFT_PER_PAGE, (p + 1) * GIFT_PER_PAGE);
+  const slice = list.slice(p * GIFT_PER_PAGE, (p + 1) * GIFT_PER_PAGE);
   const opt = (k) => ({
     label: k.name.slice(0, 100),
-    description: `${levelName(gid, k.level)}（Lv.${k.level}）　好感 ${k.points.toLocaleString('en-US')}`.slice(0, 100),
+    description: (k.met
+      ? `${levelName(gid, k.level)}（Lv.${k.level}）　好感 ${k.points.toLocaleString('en-US')}`
+      : '還沒相遇').slice(0, 100),
     value: String(k.role_id)
   });
   const rows = [];
@@ -567,20 +576,26 @@ function giftWhoPanel(gid, uid, page = 0) {
     const from = p * GIFT_PER_PAGE + n + 1;
     rows.push(new ActionRowBuilder().addComponents(
       new StringSelectMenuBuilder().setCustomId(`giftwho:${rows.length}`)
-        .setPlaceholder(known.length > GIFT_PER_ROW
-          ? `選一位角色（好感度第 ${from}-${from + part.length - 1} 名）`
+        .setPlaceholder(list.length > GIFT_PER_ROW
+          ? `選一位角色（第 ${from}-${from + part.length - 1} 位${all ? '，依名字排序' : '，依好感度排序'}）`
           : '選一位角色')
         .addOptions(part.map(opt))));
   }
+  // 第 5 行：翻頁 ＋ 切換「已相遇／全部角色」
+  const nav = [];
   if (pages > 1) {
-    rows.push(new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(`giftpage:${p - 1}`).setLabel('‹ 上一頁').setStyle(ButtonStyle.Secondary).setDisabled(p === 0),
+    nav.push(
+      new ButtonBuilder().setCustomId(`giftpage:${p - 1}:${all ? 1 : 0}`).setLabel('‹ 上一頁').setStyle(ButtonStyle.Secondary).setDisabled(p === 0),
       new ButtonBuilder().setCustomId('giftnoop').setLabel(`第 ${p + 1} / ${pages} 頁`).setStyle(ButtonStyle.Secondary).setDisabled(true),
-      new ButtonBuilder().setCustomId(`giftpage:${p + 1}`).setLabel('下一頁 ›').setStyle(ButtonStyle.Secondary).setDisabled(p >= pages - 1)));
+      new ButtonBuilder().setCustomId(`giftpage:${p + 1}:${all ? 1 : 0}`).setLabel('下一頁 ›').setStyle(ButtonStyle.Secondary).setDisabled(p >= pages - 1));
   }
+  nav.push(all
+    ? new ButtonBuilder().setCustomId('giftpage:0:0').setLabel('💗 只看已相遇').setStyle(ButtonStyle.Primary)
+    : new ButtonBuilder().setCustomId('giftpage:0:1').setLabel('👥 全部角色').setStyle(ButtonStyle.Primary));
+  rows.push(new ActionRowBuilder().addComponents(nav));
   return {
-    content: `要送禮給誰？（已相遇 **${known.length}** 位，依好感度排序${pages > 1 ? `，第 ${p + 1}／${pages} 頁` : ''}）\n`
-      + '想送還沒相遇過的角色，用 `/送禮 角色:名字` 打名字搜尋。',
+    content: `要送禮給誰？（${all ? `全部 **${list.length}** 位角色，依名字排序` : `已相遇 **${list.length}** 位，依好感度排序`}${pages > 1 ? `，第 ${p + 1}／${pages} 頁` : ''}）\n`
+      + (all ? '按「💗 只看已相遇」可以切回熟人清單。' : '想送還沒相遇過的角色，按「👥 全部角色」或用 `/送禮 角色:名字` 搜尋。'),
     components: rows
   };
 }
@@ -712,14 +727,16 @@ function init(client) {
         // 想送沒互動過的角色還是可以用 /送禮 打名字搜尋。
         if (i.isButton() && (i.customId === 'giftpanel' || i.customId === 'adv:gift')) {
           seedAffinity(gid);
-          const out = giftWhoPanel(gid, uid, 0);
+          // 還沒認識任何人也不該卡住：直接退到「全部角色」清單
+          let out = giftWhoPanel(gid, uid, 0);
+          if (out.error) out = giftWhoPanel(gid, uid, 0, true);
           if (out.error) return i.reply({ content: out.error, ...eph }).catch(() => {});
           return i.reply({ ...out, ...eph }).catch(() => {});
         }
         // 相遇的角色超過 100 位時的翻頁（一頁 4 個下拉＝100 位，第 5 行留給翻頁鈕）
         if (i.isButton() && i.customId.startsWith('giftpage:')) {
-          const page = parseInt(i.customId.split(':')[1], 10) || 0;
-          const out = giftWhoPanel(gid, uid, page);
+          const [, pageRaw, allRaw] = i.customId.split(':');
+          const out = giftWhoPanel(gid, uid, parseInt(pageRaw, 10) || 0, allRaw === '1');
           if (out.error) return i.update({ content: out.error, components: [] }).catch(() => {});
           return i.update(out).catch(() => {});
         }
