@@ -1347,7 +1347,7 @@ function init(client) {
           .setTitle(`${target.username} 的背包`)
           .setDescription(`🔒 **保管袋 ${keep.length} 種**　\`/賣出\` 不會動到（製作 🔨／料理 🍳／種植 🌱／孵化 🥚／送禮 🎁 用得到的東西會自動放這裡）\n`
             + `💰 **自由背包 ${free.length} 種**　全賣可得 ${freeTotal.toLocaleString('en-US')}\n`
-            + '兩袋都可以 `/交易`、都能拿去製作與料理，差別只在賣不賣得掉。')
+            + '兩袋都可以 `/交易`、都能拿去製作與料理，差別只在賣不賣得掉。做好的 🍽️ 料理列在最下面（放在廚房，用 `/廚房` 吃掉或賣掉）。')
           .setFooter({ text: `兩袋全賣才是 ${total.toLocaleString('en-US')} ${c.currency_name}` });
         let budget = 5000, cut = false;   // 預留給標題/說明/footer，避免超過 embed 6000 字硬上限
         const addBlock = (title, list, withTags) => {
@@ -1372,6 +1372,22 @@ function init(client) {
         addBlock('🔒 🎁 禮物・其他', keep.filter(r => !KIND_NAME[r.kind]), true);
         for (const k of kindsOf(free)) addBlock(`💰 ${KIND_EMOJI[k]} ${KIND_NAME[k]}`, free.filter(r => r.kind === k), false);
         addBlock('💰 其他', free.filter(r => !KIND_NAME[r.kind]), false);
+        // 做好的料理放在廚房（cook_inventory），這裡一併列出來，才不會讓人以為菜卡在廚房拿不出來
+        try {
+          const { qLabel } = require('./kitchen');
+          const dishes = db.prepare(
+            `SELECT c.quality, c.count, r.name, r.emoji, r.base_price FROM cook_inventory c
+               JOIN cook_recipes r ON r.id=c.recipe_id
+              WHERE c.guild_id=? AND c.user_id=? AND c.count>0 ORDER BY r.sort, c.quality DESC`).all(gid, target.id);
+          if (dishes.length && !cut && (embed.data.fields?.length || 0) < 24) {
+            const txt = dishes.map(d => `${qLabel(d.quality)}　${d.emoji || ''}**${d.name}** ×${d.count}`).join('\n');
+            embed.addFields({
+              name: `🍽️ 料理（放在廚房，共 ${dishes.reduce((a, d) => a + d.count, 0)} 份）`,
+              value: (txt.length > 1000 ? txt.slice(0, 1000) + '\n…' : txt)
+                + '\n_用 `/廚房` 可以吃掉拿加成、賣掉換星幣，或用 🎁 送禮送給角色。_'
+            });
+          }
+        } catch (e) { logError(gid, '背包列出料理失敗：', e.message); }
         if (cut) embed.setDescription(embed.data.description + '\n_物品太多，這裡顯示不完——用 `/賣出` 或 `/圖鑑` 查看其餘。_');
         // 自己的背包才給搬運鈕（看別人的背包不能動人家的東西）
         const bagRowsBtn = target.id === uid
