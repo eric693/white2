@@ -401,6 +401,10 @@ function kitchenPanel(gid, uid, uname) {
   const freePots = Math.max(0, potSlots(home) - busyNow);
   // 可複選：一次把空著的爐子排滿，不用一道一道點。
   // 解鎖的食譜超過 25 道時自動分行，不然高等級食譜會整個從選單消失。
+  // 一則訊息只有 5 行：先替「你的料理」保留 1 行，不然下鍋選單一佔兩行，
+  // 做好的料理選單就整個被擠掉，玩家會以為料理不見了。
+  const dishRows = inv.length ? 1 : 0;
+  const cookRows = Math.max(1, 5 - rows.length - dishRows);
   if (avail.length) rows.push(...selectRows('kcook', avail.map(({ r, mats, lack }) => ({
     label: `${lack.length ? '🔴' : '🟢'}${r.emoji || ''}${r.name}`.slice(0, 100),
     description: (lack.length
@@ -408,12 +412,12 @@ function kitchenPanel(gid, uid, uname) {
       : `${mats.map(m => `${m.item}×${m.count}`).join('、')}｜${r.cook_minutes}分`).slice(0, 100),
     value: String(r.id)
   })), `選菜下鍋（可複選，空爐 ${freePots} 個｜現在做得出來 ${canCook}／${avail.length} 道）`,
-    { maxRows: 2, maxValues: Math.max(1, freePots) }));
+    { maxRows: Math.min(2, cookRows), maxValues: Math.max(1, freePots) }));
   if (inv.length) rows.push(...selectRows('kdish', inv.map(d => ({
     label: `${qLabel(d.quality)} ${d.emoji || ''}${d.name}`.slice(0, 100),
     description: `持有 ${d.count}　選了會問你要吃還是賣`.slice(0, 100),
     value: `${d.recipe_id}:${d.quality}`
-  })), '處理做好的料理（吃掉／賣掉）', { maxRows: 2 }));
+  })), '處理做好的料理（吃掉／賣掉／送禮）', { maxRows: Math.max(1, 5 - rows.length) }));
   return { embeds: [embed], components: rows };
 }
 
@@ -569,6 +573,8 @@ function init(client) {
         const btns = new ActionRowBuilder().addComponents(
           new ButtonBuilder().setCustomId(`keat:${rid}:${q}`).setLabel('🍴 吃掉（拿 Buff）').setStyle(ButtonStyle.Success),
           new ButtonBuilder().setCustomId(`ksell:${rid}:${q}:1`).setLabel('💰 賣 1 個').setStyle(ButtonStyle.Secondary));
+        btns.addComponents(
+          new ButtonBuilder().setCustomId(`kgift:${rid}:${q}`).setLabel('🎁 送給角色').setStyle(ButtonStyle.Primary));
         if (have > 1) btns.addComponents(
           new ButtonBuilder().setCustomId(`ksell:${rid}:${q}:${have}`).setLabel(`💰 全部賣掉（${have} 個）`).setStyle(ButtonStyle.Danger));
         return i.reply({
@@ -576,6 +582,13 @@ function init(client) {
           components: [btns],
           ...eph
         }).catch(() => {});
+      }
+      // 從料理直接跳送禮：省得玩家自己繞到好感度面板再翻一次背包
+      if (i.isButton() && i.customId.startsWith('kgift:')) {
+        const { giftWhoPanel } = require('./affinity');
+        const out = giftWhoPanel(gid, uid, 0);
+        if (out.error) return i.update({ content: out.error, components: [] }).catch(() => {});
+        return i.update({ content: `${out.content}\n（選好角色後，在他的禮物清單裡挑這道料理）`, components: out.components }).catch(() => {});
       }
       if (i.isButton() && (i.customId.startsWith('keat:') || i.customId.startsWith('ksell:'))) {
         const [act, rid, q] = i.customId.split(':');

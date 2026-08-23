@@ -589,19 +589,21 @@ function giftMenu(gid, uid, uname, rid) {
   const role = roleOf(gid, rid);
   if (!role) return { error: '找不到這位角色。' };
   // 只列「禮物」與「料理」—— 礦石魚貨那些是材料，不是拿來送人的
+  // 不設上限：背包裡所有能送的東西都要列得出來（超過 25 個由 selectRows 自動分行）
   const items = db.prepare(
     `SELECT v.item_id, v.count, it.name, it.emoji, it.price, it.gift_aff FROM gather_inventory v JOIN gather_items it ON it.id=v.item_id
       WHERE v.guild_id=? AND v.user_id=? AND v.count>0 AND it.gift_aff > 0
-      ORDER BY it.gift_aff LIMIT 20`).all(gid, uid);
+      ORDER BY it.gift_aff DESC`).all(gid, uid);
   const dishes = db.prepare(
     `SELECT c.recipe_id, c.quality, c.count, r.name, r.emoji FROM cook_inventory c JOIN cook_recipes r ON r.id=c.recipe_id
-      WHERE c.guild_id=? AND c.user_id=? AND c.count>0 ORDER BY c.quality DESC LIMIT 5`).all(gid, uid);
+      WHERE c.guild_id=? AND c.user_id=? AND c.count>0 ORDER BY c.quality DESC, r.sort`).all(gid, uid);
   if (!items.length && !dishes.length) return { error: '你的背包是空的，先去採集、種田或做點料理再來送禮。' };
 
   const opts = [
     ...dishes.map(d => ({
-      label: `${QUALITY[d.quality].emoji}${d.emoji || ''}${d.name}`.slice(0, 100),
-      description: `料理（品質越高好感越多）　持有 ${d.count}`.slice(0, 100),
+      // 標籤要寫出品質文字：只有顏色圈的話，同一道菜的不同品質看起來一模一樣
+      label: `${QUALITY[d.quality].emoji}${QUALITY[d.quality].name}　${d.emoji || ''}${d.name}`.slice(0, 100),
+      description: `料理　好感 ×${QUALITY[d.quality].aff}　持有 ${d.count}`.slice(0, 100),
       value: `dish:${d.recipe_id}:${d.quality}`
     })),
     ...items.map(it => {
@@ -614,14 +616,13 @@ function giftMenu(gid, uid, uname, rid) {
         value: `item:${it.item_id}:0`
       };
     })
-  ].slice(0, 25);
+  ];
 
   return {
     embeds: [roleCard(gid, uid, role, `要送什麼給 **${role.name}**？\n`
       + `每位角色都有 💖最喜歡 ×3、💕喜歡 ×3、💔討厭 ×2 的禮物 —— **送過才知道是哪些**。\n`
       + `倍率：💖 ×2　💕 ×1.5　🤍 ×1　💔 ×0.5`)],
-    components: [new ActionRowBuilder().addComponents(
-      new StringSelectMenuBuilder().setCustomId(`giftpick:${rid}`).setPlaceholder('選一樣禮物').addOptions(opts))]
+    components: selectRows(`giftpick:${rid}`, opts, '選一樣禮物', { maxRows: 5 })
   };
 }
 
@@ -893,4 +894,4 @@ function init(client) {
   console.log('  ↳ 好感度模組已載入（接轉盤角色／名字搜尋邀請）');
 }
 
-module.exports = { init, seedAffinity, seedGiftPrefs, lovePanel, strollPanel, stroll, strollEmbed, partnerPanel, partnersOf, moveIn, moveOut, partnerSkillText, partnerSkillPool, DEFAULT_PARTNER_SKILLS, giftMenu, giftItem, searchRoles };
+module.exports = { init, giftWhoPanel, seedAffinity, seedGiftPrefs, lovePanel, strollPanel, stroll, strollEmbed, partnerPanel, partnersOf, moveIn, moveOut, partnerSkillText, partnerSkillPool, DEFAULT_PARTNER_SKILLS, giftMenu, giftItem, searchRoles };
