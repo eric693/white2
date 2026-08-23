@@ -33,6 +33,9 @@ const UI = {
     const close = () => back.remove();
     back.querySelector('[data-cancel]').onclick = close;
     back.onclick = e => { if (e.target === back) close(); };
+    // Esc 關閉：手機外接鍵盤與桌機都習慣這樣關，少一次找「取消」鈕
+    const onEsc = (e) => { if (e.key === 'Escape') { close(); document.removeEventListener('keydown', onEsc); } };
+    document.addEventListener('keydown', onEsc);
     const okBtn = back.querySelector('[data-ok]');
     okBtn.onclick = async () => {
       if (!onOk) return close();
