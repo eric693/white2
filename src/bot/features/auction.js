@@ -49,6 +49,16 @@ function refInfo(gid, a) {
   };
 }
 
+// init 時記下 client：舊的出價紀錄存的是 Discord 帳號名，顯示時盡量換成伺服器暱稱
+let botClient = null;
+const shownName = (gid, userId, fallback) => {
+  try {
+    const m = botClient && botClient.guilds.cache.get(gid)?.members.cache.get(userId);
+    if (m) return m.displayName || m.user.username;
+  } catch {}
+  return fallback || '玩家';
+};
+
 const liveAuctions = (gid) => db.prepare(
   "SELECT * FROM auctions WHERE guild_id=? AND status='live' ORDER BY end_ts").all(gid);
 const topBid = (auctionId) => db.prepare(
@@ -237,7 +247,7 @@ function auctionEmbed(gid, a) {
       `**類別**：${KIND_LABEL[a.kind] || a.kind}${(a.kind === 'item' || a.kind === 'plot') && a.qty > 1 ? ` ×${a.qty}` : ''}`
     ].filter(Boolean).join('\n'))
     .addFields(
-      { name: '目前最高價', value: t ? `${money(gid, t.amount)}\n by **${t.username}**` : `尚無人出價\n起標 ${money(gid, a.start_price)}`, inline: true },
+      { name: '目前最高價', value: t ? `${money(gid, t.amount)}\n by **${shownName(gid, t.user_id, t.username)}**` : `尚無人出價\n起標 ${money(gid, a.start_price)}`, inline: true },
       { name: '下次最低出價', value: money(gid, nextMin(gid, a)), inline: true },
       { name: a.status === 'live' ? '結束時間' : '狀態',
         value: a.status === 'live' ? `<t:${Math.floor(a.end_ts / 1000)}:R>` : (a.status === 'scheduled' ? `<t:${Math.floor(a.start_ts / 1000)}:R> 開始` : '已結束'), inline: true });
@@ -307,7 +317,7 @@ async function tick(client) {
           .setTitle(r.failed ? `🔨 流標：${info.name}` : `🎉 成交：${info.name}`)
           .setDescription(r.failed
             ? `這件標的沒有找到新主人（${r.reason}）。`
-            : `**${r.bid.username}** 以 **${money(gid, r.bid.amount)}** 得標！`
+            : `**${shownName(gid, r.bid.user_id, r.bid.username)}** 以 **${money(gid, r.bid.amount)}** 得標！`
             + (r.fee ? `\n手續費 ${money(gid, r.fee)} 已進基金會。` : '')
             + (r.extraCoins ? `\n材料不足，另外折算補收了 ${money(gid, r.extraCoins)}。` : ''));
         await ch.send({ embeds: [e] }).catch(() => {});
@@ -322,13 +332,16 @@ async function tick(client) {
 }
 
 function init(client) {
+  botClient = client;
   for (const [gid] of client.guilds.cache) { try { cfg(gid); } catch {} }
   setInterval(() => tick(client).catch(() => {}), 30000);
 
   client.on('interactionCreate', async (i) => {
     try {
       if (!i.guildId) return;
-      const gid = i.guildId, uid = i.user.id, uname = i.user.username;
+      // 拍賣的名字是要公告給全場看的（大家都在猜是誰），所以用伺服器暱稱，
+      // 抓不到才退回 Discord 帳號名。
+      const gid = i.guildId, uid = i.user.id, uname = i.member?.displayName || i.user.username;
       const eph = { flags: MessageFlags.Ephemeral };
 
       if (i.isChatInputCommand() && i.commandName === '拍賣') {
