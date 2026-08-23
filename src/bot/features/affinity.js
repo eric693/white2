@@ -811,7 +811,8 @@ function init(client) {
           }
         }
         // 送出（數量版）
-        if ((i.isStringSelectMenu() && i.customId.startsWith('giftqty:'))
+        // giftqty:<角色>:<種類>:<a1>:<a2> —— 五段才是送禮，商店買禮物用的是 shopgiftqty:
+        if ((i.isStringSelectMenu() && i.customId.startsWith('giftqty:') && i.customId.split(':').length === 5)
           || (i.isStringSelectMenu() && i.customId.startsWith('giftpick:'))) {
           const parts = i.customId.split(':');
           let rid, kind, a1, a2, qty;

@@ -905,7 +905,9 @@ function init(client) {
         if (afford < 1) return i.reply({ content: `${c.currency_name}不夠：${g.name} 要 ${g.price.toLocaleString('en-US')}，你只有 ${coins.toLocaleString('en-US')}。`, flags: MessageFlags.Ephemeral });
         const qtys = [1, 3, 5, 10, 25, 50, 100].filter(n => n <= Math.min(afford, 100));
         if (afford > 1 && !qtys.includes(afford)) qtys.push(afford);   // 「買好買滿」也給一個選項
-        const menu = new StringSelectMenuBuilder().setCustomId(`giftqty:${g.id}`)
+        // customId 不能叫 giftqty —— 好感度的送禮數量選單也用那個前綴，
+        // 會被它先攔走然後回「找不到這位角色」。這裡是商店買東西，跟角色無關。
+        const menu = new StringSelectMenuBuilder().setCustomId(`shopgiftqty:${g.id}`)
           .setPlaceholder(`${g.name} 要買幾個？`).setMinValues(1).setMaxValues(1)
           .addOptions(qtys.slice(0, 25).map(n => ({
             label: `${g.name} ×${n}`.slice(0, 100),
@@ -918,7 +920,7 @@ function init(client) {
       return safeMenu(i, '商店購買', () => buyThing(i.guildId, i.user.id, i.user.username, kind, parseInt(rawId, 10)));
     }
     // 禮物數量選好 → 真的扣錢
-    if (i.isStringSelectMenu() && i.customId.startsWith('giftqty:')) {
+    if (i.isStringSelectMenu() && i.customId.startsWith('shopgiftqty:')) {
       const gidItem = parseInt(i.customId.split(':')[1], 10), n = parseInt(i.values[0], 10);
       return safeMenu(i, '商店購買', () => buyThing(i.guildId, i.user.id, i.user.username, 'gift', gidItem, n));
     }
@@ -1179,7 +1181,11 @@ function init(client) {
             (item.description ? `\n${item.description}` : '') +
             `\n\n可賣 ${money(c, livePrice(gid, item))} ${priceTag(gid, item)}　持有 ${inv.count} 個` +
             (map ? `\n所在地圖：${map.emoji || ''}${map.name}（幸運 +${map.luck_bonus}%　` +
-              (pool > 0 ? `門票 ${cost} 點　今日剩 ${Math.max(0, pool - pointsUsedToday(gid, uid))}/${pool} 點）` : `今日 ${totalGathersToday(gid, uid)}/${map.daily_limit} 次）`) : '') +
+              // 體力要看實際總量（基礎＋管理員加給＋今天買來的），只拿設定值 pool 會顯示成 0/15
+              (pool > 0 ? (() => { const st = staminaState(gid, uid);
+                return `門票 ${cost} 點　今日剩 ${st.left}/${st.max} 點`
+                  + (st.bonus ? `（含買來的 ${st.bonus}）` : '') + '）'; })()
+                : `今日 ${totalGathersToday(gid, uid)}/${map.daily_limit} 次）`) : '') +
             toolNote +
             `\n下次可用：<t:${Math.floor((Date.now() + wait * 1000) / 1000)}:R>`
           );

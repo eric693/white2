@@ -563,11 +563,17 @@ function init(client) {
       if (i.isStringSelectMenu() && isSelect(i.customId, 'kdish')) {
         const [rid, q] = i.values[0].split(':').map(Number);
         const r = db.prepare('SELECT name, emoji FROM cook_recipes WHERE id=?').get(rid) || { name: '料理' };
+        // 同一種品質常常囤到七八份，一份一份點很痛苦 —— 直接給「賣 1 個」與「全部賣掉」
+        const have = (db.prepare('SELECT count FROM cook_inventory WHERE guild_id=? AND user_id=? AND recipe_id=? AND quality=?')
+          .get(gid, uid, rid, q) || {}).count || 0;
+        const btns = new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId(`keat:${rid}:${q}`).setLabel('🍴 吃掉（拿 Buff）').setStyle(ButtonStyle.Success),
+          new ButtonBuilder().setCustomId(`ksell:${rid}:${q}:1`).setLabel('💰 賣 1 個').setStyle(ButtonStyle.Secondary));
+        if (have > 1) btns.addComponents(
+          new ButtonBuilder().setCustomId(`ksell:${rid}:${q}:${have}`).setLabel(`💰 全部賣掉（${have} 個）`).setStyle(ButtonStyle.Danger));
         return i.reply({
-          content: `要怎麼處理 ${qLabel(q)} ${r.emoji || ''}**${r.name}**？`,
-          components: [new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId(`keat:${rid}:${q}`).setLabel('🍴 吃掉（拿 Buff）').setStyle(ButtonStyle.Success),
-            new ButtonBuilder().setCustomId(`ksell:${rid}:${q}`).setLabel('💰 賣掉').setStyle(ButtonStyle.Secondary))],
+          content: `要怎麼處理 ${qLabel(q)} ${r.emoji || ''}**${r.name}**？（持有 ${have} 個）`,
+          components: [btns],
           ...eph
         }).catch(() => {});
       }
@@ -581,9 +587,20 @@ function init(client) {
             components: []
           }).catch(() => {});
         }
-        const out = sellDish(gid, uid, uname, Number(rid), Number(q));
-        if (out.error) return i.update({ content: out.error, components: [] }).catch(() => {});
-        return i.update({ content: `💰 賣掉 ${qLabel(out.quality)} **${out.sold.name}**，入帳 ${money(gcfg(gid), out.price)}。`, components: [] }).catch(() => {});
+        // ksell:<食譜>:<品質>:<數量>（舊的兩段式沒有數量，當成 1 個）
+        const n = Math.max(1, parseInt(i.customId.split(':')[3], 10) || 1);
+        let sold = 0, total = 0, name = '', quality = Number(q), err = '';
+        for (let k = 0; k < n; k++) {
+          const out = sellDish(gid, uid, uname, Number(rid), Number(q));
+          if (out.error) { err = out.error; break; }
+          sold++; total += out.price; name = out.sold.name; quality = out.quality;
+        }
+        if (!sold) return i.update({ content: err || '賣出失敗。', components: [] }).catch(() => {});
+        return i.update({
+          content: `💰 賣掉 ${qLabel(quality)} **${name}** ×${sold}，入帳 ${money(gcfg(gid), total)}。`
+            + (err ? `\n（只賣掉 ${sold} 個：${err}）` : ''),
+          components: []
+        }).catch(() => {});
       }
       if (i.isChatInputCommand() && ['廚房', '烹飪'].includes(i.commandName)) {
         seedKitchen(gid);
