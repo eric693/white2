@@ -5,7 +5,7 @@
 // 點下去會開一份「只有你看得到」的分頁面板，在那上面切換才安全。
 //
 // 實際動作仍由各模組的 adv:* / stk:* 接手，這裡只負責版面。
-const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags, PermissionsBitField } = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder, MessageFlags, PermissionsBitField } = require('discord.js');
 const { brandColor } = require('../../util/brand');
 const { guildConfig } = require('../../db');
 
@@ -18,11 +18,11 @@ const TABS = {
     label: '冒險', emoji: '🎣', color: 0x3498db,
     title: '🎣 出門冒險',
     desc: '出門找素材。每個動作各有冷卻，工具會耗損，記得 `/修理`。\n'
-      + '每次採集會扣 **⚡ 體力**（跟逛街共用，每天午夜回滿）—— 剩多少按 📊 查看狀態就看得到。\n'
+      + '每次採集會扣 **⚡ 體力**（跟逛街共用，每天午夜回滿）—— 剩多少從上面的「常用捷徑 → 狀態」看得到。\n'
       + '撿到的東西會自動記進 **📖 圖鑑**，賣掉也不會消失。',
     rows: [
-      [['adv:fish', '釣魚', '🎣'], ['adv:mine', '挖礦', '⛏️'], ['adv:wood', '伐木', '🪓'], ['adv:forage', '採集', '🧺'], ['adv:hunt', '狩獵', '🏹']],
-      [['adv:bag', '背包', '🎒'], ['adv:status', '查看狀態', '📊'], ['adv:map', '地圖', '🗺️'], ['adv:quest', '任務', '📜', ButtonStyle.Primary]]
+      [['adv:fish', '釣魚', '🎣'], ['adv:mine', '挖礦', '⛏️'], ['adv:wood', '伐木', '🪓']],
+      [['adv:forage', '採集', '🧺'], ['adv:hunt', '狩獵', '🏹'], ['adv:map', '地圖', '🗺️']]
     ]
   },
   // 製作獨立成一個分類：家具、工具、農地、牧場、魚缸、孵化室、溫室都是從這裡做出來的，
@@ -31,10 +31,10 @@ const TABS = {
     label: '製作', emoji: '🔨', color: 0xe67e22,
     title: '🔨 製作與鍛造',
     desc: '把撿來的材料變成東西：**工具、家具**，還有**農地／溫室／牧場／孵化室／魚缸**的格子。\n'
-      + '先看 📋 配方確認材料，再按下面的按鈕做。工具壞了用 `/修理` 比重買便宜。',
+      + '先看 📋 配方確認材料，再按下面的按鈕做。工具壞了修理比重買便宜。',
     rows: [
       [['adv:recipe', '配方一覽', '📋', ButtonStyle.Primary], ['adv:craftmake', '製作', '🔨', ButtonStyle.Success], ['adv:forge', '鍛造工具', '⚒️', ButtonStyle.Success]],
-      [['adv:furniture', '做家具', '🛋️'], ['adv:repair', '修理工具', '🔧'], ['adv:bag', '看背包材料', '🎒']]
+      [['adv:furniture', '做家具', '🛋️'], ['adv:repair', '修理工具', '🔧']]
     ]
   },
   produce: {
@@ -49,10 +49,10 @@ const TABS = {
   home: {
     label: '我的家', emoji: '🏡', color: 0xe91e63,
     title: '🏡 我的家',
-    desc: '把採集、生產的成果變成長期資產。\n房屋 15 階 → 蓋廚房做料理 → 擺家具、養寵物 → 送禮攻略角色 → 收集圖鑑、做任務解成就。\n**所有加成都在這條線上**，用 ⭐ 家園加成 隨時查目前有多少。',
+    desc: '把採集、生產的成果變成長期資產。\n房屋 15 階 → 蓋廚房做料理 → 擺家具、養寵物 → 送禮攻略角色。\n**所有加成都在這條線上**，用 ⭐ 家園加成 隨時查目前有多少。',
     rows: [
-      [['adv:home', '我的家', '🏠', ButtonStyle.Primary], ['adv:kitchen', '廚房', '🍳'], ['adv:furniture', '家具', '🛋️'], ['adv:pets', '寵物', '🐾'], ['adv:love', '約會', '💕']],
-      [['adv:checkin', '簽到', '📅', ButtonStyle.Success], ['adv:dex', '圖鑑', '📖'], ['adv:titles', '成就', '🏅'], ['adv:buffs', '家園加成', '⭐'], ['adv:homeweb', '完整網頁版', '🖼️', ButtonStyle.Primary]]
+      [['adv:home', '房屋', '🏠', ButtonStyle.Primary], ['adv:kitchen', '廚房', '🍳'], ['adv:furniture', '家具', '🛋️']],
+      [['adv:pets', '寵物', '🐾'], ['adv:love', '約會', '💕'], ['adv:buffs', '家園加成', '⭐']]
     ]
   },
   shop: {
@@ -60,23 +60,34 @@ const TABS = {
     title: '🏪 商店街',
     desc: '要花錢的都在這裡。買工具與體力、動物、種子、魚、家具、寵物，還有設施等級（擴充格數）。',
     rows: [
-      [['adv:store', '一般商店', '🏪', ButtonStyle.Success], ['adv:ranchshop', '畜牧商店', '🛒', ButtonStyle.Success], ['adv:cropshop', '種子商店', '🌱', ButtonStyle.Success]],
-      [['adv:facility', '設施商店', '🏗️', ButtonStyle.Success], ['adv:aqshop', '水族商店', '🐠', ButtonStyle.Success]],
+      [['adv:store', '一般商店', '🏪', ButtonStyle.Success], ['adv:ranchshop', '畜牧商店', '🛒', ButtonStyle.Success], ['adv:cropshop', '種子商店', '🌱', ButtonStyle.Success], ['adv:aqshop', '水族商店', '🐠', ButtonStyle.Success]],
       // 家具與寵物本來只能從「我的家」進去，玩家找不到 —— 直接放進商店街
-      [['adv:furniture', '家具商店', '🛋️', ButtonStyle.Success], ['adv:pets', '寵物商店', '🐾', ButtonStyle.Success]]
+      [['adv:facility', '設施商店', '🏗️', ButtonStyle.Success], ['adv:furniture', '家具商店', '🛋️', ButtonStyle.Success], ['adv:pets', '寵物商店', '🐾', ButtonStyle.Success]]
     ]
   },
   money: {
     label: '金錢', emoji: '💰', color: 0x9b59b6,
     title: '💰 賺錢與理財',
-    desc: '賣東西、每日簽到領星幣、玩股票、繳稅、借錢。\n⚠️ 股價可能跌到**負數**，賣出會倒扣星幣，出場前先看清楚現價。',
+    desc: '賣東西、玩股票、繳稅、借錢。（每日簽到、財經新聞在上面的常用捷徑）\n⚠️ 股價可能跌到**負數**，賣出會倒扣星幣，出場前先看清楚現價。',
     rows: [
-      [['adv:sellpick', '賣出', '💰', ButtonStyle.Primary], ['adv:checkin', '每日簽到', '📅', ButtonStyle.Success], ['adv:trade', '交易', '🔄', ButtonStyle.Primary]],
-      [['stk:market', '股市行情', '📈', ButtonStyle.Primary], ['stk:buymenu', '買股', '📥', ButtonStyle.Success], ['stk:sellmenu', '賣股', '📤', ButtonStyle.Danger], ['stk:mine', '我的持股', '📊'], ['stk:news', '財經新聞', '📰']],
-      [['adv:tax', '我的稅單', '🧾'], ['adv:charity', '基金會', '❤️'], ['adv:loan', '物資貸款', '🏦']]
+      [['adv:sellpick', '賣出', '💰', ButtonStyle.Primary], ['adv:trade', '交易', '🔄', ButtonStyle.Primary], ['stk:market', '股市行情', '📈', ButtonStyle.Primary], ['stk:buymenu', '買股', '📥', ButtonStyle.Success], ['stk:sellmenu', '賣股', '📤', ButtonStyle.Danger]],
+      [['stk:mine', '我的持股', '📊'], ['adv:tax', '我的稅單', '🧾'], ['adv:charity', '基金會', '❤️'], ['adv:loan', '物資貸款', '🏦']]
     ]
   }
 };
+
+// 常用捷徑：每個分頁都要看得到，但 6 分類已經吃掉 2 行、內容還要 2 行，
+// 剩下的 1 行塞不下 8 顆按鈕 —— 所以做成下拉選單（1 行可放 25 項，以後要加也不怕）。
+const QUICK = [
+  ['adv:bag', '背包', '🎒', '看你身上有什麼'],
+  ['adv:quest', '任務', '📜', '每日任務與領獎'],
+  ['adv:status', '狀態', '📊', '體力、工具耐久、冷卻'],
+  ['adv:checkin', '簽到', '📅', '每日簽到領星幣'],
+  ['adv:dex', '圖鑑', '📖', '收集進度'],
+  ['adv:titles', '成就', '🏅', '稱號與成就'],
+  ['stk:news', '財經新聞', '📰', '影響股價的消息'],
+  ['adv:homeweb', '完整網頁版', '🖼️', '在瀏覽器看完整家園']
+];
 
 // 分頁導覽列（跟「我的家」同一套視覺語言：目前所在的分頁是實心的）
 //
@@ -90,6 +101,10 @@ const navRows = (active) => {
   const per = Math.ceil(all.length / lines);
   const rows = [];
   for (let n = 0; n < all.length; n += per) rows.push(new ActionRowBuilder().addComponents(...all.slice(n, n + per)));
+  rows.push(new ActionRowBuilder().addComponents(
+    new StringSelectMenuBuilder().setCustomId('pan:quick').setPlaceholder('⚡ 常用捷徑（背包・任務・狀態・簽到・圖鑑・成就…）')
+      .setMinValues(1).setMaxValues(1)
+      .addOptions(QUICK.map(([id, label, emoji, desc]) => ({ label, value: id, description: desc, emoji })))));
   return rows;
 };
 
@@ -110,14 +125,17 @@ function buildPanel() {
   const embed = new EmbedBuilder().setColor(brandColor()).setTitle('🌿 冒險生活 · 主選單')
     .setDescription(
       '選一個分類，會開一份**只有你看得到**的面板，在那裡面點按鈕就能玩，全程不用打指令。\n\n' +
-      `🎣 **冒險**　釣魚、挖礦、伐木、採集、狩獵、背包、任務\n` +
-      `🌾 **生產**　牧場、農地、溫室、魚缸、收成\n` +
-      `🏡 **我的家**　簽到、房屋、廚房、家具、寵物、約會、圖鑑、成就\n` +
-      `🏪 **商店**　五家商店，要花錢的都在這\n` +
-      `💰 **金錢**　賣出、股市、稅務、貸款\n\n` +
+      `🎣 **冒險**　釣魚、挖礦、伐木、採集、狩獵、地圖\n` +
+      `🔨 **製作**　配方、製作、鍛造工具、做家具、修理\n` +
+      `🌾 **生產**　牧場、農地、溫室、魚缸、孵化室、收成\n` +
+      `🏡 **我的家**　房屋、廚房、家具、寵物、約會、家園加成\n` +
+      `🏪 **商店**　一般、畜牧、種子、水族、設施、家具、寵物\n` +
+      `💰 **金錢**　賣出、交易、股市、稅單、基金會、貸款\n\n` +
+      '⚡ **常用捷徑**（下拉選單）背包、任務、狀態、簽到、圖鑑、成就、財經新聞、網頁版 —— 每一頁都有。\n' +
       '完整說明打 `/幫助`。')
     .setFooter({ text: '點分類 → 開私人面板 → 在裡面隨意切換，不會洗版' });
-  return { embeds: [embed], components: [navRow(null)] };
+  // navRows 會自動分行（分類超過 5 個時），這裡直接展開
+  return { embeds: [embed], components: navRows(null) };
 }
 
 async function publishPanel(channel) {
@@ -144,13 +162,25 @@ function init(client) {
           ? i.update(panel).catch(() => {})
           : i.reply({ ...panel, flags: MessageFlags.Ephemeral }).catch(() => {});
       }
+      // 常用捷徑下拉：值就是原本按鈕的 customId，直接偽裝成那顆按鈕再丟回事件流，
+      // 這樣 gather/home/stock 各自的 adv:* / stk:* 處理就能原封不動沿用。
+      if (i.isStringSelectMenu() && i.customId === 'pan:quick') {
+        const id = i.values[0];
+        const proxy = Object.create(i, {
+          customId: { value: id },
+          isButton: { value: () => true },
+          isStringSelectMenu: { value: () => false }
+        });
+        client.emit('interactionCreate', proxy);
+        return;
+      }
       if (!i.isChatInputCommand() || i.commandName !== '冒險面板') return;
       const admin = i.member && (i.member.permissions.has(PermissionsBitField.Flags.ManageGuild) || i.member.permissions.has(PermissionsBitField.Flags.Administrator));
       if (!admin) return i.reply({ content: '只有管理員能發布面板。', flags: MessageFlags.Ephemeral });
       const sent = await publishPanel(i.channel).catch(() => null);
       if (!sent) return i.reply({ content: '發布失敗，請確認機器人在這個頻道有「發送訊息」權限。', flags: MessageFlags.Ephemeral });
       return i.reply({
-        content: '✅ 已發布新版主選單並自動釘選。\n\n舊的面板訊息可以直接刪掉（新版把 21 顆按鈕收成 5 個分類，而且每個人開的是自己的面板，不會互相影響）。\n\n**想讓它永遠停在最下面不被洗版**：把這個頻道設成只有機器人能發言（@everyone 關掉「傳送訊息」但保留可看到、可用應用程式指令）。',
+        content: '✅ 已發布新版主選單並自動釘選。\n\n舊的面板訊息可以直接刪掉（新版把所有按鈕收成 6 個分類，而且每個人開的是自己的面板，不會互相影響）。\n\n**想讓它永遠停在最下面不被洗版**：把這個頻道設成只有機器人能發言（@everyone 關掉「傳送訊息」但保留可看到、可用應用程式指令）。',
         flags: MessageFlags.Ephemeral
       });
     } catch (e) {

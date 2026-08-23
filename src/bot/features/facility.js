@@ -151,8 +151,18 @@ function shopMenu(gid, uid, gc) {
     }
   }
   if (!opts.length) return null;
-  return new ActionRowBuilder().addComponents(
-    new StringSelectMenuBuilder().setCustomId('facbuy').setPlaceholder('選擇要購買的設施等級').addOptions(opts.slice(0, 25)));
+  // 一個下拉最多 25 項，但 5 種設施 × 十幾階早就超過 —— 以前直接 slice(0,25)，
+  // 結果排在後面的牧場、魚缸高階根本選不到。改成分成好幾個下拉（最多 4 行，留 1 行給按鈕）。
+  const rows = [];
+  for (let n = 0; n < opts.length && rows.length < 4; n += 25) {
+    const part = opts.slice(n, n + 25);
+    // 這一段涵蓋哪幾種設施，直接寫在提示文字上，玩家才知道要往哪個下拉找
+    const kinds = [...new Set(part.map(o => o.label.split('：')[0]))].join('、');
+    rows.push(new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder().setCustomId(`facbuy:${rows.length}`)
+        .setPlaceholder(`選要買的設施等級（${kinds}）`.slice(0, 150)).addOptions(part)));
+  }
+  return rows;
 }
 
 function buy(gid, uid, uname, defId) {
@@ -185,7 +195,7 @@ function init(client) {
 
   client.on('interactionCreate', async (i) => {
     const isBtn = i.isButton() && i.customId === 'adv:facility';
-    const isMenu = i.isStringSelectMenu() && i.customId === 'facbuy';
+    const isMenu = i.isStringSelectMenu() && (i.customId === 'facbuy' || i.customId.startsWith('facbuy:'));
     const isCmd = i.isChatInputCommand() && i.commandName === '設施商店';
     if (!isBtn && !isMenu && !isCmd) return;
     const gid = i.guildId;
@@ -216,11 +226,11 @@ function init(client) {
       }
 
       const embeds = shopEmbeds(gid, uid, gc);
-      const row = shopMenu(gid, uid, gc);
+      const rows = shopMenu(gid, uid, gc);
       return i.reply({
         embeds: embeds.slice(0, 10),
-        components: row ? [row] : [],
-        content: row ? undefined : '你已經買到每一種設施的最高階了，沒有東西可以再升級。',
+        components: rows || [],
+        content: rows ? undefined : '你已經買到每一種設施的最高階了，沒有東西可以再升級。',
         flags: MessageFlags.Ephemeral
       });
     } catch (e) {

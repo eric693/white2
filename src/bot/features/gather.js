@@ -632,21 +632,23 @@ function readMaterials(recipe) {
 // 三條規則的預設值：採集結果公開讓大家看得到戰績；其餘只給本人；富豪榜僅管理員。
 const GATHER_CMDS = ['釣魚', '挖礦', '伐木', '採集', '狩獵'];
 // 購買一件道具／一階設施。/購買 指令與商店的下拉選單共用同一套規則。
-function buyThing(gid, uid, uname, kind, id) {
+function buyThing(gid, uid, uname, kind, id, qty = 1) {
   const c = cfg(gid);
   if (kind === 'gift') {
     const g = db.prepare("SELECT * FROM gather_items WHERE guild_id=? AND id=? AND kind='gift'").get(gid, id);
     if (!g) return { error: '這個禮物已經不在商店裡了。' };
+    const n = Math.max(1, Math.min(100, Math.floor(qty) || 1));
+    const total = g.price * n;
     const w = wallet(gid, uid, uname);
-    if (w.coins < g.price) return { error: `${c.currency_name}不夠：需要 ${g.price.toLocaleString('en-US')}，你只有 ${w.coins.toLocaleString('en-US')}。` };
+    if (w.coins < total) return { error: `${c.currency_name}不夠：${g.name} ×${n} 要 ${total.toLocaleString('en-US')}，你只有 ${w.coins.toLocaleString('en-US')}。` };
     db.transaction(() => {
-      addCoins(gid, uid, uname, -g.price);
-      addToBag(gid, uid, g.id, 1);
+      addCoins(gid, uid, uname, -total);
+      addToBag(gid, uid, g.id, n);
     })();
     return { embed: new EmbedBuilder().setColor(0xeb459e).setTitle('🎁 買好了')
-      .setDescription(`${g.emoji || ''}**${g.name}** 已經放進背包（基礎好感 **+${g.gift_aff}**）。\n`
+      .setDescription(`${g.emoji || ''}**${g.name} ×${n}** 已經放進背包（每個基礎好感 **+${g.gift_aff}**）。\n`
         + '用 `/好感度` 面板的 🎁 送禮送給角色 —— 送到他最喜歡的東西，好感會 ×2。')
-      .setFooter({ text: `餘額 ${(w.coins - g.price).toLocaleString('en-US')} ${c.currency_name}` }) };
+      .setFooter({ text: `花掉 ${total.toLocaleString('en-US')}｜餘額 ${(w.coins - total).toLocaleString('en-US')} ${c.currency_name}` }) };
   }
   if (kind === 'stamina') {
     const n = Math.max(1, Math.min(5, id));
@@ -886,15 +888,39 @@ function init(client) {
       return safeMenu(i, '修理', () => repairTool(i.guildId, i.user.id, i.user.username, parseInt(i.values[0], 10)));
     }
     // 配方下拉選單：點一下就做 1 次
-    if (i.isStringSelectMenu() && i.customId === 'craftpick') {
+    if (i.isStringSelectMenu() && (i.customId === 'craftpick' || i.customId.startsWith('craftpick:'))) {
       return safeMenu(i, '製作', () => craftRecipe(i.guildId, i.user.id, i.user.username, parseInt(i.values[0], 10), 1));
     }
     // 商店下拉選單購買（道具／設施共用）
     if (i.isStringSelectMenu() && i.customId === 'shopbuy') {
-      return safeMenu(i, '商店購買', () => {
-        const [kind, rawId] = String(i.values[0]).split(':');
-        return buyThing(i.guildId, i.user.id, i.user.username, kind, parseInt(rawId, 10));
-      });
+      const [kind, rawId] = String(i.values[0]).split(':');
+      // 禮物常常要一次買一疊（送角色很吃量），所以多問一次數量；
+      // 道具是一人一件、體力選項本身就帶數量，維持點一下就買。
+      if (kind === 'gift') {
+        const gid = i.guildId, c = cfg(gid);
+        const g = db.prepare("SELECT * FROM gather_items WHERE guild_id=? AND id=? AND kind='gift'").get(gid, parseInt(rawId, 10));
+        if (!g) return i.reply({ content: '這個禮物已經不在商店裡了。', flags: MessageFlags.Ephemeral });
+        const coins = wallet(gid, i.user.id, i.user.username).coins;
+        const afford = Math.max(0, Math.floor(coins / Math.max(1, g.price)));
+        if (afford < 1) return i.reply({ content: `${c.currency_name}不夠：${g.name} 要 ${g.price.toLocaleString('en-US')}，你只有 ${coins.toLocaleString('en-US')}。`, flags: MessageFlags.Ephemeral });
+        const qtys = [1, 3, 5, 10, 25, 50, 100].filter(n => n <= Math.min(afford, 100));
+        if (afford > 1 && !qtys.includes(afford)) qtys.push(afford);   // 「買好買滿」也給一個選項
+        const menu = new StringSelectMenuBuilder().setCustomId(`giftqty:${g.id}`)
+          .setPlaceholder(`${g.name} 要買幾個？`).setMinValues(1).setMaxValues(1)
+          .addOptions(qtys.slice(0, 25).map(n => ({
+            label: `${g.name} ×${n}`.slice(0, 100),
+            description: `${(g.price * n).toLocaleString('en-US')} ${c.currency_name}｜好感 +${g.gift_aff * n}`.slice(0, 100),
+            value: String(n), emoji: g.emoji || '🎁'
+          })));
+        return i.reply({ content: `🎁 **${g.name}** 單價 ${g.price.toLocaleString('en-US')} ${c.currency_name}（你買得起 ${afford.toLocaleString('en-US')} 個）`,
+          components: [new ActionRowBuilder().addComponents(menu)], flags: MessageFlags.Ephemeral });
+      }
+      return safeMenu(i, '商店購買', () => buyThing(i.guildId, i.user.id, i.user.username, kind, parseInt(rawId, 10)));
+    }
+    // 禮物數量選好 → 真的扣錢
+    if (i.isStringSelectMenu() && i.customId.startsWith('giftqty:')) {
+      const gidItem = parseInt(i.customId.split(':')[1], 10), n = parseInt(i.values[0], 10);
+      return safeMenu(i, '商店購買', () => buyThing(i.guildId, i.user.id, i.user.username, 'gift', gidItem, n));
     }
     if (i.isStringSelectMenu() && i.customId === 'gathermap:pick') {
       const mapId = parseInt(i.values[0], 10);
@@ -1340,12 +1366,7 @@ function init(client) {
         }
         const rows = opts.length ? [new ActionRowBuilder().addComponents(
           new StringSelectMenuBuilder().setCustomId('shopbuy').setPlaceholder('選擇要購買的東西').addOptions(opts.slice(0, 25)))] : [];
-        // 其他商店的入口：以前全部混在一頁，玩家找不到家具跟寵物在哪買
-        rows.push(new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId('adv:facility').setLabel('🏗️ 設施商店').setStyle(ButtonStyle.Secondary),
-          new ButtonBuilder().setCustomId('adv:furniture').setLabel('🛋️ 家具商店').setStyle(ButtonStyle.Secondary),
-          new ButtonBuilder().setCustomId('adv:pets').setLabel('🐾 寵物商店').setStyle(ButtonStyle.Secondary),
-          new ButtonBuilder().setCustomId('adv:shop').setLabel('🎁 特殊商店').setStyle(ButtonStyle.Secondary)));
+        // 其他商店的入口不放這裡：主面板的「🏪 商店」分類已經列全，重複放只會佔版面。
         embeds[embeds.length - 1].setFooter({
           text: opts.length ? `餘額 ${w0} ${c.currency_name}｜用下方選單購買` : `餘額 ${w0} ${c.currency_name}｜目前沒有可買的東西了`
         });
@@ -1435,9 +1456,17 @@ function init(client) {
         for (const rkind of kinds) {
           const list = db.prepare('SELECT * FROM gather_recipes WHERE guild_id=? AND kind=? AND enabled=1 ORDER BY id').all(gid, rkind);
           if (!list.length) continue;
-          const embed = new EmbedBuilder().setColor(KCOLOR[rkind] || brandColor()).setTitle(KTITLE[rkind] || '配方')
+          // 一個 embed 最多 25 個欄位、一個下拉最多 25 項 —— 配方早就超過，
+          // 以前直接 slice(0,25)，排在後面的（像魚缸）就整個消失。改成滿了就開新的一頁。
+          let embed = null;
+          let fields = 0;
+          const newEmbed = (n) => new EmbedBuilder().setColor(KCOLOR[rkind] || brandColor())
+            .setTitle(`${KTITLE[rkind] || '配方'}${n > 1 ? `（第 ${n} 頁）` : ''}`)
             .setDescription('點下方選單直接做一次（也可以打 `/製作 配方名稱 次數`）。');
-          for (const r of list.slice(0, 25)) {
+          let page = 0;
+          for (const r of list) {
+            if (!embed || fields >= 25) { embed = newEmbed(++page); embeds.push(embed); fields = 0; }
+            fields++;
             const mats = readMaterials(r);
             // 順便算材料夠不夠，玩家不用自己對背包
             let enough = mats.length > 0;
@@ -1462,11 +1491,17 @@ function init(client) {
               value: String(r.id), emoji: r.emoji || (rkind === 'forge' ? '🔨' : '🛠️')
             });
           }
-          embeds.push(embed);
         }
         if (!embeds.length) return i.reply({ content: '目前還沒有任何配方。', flags: MessageFlags.Ephemeral });
-        const rows = opts.length ? [new ActionRowBuilder().addComponents(
-          new StringSelectMenuBuilder().setCustomId('craftpick').setPlaceholder('選擇要做的配方（做 1 次）').addOptions(opts.slice(0, 25)))] : [];
+        // 材料齊的排前面，玩家一打開就看得到現在做得出來的東西
+        opts.sort((a, b) => (a.description.startsWith('材料足夠') ? 0 : 1) - (b.description.startsWith('材料足夠') ? 0 : 1));
+        const rows = [];
+        for (let n = 0; n < opts.length && rows.length < 5; n += 25) {
+          rows.push(new ActionRowBuilder().addComponents(
+            new StringSelectMenuBuilder().setCustomId(`craftpick:${rows.length}`)
+              .setPlaceholder(rows.length === 0 ? '選擇要做的配方（做 1 次）' : `更多配方（${n + 1} 之後）`)
+              .addOptions(opts.slice(n, n + 25))));
+        }
         return await reply({ embeds: embeds.slice(0, 10), components: rows });
       }
 

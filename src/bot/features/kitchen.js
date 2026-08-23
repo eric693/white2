@@ -389,12 +389,22 @@ function kitchenPanel(gid, uid, uname) {
     new ButtonBuilder().setCustomId('kbuy').setLabel(`💸 用金幣硬升（${kq.total.toLocaleString('en-US')}）`).setStyle(ButtonStyle.Secondary));
   rows.push(btns);
 
-  const avail = recipesOf(gid).filter(r => r.min_kitchen <= home.kitchen_level).slice(0, 25);
+  // 選單裡先算好材料夠不夠：以前每道菜看起來都能做，點下去才被退「材料不夠」。
+  // 🟢 = 現在就能做、🔴 = 缺材料（缺什麼直接寫在說明），能做的排前面。
+  const avail = recipesOf(gid).filter(r => r.min_kitchen <= home.kitchen_level).map(r => {
+    const mats = parseMats(r.materials);
+    const lack = mats.filter(m => bagCount(gid, uid, m.item) < m.count);
+    return { r, mats, lack };
+  }).sort((a, b) => (a.lack.length ? 1 : 0) - (b.lack.length ? 1 : 0)).slice(0, 25);
+  const canCook = avail.filter(a => !a.lack.length).length;
   if (avail.length) rows.push(new ActionRowBuilder().addComponents(
-    new StringSelectMenuBuilder().setCustomId('kcook').setPlaceholder('選一道菜下鍋')
-      .addOptions(avail.map(r => ({
-        label: `${r.emoji || ''}${r.name}`.slice(0, 100),
-        description: `${parseMats(r.materials).map(m => `${m.item}×${m.count}`).join('、')}｜${r.cook_minutes}分`.slice(0, 100),
+    new StringSelectMenuBuilder().setCustomId('kcook')
+      .setPlaceholder(`選一道菜下鍋（現在做得出來 ${canCook}／${avail.length} 道）`)
+      .addOptions(avail.map(({ r, mats, lack }) => ({
+        label: `${lack.length ? '🔴' : '🟢'}${r.emoji || ''}${r.name}`.slice(0, 100),
+        description: (lack.length
+          ? `缺 ${lack.map(m => `${m.item}×${m.count - bagCount(gid, uid, m.item)}`).join('、')}`
+          : `${mats.map(m => `${m.item}×${m.count}`).join('、')}｜${r.cook_minutes}分`).slice(0, 100),
         value: String(r.id)
       })))));
   if (inv.length) rows.push(new ActionRowBuilder().addComponents(

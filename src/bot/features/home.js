@@ -226,10 +226,11 @@ function homePanel(gid, uid, uname, displayName) {
     new ButtonBuilder().setCustomId('homebuy')
       .setLabel(`💸 用金幣硬升（${(quote.cost + chk.next.coins).toLocaleString('en-US')}）`)
       .setStyle(ButtonStyle.Secondary));
-  btns.addComponents(
-    new ButtonBuilder().setCustomId('homecard').setLabel('🖼️ 家園狀態卡').setStyle(ButtonStyle.Primary),
-    new ButtonBuilder().setCustomId('homenav:checkin').setLabel('📅 簽到').setStyle(ButtonStyle.Secondary));
-  return { embeds: [embed], components: [NAV('home'), btns] };
+  // 狀態卡與簽到不放這裡：簽到在主面板的「常用捷徑」，狀態卡改從 🖼️ 完整網頁版 看。
+  // 空的 ActionRow 送出去 Discord 會直接退件，所以沒按鈕就整行不放。
+  const rows = [NAV('home')];
+  if (btns.components.length) rows.push(btns);
+  return { embeds: [embed], components: rows };
 }
 
 // ---- 每日簽到（在自己的小屋簽到領金幣）----
