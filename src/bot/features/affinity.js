@@ -633,15 +633,20 @@ function metRoles(gid, uid, q) {
     `SELECT r.id, r.name, r.author, a.points, a.level FROM affinity a JOIN wheel_roles r ON r.id=a.role_id
       WHERE a.guild_id=? AND a.user_id=? AND r.enabled=1 ${kw ? 'AND r.name LIKE ?' : ''}
       ORDER BY a.points DESC LIMIT 25`).all(...(kw ? [gid, uid, `%${kw}%`] : [gid, uid]));
+  // 搜不到就退回「你認識的全部角色」，避免空清單
+  if (!rows.length && kw) return metRoles(gid, uid, '');
   return rows.map(r => ({ name: `${r.name}（Lv.${r.level}　${r.points} 點）`.slice(0, 100), value: String(r.id) }));
 }
 
 /** 名字搜尋：這就是「上百隻角色可以挑名字邀請」的實作 */
 function searchRoles(gid, q) {
   const kw = String(q || '').trim();
-  const rows = kw
+  const top = () => db.prepare(`SELECT id, name, author FROM wheel_roles WHERE guild_id=? AND enabled=1 ORDER BY draw_count DESC LIMIT 25`).all(gid);
+  // 搜不到就退回熱門角色，不要丟一個空清單讓玩家卡在「沒有選項符合您的搜尋」
+  let rows = kw
     ? db.prepare(`SELECT id, name, author FROM wheel_roles WHERE guild_id=? AND enabled=1 AND name LIKE ? ORDER BY draw_count DESC LIMIT 25`).all(gid, `%${kw}%`)
-    : db.prepare(`SELECT id, name, author FROM wheel_roles WHERE guild_id=? AND enabled=1 ORDER BY draw_count DESC LIMIT 25`).all(gid);
+    : top();
+  if (!rows.length) rows = top();
   return rows.map(r => ({ name: `${r.name}${r.author ? `（${r.author}）` : ''}`.slice(0, 100), value: String(r.id) }));
 }
 
@@ -675,9 +680,12 @@ function init(client) {
       if (i.isAutocomplete() && ['送禮', '邀請', '好感度'].includes(i.commandName)) {
         // /好感度 是「看我跟他的關係」，列沒見過的角色沒有意義（而且會洩漏還沒遇到的角色）
         // —— 只列已相遇（有好感度紀錄）的。/送禮、/邀請 仍可搜尋全部角色。
-        return i.respond(i.commandName === '好感度'
-          ? metRoles(gid, uid, i.options.getFocused())
-          : searchRoles(gid, i.options.getFocused())).catch(() => {});
+        // 自動完成有 3 秒硬性時限：回不出去就記一筆，不要靜靜吞掉（玩家只會看到「沒有選項符合您的搜尋」）
+        const t0 = Date.now();
+        const kw = i.options.getFocused();
+        const list = i.commandName === '好感度' ? metRoles(gid, uid, kw) : searchRoles(gid, kw);
+        return i.respond(list).catch(e => logError(gid, '角色自動完成回應失敗：',
+          `/${i.commandName} 關鍵字「${kw}」 候選 ${list.length} 筆 耗時 ${Date.now() - t0}ms：${e.message}`));
       }
       if (!i.isChatInputCommand()) {
         // 逛街：面板與「出門」按鈕（隨機遇到角色，消耗體力）
