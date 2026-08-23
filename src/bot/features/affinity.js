@@ -585,6 +585,16 @@ function giftMenu(gid, uid, uname, rid) {
   };
 }
 
+/** 已相遇的角色（有好感度紀錄的）：/好感度 的自動完成用 */
+function metRoles(gid, uid, q) {
+  const kw = String(q || '').trim();
+  const rows = db.prepare(
+    `SELECT r.id, r.name, r.author, a.points, a.level FROM affinity a JOIN wheel_roles r ON r.id=a.role_id
+      WHERE a.guild_id=? AND a.user_id=? AND r.enabled=1 ${kw ? 'AND r.name LIKE ?' : ''}
+      ORDER BY a.points DESC LIMIT 25`).all(...(kw ? [gid, uid, `%${kw}%`] : [gid, uid]));
+  return rows.map(r => ({ name: `${r.name}（Lv.${r.level}　${r.points} 點）`.slice(0, 100), value: String(r.id) }));
+}
+
 /** 名字搜尋：這就是「上百隻角色可以挑名字邀請」的實作 */
 function searchRoles(gid, q) {
   const kw = String(q || '').trim();
@@ -622,7 +632,11 @@ function init(client) {
 
       // 角色名字自動完成（打字就跳候選，不用記 ID）
       if (i.isAutocomplete() && ['送禮', '邀請', '好感度'].includes(i.commandName)) {
-        return i.respond(searchRoles(gid, i.options.getFocused())).catch(() => {});
+        // /好感度 是「看我跟他的關係」，列沒見過的角色沒有意義（而且會洩漏還沒遇到的角色）
+        // —— 只列已相遇（有好感度紀錄）的。/送禮、/邀請 仍可搜尋全部角色。
+        return i.respond(i.commandName === '好感度'
+          ? metRoles(gid, uid, i.options.getFocused())
+          : searchRoles(gid, i.options.getFocused())).catch(() => {});
       }
       if (!i.isChatInputCommand()) {
         // 逛街：面板與「出門」按鈕（隨機遇到角色，消耗體力）
@@ -730,20 +744,76 @@ function init(client) {
           }).catch(() => {});
         }
         // 送禮的物品選單
+        // 選好禮物 → 先問要送幾個（一次可以送一疊，受「每日送禮次數」與持有量夾住）
         if (i.isStringSelectMenu() && i.customId.startsWith('giftpick:')) {
           const rid = parseInt(i.customId.split(':')[1], 10);
           const [kind, a1, a2] = i.values[0].split(':');
-          const out = kind === 'dish'
-            ? giftDish(gid, uid, uname, rid, Number(a1), Number(a2))
-            : giftItem(gid, uid, uname, rid, Number(a1));
-          if (out.error) return i.update({ content: out.error, embeds: [], components: [] }).catch(() => {});
+          const role = roleOf(gid, rid);
+          if (!role) return i.update({ content: '找不到這位角色。', embeds: [], components: [] }).catch(() => {});
+          const c = hcfg(gid);
+          const a = affOf(gid, uid, rid);
+          const today = localToday();
+          const left = Math.max(0, (c.gift_daily_limit || 0) - (a.gift_day === today ? a.gift_count : 0));
+          if (left <= 0) {
+            return i.update({ content: `你今天送給 **${role.name}** 的禮物已經夠多了（每日 ${c.gift_daily_limit} 次），明天再來。`, embeds: [], components: [] }).catch(() => {});
+          }
+          const have = kind === 'dish'
+            ? (db.prepare('SELECT count FROM cook_inventory WHERE guild_id=? AND user_id=? AND recipe_id=? AND quality=?').get(gid, uid, Number(a1), Number(a2)) || {}).count || 0
+            : (db.prepare('SELECT count FROM gather_inventory WHERE guild_id=? AND user_id=? AND item_id=?').get(gid, uid, Number(a1)) || {}).count || 0;
+          if (have <= 0) return i.update({ content: '你已經沒有這個東西了。', embeds: [], components: [] }).catch(() => {});
+          const cap = Math.min(left, have);
+          if (cap === 1) {
+            // 只能送 1 個就不用多問一步
+            i.values[0] = `${kind}:${a1}:${a2}:1`;
+          } else {
+            const amts = [...new Set([1, 3, 5, 10].filter(x => x < cap).concat([cap]))].sort((x, y) => x - y);
+            const menu = new StringSelectMenuBuilder().setCustomId(`giftqty:${rid}:${kind}:${a1}:${a2 || 0}`)
+              .setPlaceholder('要送幾個？').setMinValues(1).setMaxValues(1)
+              .addOptions(amts.slice(0, 25).map(n => ({
+                label: n === cap && cap > 1 ? `全部送出（${n} 個）` : `送 ${n} 個`,
+                description: `持有 ${have}｜今天還能送 ${left} 次`.slice(0, 100),
+                value: String(n)
+              })));
+            return i.update({
+              content: `要送幾個給 **${role.name}**？（持有 ${have}，今天還能送 ${left} 次）`,
+              embeds: [], components: [new ActionRowBuilder().addComponents(menu)]
+            }).catch(() => {});
+          }
+        }
+        // 送出（數量版）
+        if ((i.isStringSelectMenu() && i.customId.startsWith('giftqty:'))
+          || (i.isStringSelectMenu() && i.customId.startsWith('giftpick:'))) {
+          const parts = i.customId.split(':');
+          let rid, kind, a1, a2, qty;
+          if (parts[0] === 'giftqty') {
+            [, rid, kind, a1, a2] = parts;
+            rid = parseInt(rid, 10); qty = parseInt(i.values[0], 10);
+          } else {
+            rid = parseInt(parts[1], 10);
+            [kind, a1, a2] = i.values[0].split(':');
+            qty = 1;
+          }
+          // 一個一個送：任何一次失敗（送完了、次數用完）就停在那裡，前面成功的照算
+          let out = null, sent = 0, totalGain = 0, stop = '';
+          for (let n = 0; n < Math.max(1, qty); n++) {
+            const r = kind === 'dish'
+              ? giftDish(gid, uid, uname, rid, Number(a1), Number(a2))
+              : giftItem(gid, uid, uname, rid, Number(a1));
+            if (r.error) { stop = r.error; break; }
+            out = r; sent++; totalGain += r.gain;
+          }
+          if (!sent) return i.update({ content: stop || '送禮失敗。', embeds: [], components: [] }).catch(() => {});
+          out.gain = totalGain;
+          out.sentCount = sent;
+          out.stopMsg = stop;
           const react = out.weight >= 200 ? '💖 眼睛都亮了（最喜歡 ×2）'
             : out.weight >= 150 ? '💕 看起來很開心（喜歡 ×1.5）'
               : out.weight <= 50 ? '💔 表情有點微妙（討厭 ×0.5）' : '🤍 收下了';
           const what = out.dish ? `${QUALITY[out.quality].emoji}${out.dish.name}` : `${out.item.emoji || ''}${out.item.name}`;
           return i.update({
             content: out.up ? `🎉 **${out.role.name}** 的好感度升到 **${levelName(gid, out.level)}**！` : '',
-            embeds: [roleCard(gid, uid, out.role, `你送出 **${what}**，${out.role.name} ${react}。\n好感度 **+${out.gain}**`)],
+            embeds: [roleCard(gid, uid, out.role, `你送出 **${what}**${out.sentCount > 1 ? ` ×${out.sentCount}` : ''}，${out.role.name} ${react}。\n好感度 **+${out.gain}**`
+              + (out.stopMsg ? `\n\n⚠️ ${out.stopMsg}` : ''))],
             components: []
           }).catch(() => {});
         }
@@ -756,7 +826,16 @@ function init(client) {
       const role = roleOf(gid, rid);
       if (!role) return i.reply({ content: '找不到這位角色，請從自動完成的清單裡選。', ...eph }).catch(() => {});
 
-      if (i.commandName === '好感度') return i.reply({ embeds: [roleCard(gid, uid, role)], ...eph }).catch(() => {});
+      if (i.commandName === '好感度') {
+        const met = db.prepare('SELECT 1 FROM affinity WHERE guild_id=? AND user_id=? AND role_id=?').get(gid, uid, rid);
+        if (!met) {
+          return i.reply({
+            content: `你還沒有遇過 **${role.name}**。先去 🛍️ **逛街**碰碰運氣，或用 \`/送禮\` 送他東西建立關係。`,
+            ...eph
+          }).catch(() => {});
+        }
+        return i.reply({ embeds: [roleCard(gid, uid, role)], ...eph }).catch(() => {});
+      }
 
       if (i.commandName === '邀請') {
         const out = inviteRole(gid, uid, uname, rid);

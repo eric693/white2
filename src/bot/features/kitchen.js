@@ -397,9 +397,13 @@ function kitchenPanel(gid, uid, uname) {
     return { r, mats, lack };
   }).sort((a, b) => (a.lack.length ? 1 : 0) - (b.lack.length ? 1 : 0)).slice(0, 25);
   const canCook = avail.filter(a => !a.lack.length).length;
+  const busyNow = db.prepare('SELECT COUNT(*) n FROM cook_queue WHERE guild_id=? AND user_id=?').get(gid, uid).n;
+  const freePots = Math.max(0, potSlots(home) - busyNow);
   if (avail.length) rows.push(new ActionRowBuilder().addComponents(
     new StringSelectMenuBuilder().setCustomId('kcook')
-      .setPlaceholder(`選一道菜下鍋（現在做得出來 ${canCook}／${avail.length} 道）`)
+      // 可複選：一次把空著的爐子排滿，不用一道一道點
+      .setMinValues(1).setMaxValues(Math.max(1, Math.min(avail.length, freePots)))
+      .setPlaceholder(`選菜下鍋（可複選，空爐 ${freePots} 個｜現在做得出來 ${canCook}／${avail.length} 道）`)
       .addOptions(avail.map(({ r, mats, lack }) => ({
         label: `${lack.length ? '🔴' : '🟢'}${r.emoji || ''}${r.name}`.slice(0, 100),
         description: (lack.length
@@ -488,10 +492,20 @@ function init(client) {
         }).catch(() => {});
       }
       if (i.isStringSelectMenu() && i.customId === 'kcook') {
-        const out = startCook(gid, uid, uname, parseInt(i.values[0], 10));
-        if (out.error) return i.reply({ content: out.error, ...eph }).catch(() => {});
+        // 可複選：依序下鍋，爐子滿了或材料不夠就停，並說明為什麼
+        const ok = [], failed = [];
+        for (const v of i.values) {
+          const out = startCook(gid, uid, uname, parseInt(v, 10));
+          if (out.error) { failed.push(out.error); continue; }
+          ok.push(`${out.started.emoji || ''}**${out.started.name}**（${out.started.cook_minutes} 分）`);
+        }
+        if (!ok.length) return i.reply({ content: failed[0] || '沒有東西下鍋。', ...eph }).catch(() => {});
         await refresh();
-        return i.followUp({ content: `🔥 ${out.started.emoji || ''}**${out.started.name}** 下鍋了，${out.started.cook_minutes} 分鐘後回來領。品質要領取時才知道。`, ...eph }).catch(() => {});
+        return i.followUp({
+          content: `🔥 下鍋了 ${ok.length} 道：\n${ok.map(x => `・${x}`).join('\n')}\n品質要領取時才知道。`
+            + (failed.length ? `\n\n⚠️ 有 ${failed.length} 道沒下鍋：${failed[0]}` : ''),
+          ...eph
+        }).catch(() => {});
       }
       if (i.isStringSelectMenu() && i.customId === 'kdish') {
         const [rid, q] = i.values[0].split(':').map(Number);
