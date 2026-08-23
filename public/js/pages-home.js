@@ -14,7 +14,7 @@ App.page('home', {
     const TABS = [
       ['config', '⚙️ 總設定'], ['levels', '🏠 小屋階級'], ['furniture', '🛋️ 家具'],
       ['kitchen', '🍳 廚房與料理'], ['pets', '🐾 寵物'], ['ach', '🏅 成就'],
-      ['affinity', '💕 好感度'], ['partner', '💞 同居能力'], ['roleskill', '🎭 角色能力'], ['stroll', '🛍️ 逛街角色'], ['players', '👥 玩家現況']
+      ['affinity', '💕 好感度'], ['giftpref', '🎁 角色喜好'], ['partner', '💞 同居能力'], ['roleskill', '🎭 角色能力'], ['stroll', '🛍️ 逛街角色'], ['players', '👥 玩家現況']
     ];
     let tab = sessionStorage.getItem('w2_home_tab') || 'config';
     if (!TABS.some(t => t[0] === tab)) tab = 'config';
@@ -628,6 +628,91 @@ App.page('home', {
           UI.ok(r.count ? `已補進 ${r.count} 種` : '已經是最新的了'); draw();
         };
         bindRows(body, c, rows);
+        return;
+      }
+
+      if (tab === 'giftpref') {
+        const d = await GET('/gift-prefs');
+        const byRole = new Map();
+        for (const p of d.prefs) {
+          if (!byRole.has(p.role_id)) byRole.set(p.role_id, new Map());
+          byRole.get(p.role_id).set(p.item, p.weight);
+        }
+        const emo = (w) => w >= 200 ? '💖' : w >= 150 ? '💕' : w <= 50 ? '💔' : '🤍';
+        const itemEmoji = new Map(d.items.map(it => [it.name, it.emoji || '']));
+        const roleRow = (r) => {
+          const m = byRole.get(r.id) || new Map();
+          const love = [...m].filter(([, w]) => w >= 200), like = [...m].filter(([, w]) => w >= 150 && w < 200), hate = [...m].filter(([, w]) => w <= 50);
+          const show = (arr) => arr.map(([it]) => UI.esc((itemEmoji.get(it) || '') + it)).join('、') || '—';
+          return `<tr data-role="${r.id}">
+            <td>${UI.esc(r.name)}<div class="hint">${UI.esc(r.author || '')}</div></td>
+            <td class="wrap" style="font-size:13px">💖 ${show(love)}</td>
+            <td class="wrap" style="font-size:13px">💕 ${show(like)}</td>
+            <td class="wrap" style="font-size:13px">💔 ${show(hate)}</td>
+            <td><button class="btn tiny secondary" data-pref="${r.id}">設定喜好</button></td></tr>`;
+        };
+        body.innerHTML = `
+          <div class="card">
+            <h3>🎁 每位角色喜歡什麼禮物</h3>
+            <div class="hint" style="margin-bottom:10px">
+              送禮拿到的好感 ＝ <b>禮物的基礎好感 × 這裡的倍率</b>。
+              💖 最喜歡 ×2、💕 喜歡 ×1.5、🤍 普通 ×1、💔 討厭 ×0.5。<br>
+              玩家<b>送過才會知道</b>是哪些（會記進送禮圖鑑），所以這裡是「答案」，不會直接公開給玩家看。
+            </div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center;margin-bottom:10px">
+              <input id="kw" placeholder="搜尋角色名字" style="max-width:200px">
+              <button class="btn small secondary" id="randnew">🎲 幫還沒設定的角色隨機產生</button>
+              <button class="btn small secondary" id="randall">🎲 全部重新隨機</button>
+              <div class="spacer" style="flex:1"></div>
+              <span class="hint">共 ${d.roles.length} 位角色｜${d.items.length} 種可送禮物</span>
+            </div>
+            <div class="table-wrap" style="max-height:520px;overflow:auto"><table class="list">
+              <thead><tr><th>角色</th><th>最喜歡</th><th>喜歡</th><th>討厭</th><th></th></tr></thead>
+              <tbody id="plist">${d.roles.map(roleRow).join('')}</tbody>
+            </table></div>
+          </div>`;
+        const bindPref = () => body.querySelectorAll('[data-pref]').forEach(b => b.onclick = () => {
+          const rid = parseInt(b.dataset.pref, 10);
+          const role = d.roles.find(x => x.id === rid);
+          const m = byRole.get(rid) || new Map();
+          UI.modal({
+            title: `${role.name}　喜歡的禮物`,
+            bodyHTML: `
+              <div class="hint" style="margin-bottom:8px">沒特別設定的就是 🤍 普通（×1），不用每個都選。</div>
+              <div id="pf" style="display:flex;flex-direction:column;gap:6px;max-height:55vh;overflow:auto">
+                ${d.items.map(it => `
+                  <div class="form-row" style="align-items:center;gap:8px;margin:0">
+                    <div style="flex:1">${UI.esc((it.emoji || '') + it.name)}<span class="hint">　基礎 +${it.gift_aff}</span></div>
+                    <select data-item="${UI.esc(it.name)}" style="max-width:170px">
+                      ${d.levels.map(l => `<option value="${l.weight}" ${(m.get(it.name) || 100) === l.weight ? 'selected' : ''}>${l.label}</option>`).join('')}
+                    </select>
+                  </div>`).join('')}
+              </div>`,
+            onOk: async (back) => {
+              const prefs = [...back.querySelectorAll('#pf select')].map(sel => ({
+                item: sel.dataset.item, weight: parseInt(sel.value, 10)
+              }));
+              await POST('/gift-prefs', { role_id: rid, prefs });
+              UI.ok('已儲存'); draw();
+            }
+          });
+        });
+        body.querySelector('#kw').oninput = (e) => {
+          const kw = e.target.value.trim();
+          body.querySelector('#plist').innerHTML = d.roles.filter(r => !kw || (r.name || '').includes(kw)).map(roleRow).join('');
+          bindPref();
+        };
+        body.querySelector('#randnew').onclick = async () => {
+          if (!await UI.confirm('幫「還沒設定過喜好」的角色隨機產生（每位 3 個最喜歡、3 個喜歡、2 個討厭）？已設定的不會動。')) return;
+          const out = await POST('/gift-prefs/randomize', { only_empty: true });
+          UI.ok(`已產生 ${out.roles} 位`); draw();
+        };
+        body.querySelector('#randall').onclick = async () => {
+          if (!await UI.confirm('全部角色重新隨機一次？現有的喜好設定會被覆蓋，玩家已經送過探索出來的答案也會跟著改變。')) return;
+          const out = await POST('/gift-prefs/randomize', {});
+          UI.ok(`已重新產生 ${out.roles} 位`); draw();
+        };
+        bindPref();
         return;
       }
 

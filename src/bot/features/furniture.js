@@ -241,13 +241,26 @@ function furniturePanel(gid, uid, uname) {
   rows.push(new ActionRowBuilder().addComponents(
     new StringSelectMenuBuilder().setCustomId('furncat').setPlaceholder('選一個分類看家具')
       .addOptions(Object.entries(CATS).map(([k, v]) => ({ label: v, value: k })))));
-  if (owned.length) {
+  // 擺出與收起分成兩個選單：以前用「擺滿了才切換成收起」的寫法，
+  // 擁有 3 件只擺 1 件時永遠只給「擺出來」，那 1 件就再也收不回來了。
+  const canPlace = owned.filter(o => o.placed < o.count);
+  const canStore = owned.filter(o => o.placed > 0);
+  if (canPlace.length) {
     rows.push(new ActionRowBuilder().addComponents(
-      new StringSelectMenuBuilder().setCustomId('furnplace').setPlaceholder('擺放／收起你的家具')
-        .addOptions(owned.slice(0, 25).map(o => ({
+      new StringSelectMenuBuilder().setCustomId('furnplace').setPlaceholder('🪑 擺出來（有擺才有加成）')
+        .addOptions(canPlace.slice(0, 25).map(o => ({
           label: `${o.emoji || ''}${o.name}`.slice(0, 100),
-          description: o.placed >= o.count ? '全部已擺出 → 點一下收起' : '點一下擺出來',
-          value: `${o.furniture_id}:${o.placed >= o.count ? 'off' : 'on'}`
+          description: `擁有 ${o.count} 件，已擺 ${o.placed} 件`.slice(0, 100),
+          value: `${o.furniture_id}:on`
+        })))));
+  }
+  if (canStore.length) {
+    rows.push(new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder().setCustomId('furnstore').setPlaceholder('📦 收起來（放回倉庫）')
+        .addOptions(canStore.slice(0, 25).map(o => ({
+          label: `${o.emoji || ''}${o.name}`.slice(0, 100),
+          description: `已擺 ${o.placed} 件　點一下收起 1 件`.slice(0, 100),
+          value: `${o.furniture_id}:off`
         })))));
   }
   return { embeds: [embed], components: rows };
@@ -311,7 +324,7 @@ function init(client) {
           content: `🎉 ${mode === 'buy' ? '買下' : '做好'}了 ${out.bought.emoji || ''}**${out.bought.name}**！記得從選單把它擺出來才有加成。`, ...eph
         }).catch(() => {});
       }
-      if (i.isStringSelectMenu() && i.customId === 'furnplace') {
+      if (i.isStringSelectMenu() && (i.customId === 'furnplace' || i.customId === 'furnstore')) {
         const [fid, act] = i.values[0].split(':');
         const out = togglePlace(gid, uid, uname, parseInt(fid, 10), act === 'on');
         if (out.error) return i.reply({ content: out.error, ...eph }).catch(() => {});

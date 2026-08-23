@@ -332,4 +332,74 @@ router.get('/home-players', (req, res) => {
        FROM home_users h WHERE h.guild_id=? ORDER BY h.level DESC, achievements DESC LIMIT 200`).all(gid));
 });
 
+// ---------- 角色禮物喜好 ----------
+//
+// affinity_prefs（角色 × 物品 → 權重）以前完全沒有後台，只能吃程式裡的預設值，
+// 管理員看不到「這位角色喜歡什麼」，也沒辦法幫新角色調。權重就是送禮的倍率：
+// 200＝💖最喜歡(×2)、150＝💕喜歡(×1.5)、100＝🤍普通、50＝💔討厭(×0.5)。
+const PREF_LEVELS = [
+  { weight: 200, label: '💖 最喜歡（×2）' },
+  { weight: 150, label: '💕 喜歡（×1.5）' },
+  { weight: 100, label: '🤍 普通（×1）' },
+  { weight: 50, label: '💔 討厭（×0.5）' }
+];
+
+router.get('/gift-prefs', (req, res) => {
+  const gid = req.guildId;
+  const roles = db.prepare(
+    'SELECT id, name, author FROM wheel_roles WHERE guild_id=? AND enabled=1 ORDER BY name').all(gid);
+  // 可以送的東西＝有基礎好感的物品（禮物、手工禮物）
+  const items = db.prepare(
+    'SELECT name, emoji, gift_aff FROM gather_items WHERE guild_id=? AND gift_aff>0 ORDER BY gift_aff').all(gid);
+  const prefs = db.prepare('SELECT role_id, item, weight FROM affinity_prefs WHERE guild_id=?').all(gid);
+  res.json({ roles, items, prefs, levels: PREF_LEVELS });
+});
+
+// 存某一位角色的整份喜好（沒送到的品項＝普通，直接刪掉不留列）
+router.post('/gift-prefs', (req, res) => {
+  const gid = req.guildId;
+  const roleId = int((req.body || {}).role_id, 0, 0);
+  if (!roleId) return res.status(400).json({ error: '缺少角色' });
+  const list = Array.isArray((req.body || {}).prefs) ? req.body.prefs : [];
+  db.transaction(() => {
+    db.prepare('DELETE FROM affinity_prefs WHERE guild_id=? AND role_id=?').run(gid, roleId);
+    const ins = db.prepare('INSERT INTO affinity_prefs (guild_id,role_id,item,weight) VALUES (?,?,?,?)');
+    for (const p of list) {
+      const item = str(p && p.item).trim();
+      const w = int(p && p.weight, 100, 0);
+      if (!item || w === 100) continue;         // 普通就不用存
+      ins.run(gid, roleId, item, Math.min(500, w));
+    }
+  })();
+  const role = db.prepare('SELECT name FROM wheel_roles WHERE id=?').get(roleId);
+  audit(req.user.name, `設定 ${role ? role.name : '#' + roleId} 的禮物喜好`, 'home', '', gid);
+  res.json({ ok: true });
+});
+
+// 一鍵隨機：每位角色抽 3 個最喜歡、3 個喜歡、2 個討厭（手冊上寫的規格）
+router.post('/gift-prefs/randomize', (req, res) => {
+  const gid = req.guildId;
+  const onlyEmpty = !!(req.body || {}).only_empty;
+  const roles = db.prepare('SELECT id FROM wheel_roles WHERE guild_id=? AND enabled=1').all(gid);
+  const items = db.prepare('SELECT name FROM gather_items WHERE guild_id=? AND gift_aff>0').all(gid).map(r => r.name);
+  if (items.length < 8) return res.status(400).json({ error: '可送的禮物種類太少（至少要 8 種）' });
+  const has = db.prepare('SELECT COUNT(*) n FROM affinity_prefs WHERE guild_id=? AND role_id=?');
+  const del = db.prepare('DELETE FROM affinity_prefs WHERE guild_id=? AND role_id=?');
+  const ins = db.prepare('INSERT INTO affinity_prefs (guild_id,role_id,item,weight) VALUES (?,?,?,?)');
+  let done = 0;
+  db.transaction(() => {
+    for (const r of roles) {
+      if (onlyEmpty && has.get(gid, r.id).n > 0) continue;
+      const pool = items.slice().sort(() => Math.random() - 0.5);
+      del.run(gid, r.id);
+      pool.slice(0, 3).forEach(it => ins.run(gid, r.id, it, 200));
+      pool.slice(3, 6).forEach(it => ins.run(gid, r.id, it, 150));
+      pool.slice(6, 8).forEach(it => ins.run(gid, r.id, it, 50));
+      done++;
+    }
+  })();
+  audit(req.user.name, `隨機產生 ${done} 位角色的禮物喜好`, 'home', '', gid);
+  res.json({ ok: true, roles: done });
+});
+
 module.exports = router;
