@@ -8,7 +8,7 @@ const { brandColor } = require('../../util/brand');
 // 產物賣價會受財經新聞影響（新聞關閉時等於基準價）
 const { livePrice, priceTag } = require('../../util/market');
 const { wallet, addCoins, addToBag, menuResult, safeMenu } = require('./gather');
-const { facilitySlots, facilityBonus, applySpeed } = require('./facility');
+const { facilitySlots, facilityBonus, applySpeed, speedFor } = require('./facility');
 const { logSteal, stealChannel } = require('../../util/steal');
 const { buffPct } = require('../../util/buffs');
 const cron = require('node-cron');
@@ -121,7 +121,7 @@ function accrue(gid, uid) {
   const c = rcfg(gid);
   const now = Date.now();
   const fb = facilityBonus(gid, uid, 'ranch');
-  const speed = fb.speed;                                  // 牧場等級 → 產出時間縮短 %
+  const speed = speedFor(gid, uid, 'ranch');               // 牧場等級＋家園加成 → 產出時間縮短 %
   const yieldPct = fb.yield || 0;                          // 牧場等級 → 每次產出的量變多
   const slots = db.prepare('SELECT * FROM ranch_slots WHERE guild_id=? AND user_id=?').all(gid, uid);
   const upd = db.prepare('UPDATE ranch_slots SET pending=?, last_produce_ms=? WHERE guild_id=? AND user_id=? AND slot=?');
@@ -151,7 +151,7 @@ function nextReadyMs(gid, s) {
   const c = rcfg(gid);
   const cap = Math.max(1, a.produce_per_day) * Math.max(1, c.max_accrue_days);
   if (s.pending >= cap) return 0;
-  return (s.last_produce_ms || Date.now()) + applySpeed(intervalMs(a), facilityBonus(gid, s.user_id, 'ranch').speed);
+  return (s.last_produce_ms || Date.now()) + applySpeed(intervalMs(a), speedFor(gid, s.user_id, 'ranch'));
 }
 
 const stealCount = (gid, uid) =>
@@ -187,7 +187,7 @@ function buyAnimal(gid, uid, uname, animalId) {
   });
   tx();
   const p = productOf(animal.product_item_id);
-  const iv = applySpeed(intervalMs(animal), facilityBonus(gid, uid, 'ranch').speed) / 3600000;
+  const iv = applySpeed(intervalMs(animal), speedFor(gid, uid, 'ranch')) / 3600000;
   const desc = animal.guard_pct > 0
     ? `${animal.emoji || '🐾'} **${animal.name}** 住進了牧場第 ${free + 1} 格！\n🛡️ 牠會看門：有人來偷時 ${animal.guard_pct}% 機率反擊，讓小偷掉星幣賠給你。`
     : `${animal.emoji || '🐾'} **${animal.name}** 住進了牧場第 ${free + 1} 格！\n每隔約 ${iv < 1 ? Math.round(iv * 60) + ' 分' : iv.toFixed(1) + ' 小時'}產 1 個 ${p ? (p.emoji || '') + p.name : '產物'}，成熟就能 \`/收成\`（一個一個收，不用等整批），別被人 \`/偷\` 走囉。`;
@@ -255,7 +255,7 @@ function hatchEgg(gid, uid, uname, eggItemId, qty = 1) {
   if (!freeSlots.length) return { error: `孵化室滿了（${hMax} 格）。等現有的蛋孵化完領走，或去 \`/設施商店\` 升級孵化室。` };
 
   const n = Math.max(1, Math.min(qty, inv.count, freeSlots.length));
-  const readyAt = Date.now() + applySpeed(Math.max(1, def.hatch_minutes) * 60000, facilityBonus(gid, uid, 'hatch').speed);
+  const readyAt = Date.now() + applySpeed(Math.max(1, def.hatch_minutes) * 60000, speedFor(gid, uid, 'hatch'));
   const put = [];
   db.transaction(() => {
     db.prepare('UPDATE gather_inventory SET count = count - ? WHERE guild_id=? AND user_id=? AND item_id=?').run(n, gid, uid, def.egg_item_id);
@@ -476,7 +476,7 @@ function init(client) {
             return `${a.emoji || '🐾'} **${a.name}**　${money(gc, a.price)}\n　　🛡️ 看門：被偷時 ${a.guard_pct}% 機率反擊，小偷最多掉 ${a.guard_penalty} 星幣${a.description ? `　${a.description}` : ''}`;
           }
           const p = productOf(a.product_item_id);
-          const iv = applySpeed(intervalMs(a), facilityBonus(gid, uid, 'ranch').speed) / 60000;
+          const iv = applySpeed(intervalMs(a), speedFor(gid, uid, 'ranch')) / 60000;
           const cap = Math.max(1, a.produce_per_day) * Math.max(1, c.max_accrue_days);
           return `${a.emoji || '🐾'} **${a.name}**　${money(gc, a.price)}\n　　每 ${iv < 60 ? Math.round(iv) + ' 分' : (iv / 60).toFixed(1) + ' 小時'}產 1 × ${p ? (p.emoji || '') + p.name : '產物'}（每個賣 ${p ? livePrice(gid, p) : '?'}${p ? priceTag(gid, p) : ''}）\n　　📦 最多囤 **${cap}** 個，**滿了就停止生產**，記得去 \`/收成\` 才會繼續${a.description ? `　${a.description}` : ''}`;
         };

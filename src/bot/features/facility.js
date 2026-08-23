@@ -103,6 +103,12 @@ function facilityBonus(gid, uid, type) {
   const row = db.prepare('SELECT speed_pct, resist_pct, yield_pct FROM facility_owned WHERE guild_id=? AND user_id=? AND type=?').get(gid, uid, type);
   return { speed: row ? row.speed_pct : 0, resist: row ? row.resist_pct : 0, yield: row ? (row.yield_pct || 0) : 0 };
 }
+// 生產速度總加成＝設施等級 + 家園加成（成就／寵物／家具／料理的 speed_pct）
+// 種植與孵化是「下種當下」就把時間算死，之後換裝備不會回溯；牧場產出每次結算即時算。
+function speedFor(gid, uid, type) {
+  const { buffPct } = require('../../util/buffs');
+  return facilityBonus(gid, uid, type).speed + buffPct(gid, uid, 'speed_pct');
+}
 // 把一段時間套上加速％（最多縮到 10%，避免設成 100% 直接變 0 秒）
 const applySpeed = (ms, speedPct) => Math.max(Math.round(ms * 0.1), Math.round(ms * (1 - Math.min(90, Math.max(0, speedPct)) / 100)));
 
@@ -243,4 +249,4 @@ function init(client) {
   console.log('  ↳ 設施商店已載入（農地/溫室/牧場/孵化室 分階購買）');
 }
 
-module.exports = { init, facilitySlots, facilityBonus, applySpeed, buy, defsOf, TYPE_KEYS, seedFacilities, TYPES };
+module.exports = { init, facilitySlots, facilityBonus, applySpeed, speedFor, buy, defsOf, TYPE_KEYS, seedFacilities, TYPES };

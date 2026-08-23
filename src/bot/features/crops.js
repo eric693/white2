@@ -5,7 +5,7 @@ const { brandColor } = require('../../util/brand');
 // 產物賣價會受財經新聞影響（新聞關閉時等於基準價）
 const { livePrice, priceTag } = require('../../util/market');
 const { wallet, addToBag, menuResult, safeMenu } = require('./gather');
-const { facilitySlots, facilityBonus, applySpeed } = require('./facility');
+const { facilitySlots, facilityBonus, applySpeed, speedFor } = require('./facility');
 
 const ccfg = (gid) => guildConfig('crop_config', gid);
 const gcfg = (gid) => guildConfig('gather_config', gid);
@@ -136,7 +136,7 @@ function plantSeeds(gid, uid, uname, seedId, qty) {
   const have = seedsInBag(gid, uid, seed);
   if (have < 1) return { error: `你的背包沒有 ${seed.emoji || ''}${seed.name}，先去 \`/種子商店\` 買。` };
   const n = Math.min(Math.max(1, qty), free.length, have);
-  const readyAt = Date.now() + applySpeed(Math.max(1, seed.grow_minutes) * 60000, facilityBonus(gid, uid, seed.plot_type).speed);
+  const readyAt = Date.now() + applySpeed(Math.max(1, seed.grow_minutes) * 60000, speedFor(gid, uid, seed.plot_type));
   const slots = free.slice(0, n);
   db.transaction(() => {
     db.prepare('UPDATE gather_inventory SET count = count - ? WHERE guild_id=? AND user_id=? AND item_id=?').run(n, gid, uid, it.id);
@@ -273,11 +273,11 @@ function init(client) {
         for (const type of ['field', 'greenhouse']) {
           const list = seeds.filter(sd => sd.plot_type === type);
           if (!list.length) continue;
-          const speed = facilityBonus(gid, uid, type).speed;
+          const speed = speedFor(gid, uid, type);
           const txt = list.map(sd => {
             const p = productOf(sd.product_item_id);
             const mins = Math.round(applySpeed(sd.grow_minutes * 60000, speed) / 60000);
-            return `${sd.emoji || '🌱'} **${sd.name}**　${money(gc, sd.seed_price)}　→ ${sd.yield_count}× ${p ? (p.emoji || '') + p.name : '產物'}（每個賣 ${p ? livePrice(gid, p) : '?'}${p ? priceTag(gid, p) : ''}）\n　　🕑 ${mins} 分成熟${speed ? `（設施加速 -${speed}%）` : ''}${sd.description ? `　${sd.description}` : ''}`;
+            return `${sd.emoji || '🌱'} **${sd.name}**　${money(gc, sd.seed_price)}　→ ${sd.yield_count}× ${p ? (p.emoji || '') + p.name : '產物'}（每個賣 ${p ? livePrice(gid, p) : '?'}${p ? priceTag(gid, p) : ''}）\n　　🕑 ${mins} 分成熟${speed ? `（加速 -${speed}%）` : ''}${sd.description ? `　${sd.description}` : ''}`;
           }).join('\n');
           embeds.push(new EmbedBuilder().setColor(COLOR[type])
             .setTitle(`${type === 'greenhouse' ? '🏡 溫室花卉' : '🌾 農地作物'}（你有 ${slotsOf(c, type, u0, gid, uid)} 格）`)
