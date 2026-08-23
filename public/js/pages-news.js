@@ -137,13 +137,22 @@ App.page('news', {
           <div class="field"><label>標題</label><input name="headline" placeholder="🥚 蛋雞流感席捲南區牧場"></div>
           <div class="field"><label>內文</label><textarea name="body" rows="3" placeholder="產蛋量預估下滑三成，蛋商已開始搶貨。"></textarea></div>
           <div class="form-row">
-            <div class="field"><label>開始時間（只到整點，留空＝馬上）</label>
-              <input name="start_at" type="datetime-local" step="3600">
-              <div class="hint">分鐘會自動歸零 —— 快報本來就是整點結算的，填 14:37 也只會在 14:00 那一輪生效。</div></div>
+            <div class="field"><label>開始時間（只選整點，留空＝馬上）</label>
+              <div style="display:flex;gap:6px">
+                <input name="start_date" type="date" style="flex:1">
+                <select name="start_hour" style="width:110px">
+                  <option value="">時</option>
+                  ${Array.from({ length: 24 }, (_, h) => `<option value="${h}">${String(h).padStart(2, '0')}:00</option>`).join('')}
+                </select>
+              </div>
+              <div class="hint">快報是整點結算的，所以只給選到「時」。兩格都留空＝馬上發布。</div></div>
             <div class="field"><label>持續（小時）</label><input name="duration_h" type="number" min="1" max="168" value="3"></div>
           </div>
           <div class="hint">例：開始 12:00、持續 3 小時 → 12:00～15:00 這段時間，選的股票<strong>每小時都朝設定方向漲/跌</strong>，物價倍率也維持。</div>
           <div class="field"><label>配圖網址（可留空）</label><input name="image_url" placeholder="https://…"></div>
+          <h4 style="margin:14px 0 4px">💸 發星幣（可留空）</h4>
+          <div class="field"><label>每人發多少（0＝不發）</label><input name="payout_each" type="number" min="0" value="0"></div>
+          <div class="hint">快報生效的那一刻，<strong>每個有錢包的玩家各拿這個金額</strong>，直接入帳並寫在快報的「影響」欄裡。只發星幣、不動物價股價也可以發布。</div>
           <h4 style="margin:14px 0 4px">物價影響（賣出價，整段時間有效）</h4>
           ${[0, 1, 2].map(effectRow).join('')}
           <h4 style="margin:14px 0 4px">股價影響（每小時結算的漲跌 %，整段時間持續）</h4>
@@ -166,23 +175,25 @@ App.page('news', {
             if (!sid) continue;
             stock_fx.push({ symbol_id: parseInt(sid, 10), impact_pct: parseInt(v('imp' + i), 10) || 0, vol_mult: parseInt(v('vm' + i), 10) || 100 });
           }
+          const payout_each = Math.max(0, parseInt(v('payout_each'), 10) || 0);
           if (!v('headline')) { UI.err('請填標題'); return false; }
-          if (!effects.length && !stock_fx.length) { UI.err('至少要加一條影響'); return false; }
+          if (!effects.length && !stock_fx.length && !payout_each) { UI.err('至少要加一條影響（物價、股價，或發星幣）'); return false; }
+          const startDate = v('start_date'), startHour = v('start_hour');
+          if (startDate && startHour === '') { UI.err('請選開始的整點時間'); return false; }
+          if (!startDate && startHour !== '') { UI.err('請選開始日期'); return false; }
           try {
-            const startAt = v('start_at');
-            // 一律對齊整點：股價與物價都是整點結算，分鐘填了也沒有意義
+            // 只到整點：日期＋小時組起來，分秒一律 0
             let effect_ts = 0;
-            if (startAt) {
-              const d = new Date(startAt);
-              d.setMinutes(0, 0, 0);
-              effect_ts = d.getTime();
+            if (startDate) {
+              const [y, m, d] = startDate.split('-').map(Number);
+              effect_ts = new Date(y, m - 1, d, parseInt(startHour, 10), 0, 0, 0).getTime();
             }
             await POST('/market-news', {
               headline: v('headline'), body: v('body'), image_url: v('image_url'),
-              duration_h: parseInt(v('duration_h'), 10) || 3, effects, stock_fx, effect_ts
+              duration_h: parseInt(v('duration_h'), 10) || 3, effects, stock_fx, effect_ts, payout_each
             });
           } catch (e) { UI.err(e.message); return false; }
-          UI.ok(v('start_at') ? '已排程，到時間會自動生效' : '已發布，一分鐘內生效'); App.go('news');
+          UI.ok(v('start_date') ? '已排程，到時間會自動生效' : '已發布，一分鐘內生效'); App.go('news');
         }
       });
 

@@ -1431,7 +1431,8 @@ function init(client) {
         const rkind = name === '製作' ? 'craft' : 'forge';
         // 從面板按鈕進來沒有「配方」參數 —— 直接開該類的配方清單（下拉選單可以當場做），
         // 不要丟一句「找不到配方『』」給玩家
-        if (isBtn) { name = '配方'; i._forceKind = rkind; }
+        // 面板只剩一顆「🔨 製作」：製作與鍛造的配方一次全列出來
+        if (isBtn) { name = '配方'; }
         else {
         const what = (i.options.getString('配方') || '').trim();
         const times = Math.min(10, Math.max(1, i.options.getInteger('次數') || 1));

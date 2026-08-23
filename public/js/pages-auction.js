@@ -10,7 +10,7 @@ App.page('auction', {
     ]);
     const coin = (n) => `🪙 ${Number(n || 0).toLocaleString('en-US')}`;
     const when = (ms) => ms ? new Date(ms).toLocaleString('zh-TW', { hour12: false, timeZone: 'Asia/Taipei', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
-    const KINDS = { furniture: '🛋️ 家具', pet: '🐾 寵物', title: '🏅 成就', item: '📦 物品' };
+    const KINDS = { furniture: '🛋️ 家具', pet: '🐾 寵物', title: '🏅 成就', item: '📦 物品（含素材）', plot: '🌱 格子（農地／溫室／牧場／孵化室／魚缸）' };
     const STATUS = {
       scheduled: '<span class="tag">排程中</span>', live: '<span class="tag ok">競標中</span>',
       ended: '<span class="tag primary">已成交</span>', failed: '<span class="tag">流標</span>',
@@ -54,7 +54,7 @@ App.page('auction', {
           <tbody>${rows.length ? rows.map(r => {
       const top = (r.top_bids || [])[0];
       return `<tr>
-              <td>${UI.esc(refName(r))}${r.kind === 'item' && r.qty > 1 ? ` ×${r.qty}` : ''}</td>
+              <td>${UI.esc(refName(r))}${(r.kind === 'item' || r.kind === 'plot') && r.qty > 1 ? ` ×${r.qty}` : ''}</td>
               <td>${KINDS[r.kind] || r.kind}</td>
               <td>${coin(r.start_price)}${r.buyout_price ? `<div class="hint" style="font-size:12px">直購 ${coin(r.buyout_price)}</div>` : ''}</td>
               <td class="wrap" style="font-size:13px">${parseMats(r.mats_cost).map(m => `${UI.esc(m.item)}×${m.count}`).join('、') || '—'}</td>
@@ -141,9 +141,11 @@ App.page('auction', {
       const qtyWrap = back.querySelector('#qtywrap');
       const fill = () => {
         const k = kindSel.value;
+        // enabled=0 ＝ 平常買不到／不會掉落，標成「拍賣限定」讓管理員一眼看出獨家標的
         refSel.innerHTML = (targets[k] || []).map(t =>
-          `<option value="${t.id}" ${t.id == r.ref_id ? 'selected' : ''}>${UI.esc((t.emoji || '') + t.name)}${t.price ? `（原價 ${t.price}）` : ''}</option>`).join('');
-        qtyWrap.style.display = k === 'item' ? '' : 'none';
+          `<option value="${t.id}" ${t.id == r.ref_id ? 'selected' : ''}>${UI.esc((t.emoji || '') + t.name)}${
+            t.enabled === 0 ? '　★拍賣限定' : (t.price ? `（原價 ${t.price}）` : '')}</option>`).join('');
+        qtyWrap.style.display = (k === 'item' || k === 'plot') ? '' : 'none';
       };
       kindSel.onchange = fill;
       fill();

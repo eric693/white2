@@ -6,6 +6,7 @@ const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, 
 const { db, guildConfig, logError } = require('../../db');
 const { bump: bumpAch } = require('../../util/achievements');
 const { brandColor } = require('../../util/brand');
+const { selectRows, isSelect } = require('../../util/menu');
 const { wallet, addCoins } = require('./gather');
 const { BUFF_TYPES, buffPct, grantBuff, applyBuff } = require('../../util/buffs');
 const { seedHome, homeOf, levelDef, bagCount, parseMats, takeItems, NAV } = require('./home');
@@ -332,13 +333,12 @@ function kitchenPanel(gid, uid, uname) {
           + `${parseMats(r.materials).map(m => `${m.item}×${m.count}`).join('、')}`
           + `　→ 售價 ${r.base_price.toLocaleString('en-US')}／好感 ${r.affinity_base}`).join('\n').slice(0, 1024)
       });
-      rows.push(new ActionRowBuilder().addComponents(
-        new StringSelectMenuBuilder().setCustomId('kpreview').setPlaceholder(`看全部 ${recipesOf(gid).length} 道食譜的材料`)
-          .addOptions(recipesOf(gid).slice(0, 25).map(r => ({
-            label: `${r.emoji || ''}${r.name}`.slice(0, 100),
-            description: `廚房 Lv.${r.min_kitchen}｜${parseMats(r.materials).map(m => `${m.item}×${m.count}`).join('、')}`.slice(0, 100),
-            value: String(r.id)
-          })))));
+      // 食譜有 30 幾道，一個下拉只放得下 25 個 —— 交給 selectRows 自動分行，不然後面的看不到
+      rows.push(...selectRows('kpreview', recipesOf(gid).map(r => ({
+        label: `${r.emoji || ''}${r.name}`.slice(0, 100),
+        description: `廚房 Lv.${r.min_kitchen}｜${parseMats(r.materials).map(m => `${m.item}×${m.count}`).join('、')}`.slice(0, 100),
+        value: String(r.id)
+      })), `看全部 ${recipesOf(gid).length} 道食譜的材料`, { maxRows: 4 }));
     }
     if (can) {
       const btns = new ActionRowBuilder().addComponents(
@@ -395,30 +395,70 @@ function kitchenPanel(gid, uid, uname) {
     const mats = parseMats(r.materials);
     const lack = mats.filter(m => bagCount(gid, uid, m.item) < m.count);
     return { r, mats, lack };
-  }).sort((a, b) => (a.lack.length ? 1 : 0) - (b.lack.length ? 1 : 0)).slice(0, 25);
+  }).sort((a, b) => (a.lack.length ? 1 : 0) - (b.lack.length ? 1 : 0));
   const canCook = avail.filter(a => !a.lack.length).length;
   const busyNow = db.prepare('SELECT COUNT(*) n FROM cook_queue WHERE guild_id=? AND user_id=?').get(gid, uid).n;
   const freePots = Math.max(0, potSlots(home) - busyNow);
-  if (avail.length) rows.push(new ActionRowBuilder().addComponents(
-    new StringSelectMenuBuilder().setCustomId('kcook')
-      // 可複選：一次把空著的爐子排滿，不用一道一道點
-      .setMinValues(1).setMaxValues(Math.max(1, Math.min(avail.length, freePots)))
-      .setPlaceholder(`選菜下鍋（可複選，空爐 ${freePots} 個｜現在做得出來 ${canCook}／${avail.length} 道）`)
-      .addOptions(avail.map(({ r, mats, lack }) => ({
-        label: `${lack.length ? '🔴' : '🟢'}${r.emoji || ''}${r.name}`.slice(0, 100),
-        description: (lack.length
-          ? `缺 ${lack.map(m => `${m.item}×${m.count - bagCount(gid, uid, m.item)}`).join('、')}`
-          : `${mats.map(m => `${m.item}×${m.count}`).join('、')}｜${r.cook_minutes}分`).slice(0, 100),
-        value: String(r.id)
-      })))));
-  if (inv.length) rows.push(new ActionRowBuilder().addComponents(
-    new StringSelectMenuBuilder().setCustomId('kdish').setPlaceholder('處理做好的料理（吃掉／賣掉）')
-      .addOptions(inv.slice(0, 25).map(d => ({
-        label: `${qLabel(d.quality)} ${d.emoji || ''}${d.name}`.slice(0, 100),
-        description: `持有 ${d.count}　選了會問你要吃還是賣`.slice(0, 100),
-        value: `${d.recipe_id}:${d.quality}`
-      })))));
+  // 可複選：一次把空著的爐子排滿，不用一道一道點。
+  // 解鎖的食譜超過 25 道時自動分行，不然高等級食譜會整個從選單消失。
+  if (avail.length) rows.push(...selectRows('kcook', avail.map(({ r, mats, lack }) => ({
+    label: `${lack.length ? '🔴' : '🟢'}${r.emoji || ''}${r.name}`.slice(0, 100),
+    description: (lack.length
+      ? `缺 ${lack.map(m => `${m.item}×${m.count - bagCount(gid, uid, m.item)}`).join('、')}`
+      : `${mats.map(m => `${m.item}×${m.count}`).join('、')}｜${r.cook_minutes}分`).slice(0, 100),
+    value: String(r.id)
+  })), `選菜下鍋（可複選，空爐 ${freePots} 個｜現在做得出來 ${canCook}／${avail.length} 道）`,
+    { maxRows: 2, maxValues: Math.max(1, freePots) }));
+  if (inv.length) rows.push(...selectRows('kdish', inv.map(d => ({
+    label: `${qLabel(d.quality)} ${d.emoji || ''}${d.name}`.slice(0, 100),
+    description: `持有 ${d.count}　選了會問你要吃還是賣`.slice(0, 100),
+    value: `${d.recipe_id}:${d.quality}`
+  })), '處理做好的料理（吃掉／賣掉）', { maxRows: 2 }));
   return { embeds: [embed], components: rows };
+}
+
+// 選好菜、還沒選份數的暫存（重開面板就作廢，不進 DB）
+const pending = new Map();
+
+/** 這幾道菜「每道各做幾份」最多能做幾份：受空爐數與材料量兩邊夾擊 */
+function maxRounds(gid, uid, uname, ids) {
+  const home = homeOf(gid, uid, uname);
+  const busy = db.prepare('SELECT COUNT(*) n FROM cook_queue WHERE guild_id=? AND user_id=?').get(gid, uid).n;
+  const free = Math.max(0, potSlots(home) - busy);
+  let byPots = Math.floor(free / Math.max(1, ids.length));
+  if (byPots <= 1) return byPots;
+  // 材料上限：同一道菜做 N 份就要 N 份材料，取所有選到的菜裡最緊的那個
+  let byMats = byPots;
+  for (const id of ids) {
+    const r = db.prepare('SELECT * FROM cook_recipes WHERE guild_id=? AND id=? AND enabled=1').get(gid, id);
+    if (!r) continue;
+    for (const m of parseMats(r.materials)) {
+      byMats = Math.min(byMats, Math.floor(bagCount(gid, uid, m.item) / Math.max(1, m.count)));
+    }
+  }
+  return Math.max(1, Math.min(byPots, byMats));
+}
+
+/** 把選到的菜各下鍋 n 份；爐子滿或材料不夠就停下來，並回報原因 */
+async function cookMany(i, gid, uid, uname, ids, n, refresh) {
+  const eph = { flags: MessageFlags.Ephemeral };
+  const ok = new Map(); let failed = null;
+  outer: for (let round = 0; round < n; round++) {
+    for (const id of ids) {
+      const out = startCook(gid, uid, uname, id);
+      if (out.error) { failed = failed || out.error; break outer; }
+      const key = `${out.started.emoji || ''}**${out.started.name}**（${out.started.cook_minutes} 分）`;
+      ok.set(key, (ok.get(key) || 0) + 1);
+    }
+  }
+  if (!ok.size) return i.reply({ content: failed || '沒有東西下鍋。', ...eph }).catch(() => {});
+  await refresh();
+  const total = [...ok.values()].reduce((a, b) => a + b, 0);
+  return i.followUp({
+    content: `🔥 下鍋了 ${total} 鍋：\n${[...ok].map(([k, c]) => `・${k}${c > 1 ? ` ×${c}` : ''}`).join('\n')}\n品質要領取時才知道。`
+      + (failed ? `\n\n⚠️ 後面停下來了：${failed}` : ''),
+    ...eph
+  }).catch(() => {});
 }
 
 function init(client) {
@@ -444,7 +484,7 @@ function init(client) {
         await refresh();
         return i.followUp({ content: `🎉 廚房升級成 **Lv.${out.upgraded.level} ${out.upgraded.emoji || ''}${out.upgraded.name}**！\n完美料理機率 +${out.upgraded.perfect_pct}%，同時可烹飪 ${out.upgraded.level} 鍋。`, ...eph }).catch(() => {});
       }
-      if (i.isStringSelectMenu() && i.customId === 'kpreview') {
+      if (i.isStringSelectMenu() && isSelect(i.customId, 'kpreview')) {
         const r = db.prepare('SELECT * FROM cook_recipes WHERE guild_id=? AND id=?').get(gid, parseInt(i.values[0], 10));
         if (!r) return i.reply({ content: '找不到這道食譜。', ...eph }).catch(() => {});
         const gc2 = gcfg(gid);
@@ -491,23 +531,36 @@ function init(client) {
           ...eph
         }).catch(() => {});
       }
-      if (i.isStringSelectMenu() && i.customId === 'kcook') {
-        // 可複選：依序下鍋，爐子滿了或材料不夠就停，並說明為什麼
-        const ok = [], failed = [];
-        for (const v of i.values) {
-          const out = startCook(gid, uid, uname, parseInt(v, 10));
-          if (out.error) { failed.push(out.error); continue; }
-          ok.push(`${out.started.emoji || ''}**${out.started.name}**（${out.started.cook_minutes} 分）`);
+      if (i.isStringSelectMenu() && isSelect(i.customId, 'kcook')) {
+        // 選好菜之後，如果爐子還有空位就先問「每道各做幾份」——
+        // 只做得出一兩道菜的人，以前一次只能佔掉一個爐子，剩下十幾個空著。
+        const ids = i.values.map(v => parseInt(v, 10));
+        const rounds = maxRounds(gid, uid, uname, ids);
+        if (rounds > 1) {
+          pending.set(`${gid}:${uid}`, ids);
+          const names = ids.map(id => {
+            const r = db.prepare('SELECT name, emoji FROM cook_recipes WHERE id=?').get(id);
+            return r ? `${r.emoji || ''}${r.name}` : '?';
+          }).join('、');
+          return i.reply({
+            content: `要做 ${names}　—— 每道各下鍋幾份？`,
+            components: selectRows('kcookn', Array.from({ length: rounds }, (_, n) => ({
+              label: `每道各 ${n + 1} 份${n + 1 === rounds ? '（最多）' : ''}`,
+              description: `共 ${(n + 1) * ids.length} 鍋`,
+              value: String(n + 1)
+            })), '選份數', { maxRows: 2 }),
+            ...eph
+          }).catch(() => {});
         }
-        if (!ok.length) return i.reply({ content: failed[0] || '沒有東西下鍋。', ...eph }).catch(() => {});
-        await refresh();
-        return i.followUp({
-          content: `🔥 下鍋了 ${ok.length} 道：\n${ok.map(x => `・${x}`).join('\n')}\n品質要領取時才知道。`
-            + (failed.length ? `\n\n⚠️ 有 ${failed.length} 道沒下鍋：${failed[0]}` : ''),
-          ...eph
-        }).catch(() => {});
+        return await cookMany(i, gid, uid, uname, ids, 1, refresh);
       }
-      if (i.isStringSelectMenu() && i.customId === 'kdish') {
+      if (i.isStringSelectMenu() && isSelect(i.customId, 'kcookn')) {
+        const ids = pending.get(`${gid}:${uid}`) || [];
+        if (!ids.length) return i.reply({ content: '選單過期了，請重新選菜。', ...eph }).catch(() => {});
+        pending.delete(`${gid}:${uid}`);
+        return await cookMany(i, gid, uid, uname, ids, parseInt(i.values[0], 10), refresh);
+      }
+      if (i.isStringSelectMenu() && isSelect(i.customId, 'kdish')) {
         const [rid, q] = i.values[0].split(':').map(Number);
         const r = db.prepare('SELECT name, emoji FROM cook_recipes WHERE id=?').get(rid) || { name: '料理' };
         return i.reply({

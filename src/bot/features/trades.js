@@ -209,7 +209,9 @@ function init(client) {
         (i.options.getString('給的物品') || '').trim(), (i.options.getString('換的物品') || '').trim(),
         i.options.getInteger('給的數量'), i.options.getInteger('換的數量'), i.channelId);
       if (res.error) return i.reply({ content: res.error, flags: MessageFlags.Ephemeral });
-      const sent = await i.reply({ ...res.payload, fetchReply: true });
+      // fetchReply 已被 discord.js 標記淘汰，改用 withResponse 取回送出的訊息
+      const r = await i.reply({ ...res.payload, withResponse: true });
+      const sent = r?.resource?.message || (await i.fetchReply().catch(() => null));
       if (sent) db.prepare('UPDATE trades SET message_id=? WHERE id=?').run(sent.id, res.tid);
     } catch (e) {
       logError(i.guildId || '', '交易指令失敗：', e.message);

@@ -9,6 +9,7 @@ const {
   EmbedBuilder, MessageFlags, ActionRowBuilder,
   StringSelectMenuBuilder, ButtonBuilder, ButtonStyle
 } = require('discord.js');
+const { selectRows, isSelect } = require('../../util/menu');
 const cron = require('node-cron');
 const { db, guildConfig, logError } = require('../../db');
 const { brandColor } = require('../../util/brand');
@@ -670,8 +671,8 @@ function newsEmbed(gid) {
 // ================== 新聞發布（後台建立 → 機器人發到頻道）==================
 function applyNews(client, gid) {
   const c = cfg(gid);
-  if (!c.enabled && !c.stock_enabled) return;
   const now = Date.now();
+  // 物價與股市都關著時仍然要跑：只發星幣的快報不需要那兩個系統
   const pending = db.prepare(
     'SELECT * FROM market_news WHERE guild_id=? AND applied=0 AND (effect_ts=0 OR effect_ts<=?) ORDER BY id'
   ).all(gid, now);
@@ -693,12 +694,30 @@ function applyNews(client, gid) {
       }
       db.prepare('UPDATE market_news SET applied=1, effect_ts=? WHERE id=?').run(start, n.id);
     })();
+    const paid = payoutNews(gid, n);
     bust(gid);
-    announce(client, gid, n, effects, end).catch(() => {});
+    announce(client, gid, n, effects, end, paid).catch(() => {});
   }
 }
 
-async function announce(client, gid, n, effects, end) {
+/**
+ * 快報附帶的普發星幣：每個「已經有錢包的玩家」各拿 payout_each。
+ * 只在快報生效那一刻發一次（applied 已經標起來了，不會重複跑）。
+ */
+function payoutNews(gid, n) {
+  const each = Number(n.payout_each || 0);
+  if (each <= 0) return null;
+  const { addCoins } = require('./gather');
+  const users = db.prepare('SELECT user_id, username FROM econ_wallets WHERE guild_id=?').all(gid);
+  let ok = 0;
+  for (const u of users) {
+    try { addCoins(gid, u.user_id, u.username || '', each); ok++; }
+    catch (e) { logError(gid, '快報普發失敗：', `${u.user_id}（${e.message}）`); }
+  }
+  return { each, people: ok, total: each * ok };
+}
+
+async function announce(client, gid, n, effects, end, paid) {
   const c = cfg(gid);
   if (n.announced || !c.news_channel) return;
   const ch = await client.channels.fetch(c.news_channel).catch(() => null);
@@ -728,6 +747,10 @@ async function announce(client, gid, n, effects, end) {
       const imp = Number(f.impact_pct || 0);
       fx.push(`　${imp >= 0 ? '📈' : '📉'} ${s.emoji}${s.name} \`${s.code}\`　下一盤 ${imp >= 0 ? '+' : ''}${imp}%`);
     }
+  }
+
+  if (paid && paid.people) {
+    fx.push(`　💸 全民發放　每人 ${num(paid.each)}（共 ${num(paid.people)} 人、${num(paid.total)}）已直接入帳`);
   }
 
   const e = new EmbedBuilder().setColor(brandColor())
@@ -803,7 +826,7 @@ function init(client) {
         }
         return;
       }
-      if (i.isStringSelectMenu() && i.customId === 'stk:pick') {
+      if (i.isStringSelectMenu() && isSelect(i.customId, 'stk:pick')) {
         const s = symbolByKey(i.guildId, i.values[0]);
         if (!s) return i.reply({ content: '找不到這支股。', flags: MessageFlags.Ephemeral });
         return i.reply({ embeds: [symbolEmbed(i.guildId, i.user.id, s)], flags: MessageFlags.Ephemeral });
@@ -866,12 +889,11 @@ function init(client) {
         const list = symbols(gid);
         const rows = [];
         if (list.length) {
-          rows.push(new ActionRowBuilder().addComponents(
-            new StringSelectMenuBuilder().setCustomId('stk:pick').setPlaceholder('選一支看 K 線與你的持股')
-              .addOptions(list.slice(0, 25).map(s => ({
-                label: `${s.name}（${s.code}）`.slice(0, 100),
-                description: `現價 ${num(s.price)}`.slice(0, 100), value: s.code, emoji: selEmoji(s.emoji)
-              })))));
+          // 股票超過 25 支時再開一行，不然後面的代號會整個選不到。
+          rows.push(...selectRows('stk:pick', list.map(s => ({
+            label: `${s.name}（${s.code}）`.slice(0, 100),
+            description: `現價 ${num(s.price)}`.slice(0, 100), value: s.code, emoji: selEmoji(s.emoji)
+          })), '選一支看 K 線與你的持股', { maxRows: 4 }));
           rows.push(new ActionRowBuilder().addComponents(
             new ButtonBuilder().setCustomId('stk:mine').setLabel('💼 我的持股').setStyle(ButtonStyle.Secondary),
             new ButtonBuilder().setCustomId('stk:quotes').setLabel('📰 行情').setStyle(ButtonStyle.Secondary)));

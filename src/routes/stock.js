@@ -169,13 +169,17 @@ router.post('/market-news', guardModule('news'), (req, res) => {
     .map(e => ({ ...e, mult_pct: normMultPct(e.mult_pct) }))
     .filter(e => e.mult_pct !== 100);
   const stockFx = Array.isArray(b.stock_fx) ? b.stock_fx.filter(f => f && f.symbol_id) : [];
-  if (!effects.length && !stockFx.length) return res.status(400).json({ error: '至少要加一條影響（物價或股價）' });
+  // 只發星幣、不動物價股價的快報（紓困／慶祝）也算數
+  const payoutEach = int(b.payout_each, 0, 0);
+  if (!effects.length && !stockFx.length && payoutEach <= 0) {
+    return res.status(400).json({ error: '至少要加一條影響（物價、股價，或發星幣）' });
+  }
   const r = db.prepare(
-    `INSERT INTO market_news (guild_id,headline,body,image_url,duration_h,effects,stock_fx,effect_ts,created_by)
-     VALUES (?,?,?,?,?,?,?,?,?)`
+    `INSERT INTO market_news (guild_id,headline,body,image_url,duration_h,effects,stock_fx,effect_ts,created_by,payout_each)
+     VALUES (?,?,?,?,?,?,?,?,?,?)`
   ).run(req.guildId, String(b.headline), String(b.body || ''), String(b.image_url || ''),
     int(b.duration_h, 6, 1), JSON.stringify(effects), JSON.stringify(stockFx),
-    b.effect_ts ? Math.floor(int(b.effect_ts, 0, 0) / 3600000) * 3600000 : 0, req.user.name);
+    b.effect_ts ? Math.floor(int(b.effect_ts, 0, 0) / 3600000) * 3600000 : 0, req.user.name, payoutEach);
   audit(req.user.name, `發布財經快報：${b.headline}`);
   res.json({ id: r.lastInsertRowid });
 });

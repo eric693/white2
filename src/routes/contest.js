@@ -3,6 +3,7 @@ const express = require('express');
 const { db, audit } = require('../db');
 const { requireAuth, guardModule } = require('../auth');
 const { METRICS } = require('../util/achievements');
+const { BUFF_TYPES } = require('../util/buffs');
 
 const router = express.Router();
 router.use(requireAuth(), guardModule('gather'));
@@ -13,7 +14,9 @@ const str = (v, d = '') => (v === undefined || v === null) ? d : String(v);
 router.get('/contest-meta', (req, res) => {
   res.json({
     metrics: Object.entries(METRICS).map(([key, m]) => ({ key, label: m.name, unit: m.unit || '' })),
-    titles: db.prepare('SELECT id, name, emoji FROM title_defs WHERE guild_id=? ORDER BY sort, id').all(req.guildId)
+    titles: db.prepare('SELECT id, name, emoji FROM title_defs WHERE guild_id=? ORDER BY sort, id').all(req.guildId),
+    // 開大賽專屬稱號時要選加成，跟家園那邊用同一份清單
+    buff_types: Object.entries(BUFF_TYPES).map(([key, label]) => ({ key, label }))
   });
 });
 
@@ -22,6 +25,24 @@ router.get('/contests', (req, res) => {
   const top = db.prepare('SELECT username, score FROM contest_scores WHERE contest_id=? AND score>0 ORDER BY score DESC LIMIT 5');
   res.json(rows.map(r => ({ ...r, top: top.all(r.id) })));
 });
+
+/**
+ * 大賽專屬稱號：後台在開賽的表單裡直接開一個新的「獎盃」，不用先跑去成就頁建。
+ * cat='contest' ＋ need 設成天文數字＝任何進度都達不到，只能靠比賽冠軍發下去；
+ * 建好之後它就是一般的 title_defs，成就面板／圖鑑會自動看得到。
+ */
+function ensureContestTitle(gid, b) {
+  const name = str(b.new_title_name).trim();
+  if (!name) return 0;
+  const exist = db.prepare('SELECT id FROM title_defs WHERE guild_id=? AND name=?').get(gid, name);
+  if (exist) return exist.id;
+  const r = db.prepare(
+    `INSERT INTO title_defs (guild_id,cat,name,emoji,need,buff_type,buff_pct,description,hint,sort,enabled,metric,reward_coins)
+     VALUES (?,'contest',?,?,999999999,?,?,?,'大賽冠軍限定，比賽拿第一才會有',900,1,'',0)`
+  ).run(gid, name, str(b.new_title_emoji) || '🏆', str(b.new_title_buff), int(b.new_title_pct, 0, 0),
+    str(b.new_title_desc) || '大賽冠軍的專屬獎盃');
+  return r.lastInsertRowid;
+}
 
 function fields(b) {
   const start = b.start_at ? Date.parse(b.start_at) : Date.now();
@@ -33,12 +54,18 @@ function fields(b) {
     start_ts: s, end_ts: s + Math.round(days * 86400000),
     reward1: int(b.reward1, 0, 0), reward2: int(b.reward2, 0, 0), reward3: int(b.reward3, 0, 0),
     title_id: int(b.title_id, 0, 0), min_score: int(b.min_score, 1, 0),
-    channel: str(b.channel), repeat_days: int(b.repeat_days, 0, 0)
+    // 表單已經不放公告頻道了（玩家從面板的常用捷徑看大賽）；沒送就維持原本設定，不要被清空
+    channel: b.channel === undefined ? null : str(b.channel),
+    repeat_days: int(b.repeat_days, 0, 0)
   };
 }
 
 router.post('/contests', (req, res) => {
-  const f = fields(req.body || {});
+  const b = req.body || {};
+  const f = fields(b);
+  const made = ensureContestTitle(req.guildId, b);
+  if (made) f.title_id = made;
+  if (f.channel === null) f.channel = '';
   if (!f.name) return res.status(400).json({ error: '請填大賽名稱' });
   const keys = Object.keys(f);
   const r = db.prepare(
@@ -54,8 +81,11 @@ router.put('/contests/:id', (req, res) => {
   if (!cur) return res.status(404).json({ error: '找不到這場大賽' });
   if (cur.status === 'ended') return res.status(400).json({ error: '已結束的大賽不能再改' });
   const f = fields(req.body || {});
+  const made = ensureContestTitle(req.guildId, req.body || {});
+  if (made) f.title_id = made;
   // 開賽後不准改比賽項目與起跑時間：baseline 已經記錄，改了等於整份分數作廢
   if (cur.status === 'live') { f.metric = cur.metric; f.start_ts = cur.start_ts; }
+  if (f.channel === null) f.channel = cur.channel || '';
   const keys = Object.keys(f);
   db.prepare(`UPDATE contests SET ${keys.map(k => `${k}=?`).join(',')} WHERE id=? AND guild_id=?`)
     .run(...keys.map(k => f[k]), cur.id, req.guildId);

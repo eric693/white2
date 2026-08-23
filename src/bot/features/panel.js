@@ -31,10 +31,10 @@ const TABS = {
     label: '製作', emoji: '🔨', color: 0xe67e22,
     title: '🔨 製作與鍛造',
     desc: '把撿來的材料變成東西：**工具、家具**，還有**農地／溫室／牧場／孵化室／魚缸**的格子。\n'
-      + '先看 📋 配方確認材料，再按下面的按鈕做。工具壞了修理比重買便宜。',
+      + '按 🔨 製作 會列出全部配方（工具、家具、格子都在裡面），材料不夠會直接告訴你差什麼。工具壞了修理比重買便宜。',
+    // 製作與鍛造合成同一個「製作」按鈕（裡面兩種配方一起列），這一區就三顆按鈕就好
     rows: [
-      [['adv:recipe', '配方一覽', '📋', ButtonStyle.Primary], ['adv:craftmake', '製作', '🔨', ButtonStyle.Success], ['adv:forge', '鍛造工具', '⚒️', ButtonStyle.Success]],
-      [['adv:furniture', '做家具', '🛋️'], ['adv:repair', '修理工具', '🔧']]
+      [['adv:craftmake', '製作', '🔨', ButtonStyle.Success], ['adv:repair', '修理工具', '🔧'], ['adv:furniture', '做家具', '🛋️']]
     ]
   },
   produce: {
@@ -68,10 +68,10 @@ const TABS = {
   money: {
     label: '金錢', emoji: '💰', color: 0x9b59b6,
     title: '💰 賺錢與理財',
-    desc: '賣東西、玩股票、繳稅、借錢。（每日簽到、財經新聞在上面的常用捷徑）\n⚠️ 股價可能跌到**負數**，賣出會倒扣星幣，出場前先看清楚現價。',
+    desc: '賣東西、玩股票、繳稅、借錢、標拍賣。（每日簽到、財經新聞在上面的常用捷徑）\n⚠️ 股價可能跌到**負數**，賣出會倒扣星幣，出場前先看清楚現價。',
     rows: [
       [['adv:sellpick', '賣出', '💰', ButtonStyle.Primary], ['adv:trade', '交易', '🔄', ButtonStyle.Primary], ['stk:market', '股市行情', '📈', ButtonStyle.Primary], ['stk:buymenu', '買股', '📥', ButtonStyle.Success], ['stk:sellmenu', '賣股', '📤', ButtonStyle.Danger]],
-      [['stk:mine', '我的持股', '📊'], ['adv:tax', '我的稅單', '🧾'], ['adv:charity', '基金會', '❤️'], ['adv:loan', '物資貸款', '🏦']]
+      [['stk:mine', '我的持股', '📊'], ['adv:tax', '我的稅單', '🧾'], ['adv:charity', '基金會', '❤️'], ['adv:loan', '物資貸款', '🏦'], ['adv:auction', '拍賣會', '🔨']]
     ]
   }
 };
@@ -86,6 +86,7 @@ const QUICK = [
   ['adv:dex', '圖鑑', '📖', '收集進度'],
   ['adv:titles', '成就', '🏅', '稱號與成就'],
   ['stk:news', '財經新聞', '📰', '影響股價的消息'],
+  ['adv:contest', '大賽', '🏆', '週賽／月賽排行榜'],
   ['adv:homeweb', '完整網頁版', '🖼️', '在瀏覽器看完整家園']
 ];
 
@@ -102,7 +103,7 @@ const navRows = (active) => {
   const rows = [];
   for (let n = 0; n < all.length; n += per) rows.push(new ActionRowBuilder().addComponents(...all.slice(n, n + per)));
   rows.push(new ActionRowBuilder().addComponents(
-    new StringSelectMenuBuilder().setCustomId('pan:quick').setPlaceholder('⚡ 常用捷徑（背包・任務・狀態・簽到・圖鑑・成就…）')
+    new StringSelectMenuBuilder().setCustomId('pan:quick').setPlaceholder('⚡ 常用捷徑（背包・任務・狀態・簽到・圖鑑・成就・大賽…）')
       .setMinValues(1).setMaxValues(1)
       .addOptions(QUICK.map(([id, label, emoji, desc]) => ({ label, value: id, description: desc, emoji })))));
   return rows;
@@ -126,7 +127,7 @@ function buildPanel() {
     .setDescription(
       '選一個分類，會開一份**只有你看得到**的面板，在那裡面點按鈕就能玩，全程不用打指令。\n\n' +
       `🎣 **冒險**　釣魚、挖礦、伐木、採集、狩獵、地圖\n` +
-      `🔨 **製作**　配方、製作、鍛造工具、做家具、修理\n` +
+      `🔨 **製作**　製作（工具／格子／鍛造）、修理、做家具\n` +
       `🌾 **生產**　牧場、農地、溫室、魚缸、孵化室、收成\n` +
       `🏡 **我的家**　房屋、廚房、家具、寵物、約會、家園加成\n` +
       `🏪 **商店**　一般、畜牧、種子、水族、設施、家具、寵物\n` +
@@ -166,10 +167,16 @@ function init(client) {
       // 這樣 gather/home/stock 各自的 adv:* / stk:* 處理就能原封不動沿用。
       if (i.isStringSelectMenu() && i.customId === 'pan:quick') {
         const id = i.values[0];
+        // replied / deferred 要「寫回原本的互動物件」：
+        // 用 Object.create 做的分身，下游 i.reply() 只會把 replied 設在分身上，
+        // 原本的互動看起來永遠沒被回應過 —— 看門狗就會每次都誤報「互動無回應」。
         const proxy = Object.create(i, {
           customId: { value: id },
           isButton: { value: () => true },
-          isStringSelectMenu: { value: () => false }
+          isStringSelectMenu: { value: () => false },
+          replied: { get: () => i.replied, set: (v) => { i.replied = v; } },
+          deferred: { get: () => i.deferred, set: (v) => { i.deferred = v; } },
+          ephemeral: { get: () => i.ephemeral, set: (v) => { i.ephemeral = v; } }
         });
         client.emit('interactionCreate', proxy);
         return;

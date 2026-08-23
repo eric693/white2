@@ -5,6 +5,7 @@
 //
 // 這是整條經濟鏈的終點：以前農產品唯一的用途是「賣掉換錢」，現在有了送禮才真的有意義。
 const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
+const { selectRows, isSelect } = require('../../util/menu');
 const { db, guildConfig, logError } = require('../../db');
 const { bump: bumpAch } = require('../../util/achievements');
 const { brandColor } = require('../../util/brand');
@@ -385,13 +386,11 @@ function partnerPanel(gid, uid, uname) {
   const cands = partnerCandidates(gid, uid);
   const full = list.length >= slots;
   if (!full && cands.length && def && def.visit_ok) {
-    rows.push(new ActionRowBuilder().addComponents(
-      new StringSelectMenuBuilder().setCustomId('partnerpick').setPlaceholder('選一位請他搬進來')
-        .addOptions(cands.slice(0, 25).map(x => ({
-          label: x.name.slice(0, 100),
-          description: `${levelName(gid, x.level)}（Lv.${x.level}）　好感 ${x.points.toLocaleString('en-US')}`.slice(0, 100),
-          value: String(x.role_id)
-        })))));
+    rows.push(...selectRows('partnerpick', cands.map(x => ({
+      label: x.name.slice(0, 100),
+      description: `${levelName(gid, x.level)}（Lv.${x.level}）　好感 ${x.points.toLocaleString('en-US')}`.slice(0, 100),
+      value: String(x.role_id)
+    })), '選一位請他搬進來', { maxRows: 2 }));
   }
   // 能力選擇：一位同居角色一個下拉（Discord 一則訊息只有 5 行，最多顯示 2 位的能力選單）
   if (list.length) {
@@ -400,14 +399,12 @@ function partnerPanel(gid, uid, uname) {
       if (rows.length >= 4) break;
       const choices = skillsForRole(gid, p.role_id);
       if (!choices.length) continue;
-      rows.push(new ActionRowBuilder().addComponents(
-        new StringSelectMenuBuilder().setCustomId(`partnerskill:${p.role_id}`)
-          .setPlaceholder(`${p.name}：選 1 個能力${p.skill_id ? '（可更換）' : '（還沒選）'}`.slice(0, 150))
-          .addOptions(choices.slice(0, 25).map(sk => ({
-            label: `${sk.name}${sk.id === p.skill_id ? '（啟用中）' : ''}`.slice(0, 100),
-            description: `${skillText(sk, p.level)}${sk.description ? `｜${sk.description}` : ''}`.slice(0, 100),
-            value: String(sk.id)
-          })))));
+      // 能力有三十幾種，超過 25 就再開一行（後面那些以前完全選不到）
+      rows.push(...selectRows(`partnerskill:${p.role_id}`, choices.map(sk => ({
+        label: `${sk.name}${sk.id === p.skill_id ? '（啟用中）' : ''}`.slice(0, 100),
+        description: `${skillText(sk, p.level)}${sk.description ? `｜${sk.description}` : ''}`.slice(0, 100),
+        value: String(sk.id)
+      })), `${p.name}：選 1 個能力${p.skill_id ? '（可更換）' : '（還沒選）'}`, { maxRows: 4 - rows.length }));
     }
   }
   if (list.length && rows.length < 5) {
@@ -659,28 +656,40 @@ function init(client) {
         // 想送沒互動過的角色還是可以用 /送禮 打名字搜尋。
         if (i.isButton() && (i.customId === 'giftpanel' || i.customId === 'adv:gift')) {
           seedAffinity(gid);
+          // 一個下拉最多 25 項，但一則訊息可以放 5 行 —— 相遇超過 25 位就自動分成多個下拉，
+          // 不然好感度排在 26 名之後的角色會整個消失（玩家會以為送禮不見了）。
           const known = db.prepare(
             `SELECT a.role_id, a.points, a.level, r.name FROM affinity a JOIN wheel_roles r ON r.id=a.role_id
-              WHERE a.guild_id=? AND a.user_id=? AND r.enabled=1 ORDER BY a.points DESC LIMIT 25`).all(gid, uid);
+              WHERE a.guild_id=? AND a.user_id=? AND r.enabled=1 ORDER BY a.points DESC LIMIT 125`).all(gid, uid);
           if (!known.length) {
             return i.reply({
               content: '你還沒有跟任何角色互動過。\n先去 🛍️ **逛街**隨機遇幾位，或用 `/送禮 角色:名字` 直接指定（打幾個字就會跳候選）。',
               ...eph
             }).catch(() => {});
           }
+          const opt = (k) => ({
+            label: k.name.slice(0, 100),
+            description: `${levelName(gid, k.level)}（Lv.${k.level}）　好感 ${k.points.toLocaleString('en-US')}`.slice(0, 100),
+            value: String(k.role_id)
+          });
+          const rows = [];
+          for (let p = 0; p < known.length && rows.length < 5; p += 25) {
+            const slice = known.slice(p, p + 25);
+            rows.push(new ActionRowBuilder().addComponents(
+              new StringSelectMenuBuilder().setCustomId(`giftwho:${p / 25}`)
+                .setPlaceholder(known.length > 25
+                  ? `選一位角色（好感度第 ${p + 1}-${p + slice.length} 名）`
+                  : '選一位角色')
+                .addOptions(slice.map(opt))));
+          }
           return i.reply({
-            content: '要送禮給誰？（只列你互動過的角色；想送別人用 `/送禮` 打名字搜尋）',
-            components: [new ActionRowBuilder().addComponents(
-              new StringSelectMenuBuilder().setCustomId('giftwho').setPlaceholder('選一位角色')
-                .addOptions(known.map(k => ({
-                  label: k.name.slice(0, 100),
-                  description: `${levelName(gid, k.level)}（Lv.${k.level}）　好感 ${k.points.toLocaleString('en-US')}`.slice(0, 100),
-                  value: String(k.role_id)
-                }))))],
+            content: `要送禮給誰？（已相遇 ${known.length} 位，依好感度排序${known.length > 25 ? '，分成多個下拉' : ''}）\n`
+              + '想送還沒相遇過的角色，用 `/送禮 角色:名字` 打名字搜尋。',
+            components: rows,
             ...eph
           }).catch(() => {});
         }
-        if (i.isStringSelectMenu() && i.customId === 'giftwho') {
+        if (i.isStringSelectMenu() && i.customId.startsWith('giftwho')) {
           const rid = parseInt(i.values[0], 10);
           const out = giftMenu(gid, uid, uname, rid);
           if (out.error) return i.update({ content: out.error, components: [], embeds: [] }).catch(() => {});
@@ -698,7 +707,7 @@ function init(client) {
           await i.update(partnerPanel(gid, uid, uname)).catch(() => {});
           return i.followUp({ content: `**${out.role.name}** 收拾東西搬走了。好感度不會消失，之後想請他回來再邀請一次就好。`, ...eph }).catch(() => {});
         }
-        if ((i.isButton() && i.customId === 'partnerin') || (i.isStringSelectMenu() && i.customId === 'partnerpick')) {
+        if ((i.isButton() && i.customId === 'partnerin') || (i.isStringSelectMenu() && isSelect(i.customId, 'partnerpick'))) {
           const out = moveIn(gid, uid, uname, i.isStringSelectMenu() ? parseInt(i.values[0], 10) : 0);
           if (out.error) return i.reply({ content: out.error, ...eph }).catch(() => {});
           await i.update(partnerPanel(gid, uid, uname)).catch(() => {});

@@ -1,6 +1,7 @@
 // 寵物：跟牧場動物刻意分開 —— 牧場是「工廠」（生蛋生奶），寵物是「夥伴」（給加成、要餵、有親密度）。
 // 所以寵物一律不產物，能養幾隻由房屋階級決定，技能加成按親密度比例給（不餵就沒效果）。
 const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
+const { selectRows, isSelect } = require('../../util/menu');
 const { db, guildConfig, logError } = require('../../db');
 const { bump: bumpAch } = require('../../util/achievements');
 const { brandColor } = require('../../util/brand');
@@ -104,7 +105,7 @@ const petCap = (gid, uid, uname) => {
   return def ? def.pet_cap : 0;
 };
 // 幾顆心（0~5），純顯示用
-const hearts = (n) => '❤️'.repeat(Math.floor(n / 20)) + '🤍'.repeat(5 - Math.floor(n / 20));
+const hearts = (n) => { const k = Math.min(5, Math.max(0, Math.floor((n || 0) / 20))); return '❤️'.repeat(k) + '🤍'.repeat(5 - k); };
 // 餓了沒：超過餵食間隔就開始掉親密度
 function decay(gid, uid) {
   const now = Date.now();
@@ -271,13 +272,12 @@ function petPanel(gid, uid, uname) {
         value: String(p.id)
       })))));
   const shop = db.prepare('SELECT * FROM pet_defs WHERE guild_id=? AND enabled=1 AND price>0 AND min_level<=? ORDER BY sort').all(gid, home.level);
-  if (shop.length && list.length < cap) rows.push(new ActionRowBuilder().addComponents(
-    new StringSelectMenuBuilder().setCustomId('petadopt').setPlaceholder('領養一隻新寵物')
-      .addOptions(shop.slice(0, 25).map(p => ({
-        label: `${RARITY[p.rarity] || ''}${p.emoji || ''}${p.name}`.slice(0, 100),
-        description: `${p.price.toLocaleString('en-US')} 星幣｜${p.skill_name}　${p.target_item ? p.target_item + ' 掉落率' : (BUFF_TYPES[p.buff_type] || '')}+${p.buff_pct}%`.slice(0, 100),
-        value: String(p.id)
-      })))));
+  // 寵物種類已經超過 25 隻，直接 slice 會讓後面的品種永遠領養不到 —— 滿了就換下一行。
+  if (shop.length && list.length < cap) rows.push(...selectRows('petadopt', shop.map(p => ({
+    label: `${RARITY[p.rarity] || ''}${p.emoji || ''}${p.name}`.slice(0, 100),
+    description: `${p.price.toLocaleString('en-US')} 星幣｜${p.skill_name}　${p.target_item ? p.target_item + ' 掉落率' : (BUFF_TYPES[p.buff_type] || '')}+${p.buff_pct}%`.slice(0, 100),
+    value: String(p.id)
+  })), '領養一隻新寵物', { maxRows: 5 - rows.length }));
   return { embeds: [embed], components: rows };
 }
 
@@ -297,7 +297,7 @@ function init(client) {
         await i.update(petPanel(gid, uid, uname)).catch(() => {});
         return i.followUp({ content: `🥫 買了 **${out.bought}** 份飼料（花了 ${out.total.toLocaleString('en-US')}），現在有 ${out.left} 份。`, ...eph }).catch(() => {});
       }
-      if (i.isStringSelectMenu() && i.customId === 'petadopt') {
+      if (i.isStringSelectMenu() && isSelect(i.customId, 'petadopt')) {
         const out = adoptPet(gid, uid, uname, parseInt(i.values[0], 10));
         if (out.error) return i.reply({ content: out.error, ...eph }).catch(() => {});
         await i.update(petPanel(gid, uid, uname)).catch(() => {});

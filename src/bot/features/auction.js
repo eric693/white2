@@ -20,10 +20,24 @@ const money = (gid, n) => {
   return `${c.currency_emoji || '🪙'} ${Number(n || 0).toLocaleString('en-US')} ${c.currency_name || '星幣'}`;
 };
 
-const KIND_LABEL = { furniture: '🛋️ 家具', pet: '🐾 寵物', title: '🏅 成就', item: '📦 物品' };
+const KIND_LABEL = { furniture: '🛋️ 家具', pet: '🐾 寵物', title: '🏅 成就', item: '📦 物品', plot: '🌱 格子' };
+
+// 拍賣限定的「格子」：農地／溫室／牧場／孵化室／魚缸，一次拍幾格由 qty 決定。
+// 這是商店買不到的東西（平常只能用配方一格一格開），所以很適合當拍賣會的獨家標的。
+const PLOTS = {
+  1: { key: 'field', name: '農地（一格）', emoji: '🌾', table: 'crop_unlocks', col: 'field' },
+  2: { key: 'greenhouse', name: '溫室（一格）', emoji: '🏡', table: 'crop_unlocks', col: 'greenhouse' },
+  3: { key: 'ranch', name: '牧場（一格）', emoji: '🐔', table: 'ranch_unlocks', col: 'ranch' },
+  4: { key: 'hatch', name: '孵化室（一格）', emoji: '🥚', table: 'ranch_unlocks', col: 'hatch' },
+  5: { key: 'aquarium', name: '魚缸（一格）', emoji: '🐠', table: 'aquarium_unlocks', col: 'aquarium' }
+};
 
 /** 標的物的顯示資料（名稱／圖示）。後台沒填 title 就用標的物本身的名字。 */
 function refInfo(gid, a) {
+  if (a.kind === 'plot') {
+    const p = PLOTS[a.ref_id];
+    return { name: a.title || (p ? p.name : '格子'), emoji: a.emoji || (p ? p.emoji : '🌱'), row: p || null };
+  }
   const T = { furniture: 'home_furniture', pet: 'pet_defs', title: 'title_defs', item: 'gather_items' };
   const t = T[a.kind];
   let row = null;
@@ -161,6 +175,13 @@ function settleWinner(gid, a, bid) {
     } else if (a.kind === 'title') {
       db.prepare('INSERT OR IGNORE INTO title_owned (guild_id,user_id,title_id,slot) VALUES (?,?,?,-1)')
         .run(gid, bid.user_id, a.ref_id);
+    } else if (a.kind === 'plot') {
+      const p = PLOTS[a.ref_id];
+      if (p) {
+        const n = Math.max(1, a.qty);
+        db.prepare(`INSERT INTO ${p.table} (guild_id,user_id,${p.col}) VALUES (?,?,?)
+          ON CONFLICT(guild_id,user_id) DO UPDATE SET ${p.col}=${p.col}+?`).run(gid, bid.user_id, n, n);
+      }
     } else if (a.kind === 'item') {
       const it = db.prepare('SELECT id FROM gather_items WHERE id=? AND guild_id=?').get(a.ref_id, gid);
       if (it) {
@@ -213,7 +234,7 @@ function auctionEmbed(gid, a) {
     .setTitle(`${info.emoji || '🔨'} ${info.name}`)
     .setDescription([
       a.description || (info.row && info.row.description) || '',
-      `**類別**：${KIND_LABEL[a.kind] || a.kind}${a.kind === 'item' && a.qty > 1 ? ` ×${a.qty}` : ''}`
+      `**類別**：${KIND_LABEL[a.kind] || a.kind}${(a.kind === 'item' || a.kind === 'plot') && a.qty > 1 ? ` ×${a.qty}` : ''}`
     ].filter(Boolean).join('\n'))
     .addFields(
       { name: '目前最高價', value: t ? `${money(gid, t.amount)}\n by **${t.username}**` : `尚無人出價\n起標 ${money(gid, a.start_price)}`, inline: true },

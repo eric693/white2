@@ -90,8 +90,9 @@ const metricName = (metric) => (METRICS[metric] || {}).name || metric;
 
 /** 進度條（顯示用）。已達成回滿條。 */
 function bar(have, need, width = 10) {
-  const pct = need > 0 ? Math.min(1, have / need) : 1;
-  const on = Math.round(pct * width);
+  // have 可能是負的（例如餘額被倒扣成負數的那種指標），沒夾住的話 repeat(-2) 會直接丟例外
+  const pct = need > 0 ? Math.max(0, Math.min(1, have / need)) : 1;
+  const on = Math.max(0, Math.min(width, Math.round(pct * width)));
   return '█'.repeat(on) + '░'.repeat(width - on);
 }
 

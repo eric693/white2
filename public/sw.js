@@ -2,10 +2,10 @@
 //
 // 後台的內容是即時的（餘額、稅單、庫存），快取 API 回應只會讓管理員看到舊資料做錯決定，
 // 所以這裡刻意只快取靜態外殼（HTML/CSS/JS），/api/* 完全不碰。
-const SHELL = 'w2-shell-v1';
+const SHELL = 'w2-shell-v5';
 const SHELL_FILES = [
   '/', '/index.html', '/css/style.css',
-  '/js/api.js', '/js/ui.js', '/js/helpers.js', '/js/app.js',
+  '/js/api.js', '/js/ui.js', '/js/helpers.js', '/js/table-tools.js', '/js/app.js',
   '/manifest.json'
 ];
 

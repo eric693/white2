@@ -394,7 +394,9 @@ ensureColumns('ranch_slots', {
 
 // 財經新聞：股價衝擊是一次性的，套用過就標記，避免每個 tick 重複加成
 ensureColumns('market_news', {
-  stock_done: 'INTEGER NOT NULL DEFAULT 0'
+  stock_done: 'INTEGER NOT NULL DEFAULT 0',
+  // 快報可以順便普發星幣（紓困／年終／慶祝），0＝不發
+  payout_each: 'INTEGER NOT NULL DEFAULT 0'
 });
 
 // 偷竊可整隻搶走動物的機率、以及看門/防禦相關

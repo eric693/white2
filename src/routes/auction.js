@@ -14,7 +14,7 @@ const mats = (v) => {
   if (!Array.isArray(a)) a = [];
   return JSON.stringify(a.filter(x => x && x.item).map(x => ({ item: String(x.item), count: Math.max(1, int(x.count, 1, 1)) })));
 };
-const KINDS = ['furniture', 'pet', 'title', 'item'];
+const KINDS = ['furniture', 'pet', 'title', 'item', 'plot'];
 
 // ---------- 設定 ----------
 router.get('/auction-config', (req, res) => res.json(guildConfig('auction_config', req.guildId)));
@@ -46,10 +46,17 @@ router.put('/auction-config', (req, res) => {
 router.get('/auction-targets', (req, res) => {
   const gid = req.guildId;
   res.json({
-    furniture: db.prepare('SELECT id, name, emoji, price FROM home_furniture WHERE guild_id=? ORDER BY sort, id').all(gid),
-    pet: db.prepare('SELECT id, name, emoji, price, rarity FROM pet_defs WHERE guild_id=? ORDER BY sort, id').all(gid),
-    title: db.prepare('SELECT id, name, emoji FROM title_defs WHERE guild_id=? ORDER BY sort, id').all(gid),
-    item: db.prepare('SELECT id, name, emoji, price FROM gather_items WHERE guild_id=? AND enabled=1 ORDER BY kind, price').all(gid),
+    furniture: db.prepare('SELECT id, name, emoji, price, enabled FROM home_furniture WHERE guild_id=? ORDER BY sort, id').all(gid),
+    pet: db.prepare('SELECT id, name, emoji, price, rarity, enabled FROM pet_defs WHERE guild_id=? ORDER BY sort, id').all(gid),
+    title: db.prepare('SELECT id, name, emoji, enabled FROM title_defs WHERE guild_id=? ORDER BY sort, id').all(gid),
+    // enabled=0 的東西平常買不到、也不會掉落 —— 正好可以當「只有拍賣會才有」的獨家標的，所以這裡全部列出來
+    item: db.prepare('SELECT id, name, emoji, price, enabled FROM gather_items WHERE guild_id=? ORDER BY kind, price').all(gid),
+    // 商店買不到的格子（平常只能靠配方一格一格開）
+    plot: [
+      { id: 1, name: '農地（一格）', emoji: '🌾' }, { id: 2, name: '溫室（一格）', emoji: '🏡' },
+      { id: 3, name: '牧場（一格）', emoji: '🐔' }, { id: 4, name: '孵化室（一格）', emoji: '🥚' },
+      { id: 5, name: '魚缸（一格）', emoji: '🐠' }
+    ],
     items_by_name: db.prepare('SELECT name, emoji FROM gather_items WHERE guild_id=? AND enabled=1 ORDER BY kind, price').all(gid)
   });
 });

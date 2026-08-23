@@ -405,7 +405,9 @@ App.page('reminders', {
     el.querySelectorAll('#notefilter [data-note]').forEach(b => b.onclick = () => {
       const want = b.dataset.note;
       el.querySelectorAll('#notefilter [data-note]').forEach(x => x.classList.toggle('secondary', x !== b));
-      el.querySelectorAll('tbody tr').forEach(tr => { tr.style.display = (!want || tr.dataset.note === want) ? '' : 'none'; });
+      // 交給表格工具列統一控制顯示，才不會跟搜尋／分頁互相蓋掉
+      el.querySelectorAll('table.list').forEach(t =>
+        Tbl.rowFilter(t, want ? (tr => tr.dataset.note === want) : null));
     });
     el.querySelectorAll('[data-edit]').forEach(b => b.onclick = () => openModal(rows.find(r => r.id == b.dataset.edit)));
     el.querySelectorAll('[data-toggle]').forEach(b => b.onclick = async () => {

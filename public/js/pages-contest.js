@@ -75,11 +75,24 @@ App.page('contest', {
         <div class="field"><label>🥈 亞軍</label><input name="reward2" type="number" min="0" value="${r.reward2 ?? 50000}"></div>
         <div class="field"><label>🥉 季軍</label><input name="reward3" type="number" min="0" value="${r.reward3 ?? 20000}"></div>
       </div>
-      <div class="field"><label>冠軍額外拿到的成就</label><select name="title_id">
+      <div class="field"><label>冠軍額外拿到的成就（既有的）</label><select name="title_id">
         <option value="0">— 不給 —</option>
         ${meta.titles.map(t => `<option value="${t.id}" ${t.id == r.title_id ? 'selected' : ''}>${UI.esc((t.emoji || '') + t.name)}</option>`).join('')}
-      </select><div class="hint">建議去「家園與成就」開一個專屬成就（例如《本週賺錢王》），拿來當獎盃。</div></div>
-      <div class="field"><label>公告頻道</label>${H.chanSelect('channel', r.channel || '')}</div>`;
+      </select></div>
+      <h4 style="margin:14px 0 4px">🏆 或直接開一個「大賽專屬稱號」</h4>
+      <div class="hint" style="margin-bottom:8px">填了名稱就會<strong>新建一個只有大賽冠軍拿得到的稱號</strong>（一般玩法怎麼練都不會解鎖），
+        並自動出現在成就面板與圖鑑裡。填了這裡就以這個為準，上面的下拉會被覆蓋。</div>
+      <div class="form-row">
+        <div class="field"><label>稱號名稱</label><input name="new_title_name" placeholder="本週賺錢王"></div>
+        <div class="field" style="max-width:110px"><label>圖示</label><input name="new_title_emoji" value="🏆" style="text-align:center"></div>
+      </div>
+      <div class="field"><label>說明</label><input name="new_title_desc" placeholder="第 1 屆賺錢王大賽冠軍"></div>
+      <div class="form-row">
+        <div class="field"><label>裝備時的加成（可不選）</label><select name="new_title_buff"><option value="">— 無加成 —</option>
+          ${(meta.buff_types || []).map(b => `<option value="${b.key}">${UI.esc(b.label)}</option>`).join('')}
+        </select></div>
+        <div class="field" style="max-width:140px"><label>加成 %</label><input name="new_title_pct" type="number" min="0" value="0"></div>
+      </div>`;
 
     const open = (r = {}) => UI.modal({
       title: r.id ? '編輯大賽' : '開一場大賽', bodyHTML: form(r),

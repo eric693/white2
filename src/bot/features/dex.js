@@ -12,6 +12,7 @@ const { brandColor } = require('../../util/brand');
 const { BUFF_TYPES } = require('../../util/buffs');
 const { metricValue, metricName, bar, METRICS } = require('../../util/achievements');
 const { seedHome, homeOf, NAV } = require('./home');
+const { selectRows, isSelect } = require('../../util/menu');
 
 const hcfg = (gid) => guildConfig('home_config', gid);
 
@@ -156,6 +157,8 @@ function syncTitles(gid, uid, uname) {
   const coins = (db.prepare('SELECT coins FROM econ_wallets WHERE guild_id=? AND user_id=?').get(gid, uid) || {}).coins || 0;
   const gained = [];
   for (const t of defs) {
+    // 大賽獎盃只能靠比賽冠軍發，不吃任何進度判定（不然 need 一被改就變成全服人手一個）
+    if (t.cat === 'contest') continue;
     let have = 0;
     // metric 有填就走成就指標（任務式），沒填才是舊的收集型判定
     if (t.metric) have = metricValue(gid, uid, t.metric);
@@ -208,8 +211,11 @@ function dexPanel(gid, uid, uname) {
   const lines = Object.entries(DEX_CATS).map(([key, c]) => {
     const total = c.total(gid);
     const have = seenCount(gid, uid, key);
-    const pct = total ? Math.floor(have / total * 100) : 0;
-    const bar = '█'.repeat(Math.round(pct / 10)) + '░'.repeat(10 - Math.round(pct / 10));
+    // 收集數可能超過總數（例如某個項目後來從主表移除，但玩家的收集紀錄還在），
+    // 不夾住的話 10 - n 會變負數，'░'.repeat(-2) 直接丟例外，整個圖鑑面板打不開。
+    const pct = total ? Math.min(100, Math.max(0, Math.floor(have / total * 100))) : 0;
+    const n = Math.round(pct / 10);
+    const bar = '█'.repeat(n) + '░'.repeat(10 - n);
     return `${c.name}\n　\`${bar}\` **${have} / ${total}**${total && have >= total ? '　🏅 全收集！' : ''}`;
   });
   const embed = new EmbedBuilder().setColor(brandColor()).setTitle('📖 圖鑑')
@@ -276,13 +282,12 @@ function titlePanel(gid, uid, uname) {
 
   const rows = [NAV('home'), new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId('achall:0').setLabel('📋 全部成就與達成條件').setStyle(ButtonStyle.Secondary))];
-  if (list.length) rows.push(new ActionRowBuilder().addComponents(
-    new StringSelectMenuBuilder().setCustomId('titleeq').setPlaceholder('裝備／卸下成就（最多 3 個）')
-      .addOptions(list.slice(0, 25).map(t => ({
-        label: `${t.slot >= 0 ? '⭐ ' : ''}${t.emoji || ''}${t.name}`.slice(0, 100),
-        description: `${buffText(t)}　→ ${t.slot >= 0 ? '點一下卸下' : '點一下裝備'}`.slice(0, 100),
-        value: `${t.id}:${t.slot >= 0 ? 'off' : 'on'}`
-      })))));
+  // 成就有五十幾個，全解的人以前會有一半選不到 —— 超過 25 個就自動往下一行分頁。
+  if (list.length) rows.push(...selectRows('titleeq', list.map(t => ({
+    label: `${t.slot >= 0 ? '⭐ ' : ''}${t.emoji || ''}${t.name}`.slice(0, 100),
+    description: `${buffText(t)}　→ ${t.slot >= 0 ? '點一下卸下' : '點一下裝備'}`.slice(0, 100),
+    value: `${t.id}:${t.slot >= 0 ? 'off' : 'on'}`
+  })), '裝備／卸下成就', { maxRows: 3 }));
   return { embeds: [embed], components: rows, gained };
 }
 
@@ -348,7 +353,7 @@ function init(client) {
       }
       if (i.isStringSelectMenu() && i.customId === 'dexcat')
         return i.update(dexCatPanel(gid, uid, i.values[0])).catch(() => {});
-      if (i.isStringSelectMenu() && i.customId === 'titleeq') {
+      if (i.isStringSelectMenu() && isSelect(i.customId, 'titleeq')) {
         const [tid, act] = i.values[0].split(':');
         const out = equipTitle(gid, uid, parseInt(tid, 10), act === 'on');
         if (out.error) return i.reply({ content: out.error, ...eph }).catch(() => {});
