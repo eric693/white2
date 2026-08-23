@@ -291,9 +291,11 @@ function checkinPanel(gid, uid, uname) {
   const today = localToday();
   const done = row.last_day === today;
   const todayIdx = dayIndex(today);
+  // 手機版的 embed 寬度很窄，「星期在上、勾勾在下」那種兩行對齊會整個散掉，
+  // 所以改成每天一個「勾勾＋星期」的詞組，換行也還讀得懂。
   const week = DOW.map((d, idx) => {
     const signed = (row.week_mask >> idx) & 1;
-    return `${d}\n${signed ? '✅' : idx === todayIdx ? '📍' : '⬜'}`;
+    return `${signed ? '✅' : idx === todayIdx ? '📍' : '⬜'}${d}`;
   }).join('　');
 
   const home = homeOf(gid, uid, uname);

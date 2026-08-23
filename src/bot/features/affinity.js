@@ -298,13 +298,19 @@ function rollPartnerSkill(level, gid, forceId = 0) {
   const pct = Math.max(1, Math.round(pick.base * (1 + Math.max(0, level) * 0.1)));
   return { skill: '', buff_type: pick.buff_type, buff_pct: pct, name: pick.name };
 }
-const partnerSkillText = (p) => {
+const partnerSkillText = (p, gid) => {
+  if (p.skill_id) {
+    const { skillById, skillText } = require('./partnerskills');
+    const sk = skillById(gid || p.guild_id, p.skill_id);
+    if (sk) return skillText(sk, p.level || 0);
+  }
+  // 舊資料（隨機給的 % 加成）還是要看得懂
   if (p.skill === 'harvest') return '🧺 幫忙收成（每天自動收牧場產物）';
   if (p.buff_type && p.buff_pct) {
     const { BUFF_TYPES } = require('../../util/buffs');
     return `${BUFF_TYPES[p.buff_type] || p.buff_type} ＋${p.buff_pct}%`;
   }
-  return '—';
+  return '⚠️ 還沒選能力';
 };
 
 /** 請一位角色搬進來。roleId 有給就是玩家自己挑的；沒給就隨機抽一位。 */
@@ -332,13 +338,13 @@ function moveIn(gid, uid, uname, roleId = 0) {
   if (!pick) {
     return { error: `目前沒有角色願意搬進來。\n同居需要好感度 **${levelName(gid, need)}（Lv.${need}）**以上 —— 先去 \`/送禮\`、🛍️ 逛街把關係養起來。` };
   }
-  // 搬進來的角色會帶一個「隨機能力」：好感度越高給得越強。
-  // 有些會幫忙收成（harvest），有些是廚藝／礦石之類的加成 —— 這樣同居才有功能性，不只是繳稅。
-  const skillRoll = rollPartnerSkill(pick.level, gid);
-  db.prepare('INSERT OR IGNORE INTO home_partners (guild_id,user_id,role_id,buff_type,buff_pct,skill) VALUES (?,?,?,?,?,?)')
-    .run(gid, uid, pick.role_id, skillRoll.buff_type, skillRoll.buff_pct, skillRoll.skill);
+  // 搬進來時「還沒有能力」：能力由玩家自己從這位角色的候選裡挑 1 個（後台勾選決定候選有哪些）。
+  // 舊版是隨機給一個 %，玩家沒得選也看不懂在幹嘛。
+  db.prepare('INSERT OR IGNORE INTO home_partners (guild_id,user_id,role_id,buff_type,buff_pct,skill,skill_id) VALUES (?,?,?,?,?,?,0)')
+    .run(gid, uid, pick.role_id, '', 0, '');
   const role = roleOf(gid, pick.role_id);
-  return { moved: true, role, level: pick.level, slots, used: cur.length + 1, skill: skillRoll };
+  const { skillsForRole } = require('./partnerskills');
+  return { moved: true, role, level: pick.level, slots, used: cur.length + 1, choices: skillsForRole(gid, pick.role_id).length };
 }
 
 /** 請同居對象搬走（好感度不會歸零，但要等冷卻才能再抽） */
@@ -365,11 +371,12 @@ function partnerPanel(gid, uid, uname) {
       `請角色搬進你家一起住（目前 ${list.length}/${slots} 位）。\n`
       + `條件：家園 **Lv.6** 以上 ＋ 該角色好感度 **${levelName(gid, need)}（Lv.${need}）** 以上。\n`
       + `名額跟著房屋階級長：Lv.${c.partner_level ?? 6} 起 1 位、Lv.${c.partner_lv2 ?? 8} 起 2 位、Lv.${c.partner_lv3 ?? 12} 起 3 位。\n`
-      + `搬進來的角色會**隨機帶一個能力**（廚藝、礦脈直覺、幫忙收成…），好感度越高越強。\n`
+      + `搬進來後可以幫他**選 1 個能力**（幫忙收成、自動種植、每日賺錢…），能力清單由每位角色各自決定。\n`
+      + `同時只能啟用 1 個，但隨時可以換；數值會隨**好感度階級**成長。\n`
       + `⚠️ 同居要繳**伴侶稅**：每位每期 ${(tc.partner_base || 0).toLocaleString('en-US')} ＋ 好感度每階 ${(tc.partner_per_lv || 0).toLocaleString('en-US')}。`)
     .addFields({ name: '目前同居', value: list.length
       ? list.map(p => `💕 **${p.name}**　${levelName(gid, p.level)}（Lv.${p.level}）\n`
-        + `　能力：${partnerSkillText(p)}\n`
+        + `　能力：${partnerSkillText(p, gid)}\n`
         + `　每期伴侶稅 ${taxOf(p.level).toLocaleString('en-US')}`
         + (p.paid_total ? `　已繳 ${p.paid_total.toLocaleString('en-US')}` : '')).join('\n')
       : `還沒有人住進來（0/${slots}）` });
@@ -386,12 +393,29 @@ function partnerPanel(gid, uid, uname) {
           value: String(x.role_id)
         })))));
   }
+  // 能力選擇：一位同居角色一個下拉（Discord 一則訊息只有 5 行，最多顯示 2 位的能力選單）
   if (list.length) {
+    const { skillsForRole, skillText } = require('./partnerskills');
+    for (const p of list) {
+      if (rows.length >= 4) break;
+      const choices = skillsForRole(gid, p.role_id);
+      if (!choices.length) continue;
+      rows.push(new ActionRowBuilder().addComponents(
+        new StringSelectMenuBuilder().setCustomId(`partnerskill:${p.role_id}`)
+          .setPlaceholder(`${p.name}：選 1 個能力${p.skill_id ? '（可更換）' : '（還沒選）'}`.slice(0, 150))
+          .addOptions(choices.slice(0, 25).map(sk => ({
+            label: `${sk.name}${sk.id === p.skill_id ? '（啟用中）' : ''}`.slice(0, 100),
+            description: `${skillText(sk, p.level)}${sk.description ? `｜${sk.description}` : ''}`.slice(0, 100),
+            value: String(sk.id)
+          })))));
+    }
+  }
+  if (list.length && rows.length < 5) {
     rows.push(new ActionRowBuilder().addComponents(
       new StringSelectMenuBuilder().setCustomId('partnermoveout').setPlaceholder('請誰搬走？')
         .addOptions(list.slice(0, 25).map(p => ({
           label: p.name.slice(0, 100),
-          description: partnerSkillText(p).slice(0, 100),
+          description: partnerSkillText(p, gid).slice(0, 100),
           value: String(p.role_id)
         })))));
   }
@@ -668,10 +692,32 @@ function init(client) {
           const e = new EmbedBuilder().setColor(0xeb459e).setTitle(`💞 ${out.role.name} 搬進來了！`)
             .setDescription((line ? `💬 **「${line}」**\n\n` : '')
               + `從今天起 **${out.role.name}** 住在你家（${out.used}/${out.slots}）。\n`
-              + `✨ 他的能力：**${out.skill.name}**${out.skill.buff_pct ? ` ＋${out.skill.buff_pct}%` : ''}\n`
+              + `✨ 用下面的「${out.role.name}：選 1 個能力」下拉幫他挑一個能力（${out.choices} 個可選，之後隨時能換）。\n`
               + `⚠️ 每期會多一筆**伴侶稅**，請確認你養得起 —— 養不起可以請他搬走。`);
           if (out.role.image_url) e.setThumbnail(absUrl(out.role.image_url));
           return i.followUp({ embeds: [e], ...eph }).catch(() => {});
+        }
+        // 幫同居角色選／換能力（同時只能啟用 1 個）
+        if (i.isStringSelectMenu() && i.customId.startsWith('partnerskill:')) {
+          const rid = parseInt(i.customId.split(':')[1], 10);
+          const sid = parseInt(i.values[0], 10);
+          const p = db.prepare('SELECT * FROM home_partners WHERE guild_id=? AND user_id=? AND role_id=?').get(gid, uid, rid);
+          if (!p) return i.reply({ content: '這位角色沒有住在你家。', ...eph }).catch(() => {});
+          const { skillsForRole, skillById, skillText } = require('./partnerskills');
+          // 只能選這位角色的候選能力 —— 不能靠改 customId 硬塞別的
+          if (!skillsForRole(gid, rid).some(x => x.id === sid)) {
+            return i.reply({ content: '這位角色不能用這個能力。', ...eph }).catch(() => {});
+          }
+          const sk = skillById(gid, sid);
+          db.prepare('UPDATE home_partners SET skill_id=?, buff_type=?, buff_pct=?, skill=? WHERE guild_id=? AND user_id=? AND role_id=?')
+            .run(sid, '', 0, '', gid, uid, rid);
+          const role = roleOf(gid, rid);
+          await i.update(partnerPanel(gid, uid, uname)).catch(() => {});
+          return i.followUp({
+            content: `✨ **${role ? role.name : ''}** 的能力設成 **${skillText(sk, p.level || 0)}**。\n`
+              + `同時只能啟用 1 個，想換隨時再選一次。數值會隨好感度階級成長。`,
+            ...eph
+          }).catch(() => {});
         }
         if (i.isButton() && i.customId.startsWith('partnerout:')) {
           const rid = parseInt(i.customId.split(':')[1], 10);

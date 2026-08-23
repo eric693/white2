@@ -21,6 +21,7 @@ const BUFF_TYPES = {
   // visit_pct（角色來訪機率）已移除：角色只會在「逛街」隨機遇到，沒有來訪機率這回事。
   // 既有資料一律換成 affinity_pct。
   stock_pct:       '股市收益',
+  stock_fee_cut_pct:'股市手續費減免',
   speed_pct:       '生產速度',
   steal_resist_pct:'全域防竊',      // 牧場＋魚缸都吃
   ranch_resist_pct:'牧場防護',      // 只擋 /偷（取代看門動物佔格子）
@@ -88,10 +89,24 @@ function userBuffs(gid, uid, detail = false) {
     add(t.buff2_type, t.buff2_pct, `成就：${t.emoji || ''}${t.name}`);
   }
 
-  // ⑤ 同居角色的能力：搬進來時隨機決定的加成（要繳伴侶稅，所以這是付費換來的）
+  // ⑤ 同居角色的能力（要繳伴侶稅，所以這是付費換來的）。
+  // 新制：玩家自己選的那一個能力，如果是「被動 %」型（售價／股市…）就從這裡進加成管線；
+  // 每日執行型（收成、種植、帶錢回來）不走這裡，由 features/partnerskills.js 每天結算。
+  const newPartners = db.prepare(
+    `SELECT s.buff_type, s.val_min, s.val_max, s.tiers, r.name,
+            (SELECT level FROM affinity a WHERE a.guild_id=p.guild_id AND a.user_id=p.user_id AND a.role_id=p.role_id) AS level
+       FROM home_partners p
+       JOIN partner_skills s ON s.id = p.skill_id AND s.enabled=1
+       JOIN wheel_roles r ON r.id = p.role_id
+      WHERE p.guild_id=? AND p.user_id=? AND s.buff_type <> ''`).all(gid, uid);
+  for (const p of newPartners) {
+    const { valueFor } = require('../bot/features/partnerskills');
+    add(p.buff_type, valueFor(p, p.level || 0).min, `同居：💞${p.name}`);
+  }
+  // 舊資料：搬進來時隨機給的 % 加成（還沒選新能力的人）
   const partners = db.prepare(
     `SELECT p.buff_type, p.buff_pct, r.name FROM home_partners p JOIN wheel_roles r ON r.id = p.role_id
-      WHERE p.guild_id=? AND p.user_id=? AND p.buff_pct > 0`).all(gid, uid);
+      WHERE p.guild_id=? AND p.user_id=? AND p.buff_pct > 0 AND p.skill_id = 0`).all(gid, uid);
   for (const p of partners) add(p.buff_type, p.buff_pct, `同居：💞${p.name}`);
 
   // ⑥ 料理等暫時性加成（過期的順手清掉，不必另外排程）

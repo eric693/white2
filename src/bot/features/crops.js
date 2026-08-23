@@ -69,45 +69,99 @@ const seedByName = (gid, name) => db.prepare('SELECT * FROM crop_seeds WHERE gui
 const seedById = (gid, id) => db.prepare('SELECT * FROM crop_seeds WHERE guild_id=? AND id=?').get(gid, id);
 const productOf = (id) => db.prepare('SELECT * FROM gather_items WHERE id=?').get(id);
 
-// 一口氣種多格：買 qty 包種子種進 qty 個空格。
-// 實際種下的數量會被「空格數」和「買得起幾包」夾住，不會因為選太多就整批失敗。
-function plantSeeds(gid, uid, uname, seedId, qty) {
-  const c = ccfg(gid), gc = gcfg(gid);
+// 種子現在是「背包物品」：買了先進背包，玩家自己決定什麼時候種。
+// 這樣同居角色的「自動種植」能力才有東西可用 —— 它就是去背包翻種子。
+// 每個 crop_seeds 對應一個 gather_items(kind='seed')，第一次用到才建立。
+function seedItemOf(gid, seed) {
+  if (seed.seed_item_id) {
+    const it = db.prepare('SELECT * FROM gather_items WHERE id=?').get(seed.seed_item_id);
+    if (it) return it;
+  }
+  let it = db.prepare("SELECT * FROM gather_items WHERE guild_id=? AND kind='seed' AND name=?").get(gid, seed.name);
+  if (!it) {
+    // 賣價設成售價的一半：種子可以賣掉，但賣了會虧，避免拿來當洗錢管道
+    const r = db.prepare("INSERT INTO gather_items (guild_id,kind,name,emoji,rarity,weight,price,description,enabled) VALUES (?,?,?,?,?,?,?,?,1)")
+      .run(gid, 'seed', seed.name, seed.emoji || '🌱', 'N', 0, Math.max(1, Math.floor(seed.seed_price / 2)),
+        `${PLOT[seed.plot_type]}種子：用 /種植 種下去`);
+    it = db.prepare('SELECT * FROM gather_items WHERE id=?').get(r.lastInsertRowid);
+  }
+  db.prepare('UPDATE crop_seeds SET seed_item_id=? WHERE id=?').run(it.id, seed.id);
+  return it;
+}
+
+/** 背包裡有幾包這個種子 */
+function seedsInBag(gid, uid, seed) {
+  const it = seedItemOf(gid, seed);
+  const row = db.prepare('SELECT count FROM gather_inventory WHERE guild_id=? AND user_id=? AND item_id=?').get(gid, uid, it.id);
+  return row ? row.count : 0;
+}
+
+/** 買種子：只進背包，不種下去 */
+function buySeeds(gid, uid, uname, seedId, qty) {
+  const gc = gcfg(gid);
   const seed = db.prepare('SELECT * FROM crop_seeds WHERE guild_id=? AND enabled=1 AND id=?').get(gid, seedId);
   if (!seed) return { error: '這個種子已經不在商店裡了。' };
+  const price = Math.max(1, seed.seed_price);
+  const w = wallet(gid, uid, uname);
+  const afford = Math.floor(w.coins / price);
+  if (afford < 1) return { error: `${gc.currency_name}不夠：一包 ${price.toLocaleString('en-US')}，你只有 ${w.coins.toLocaleString('en-US')}。` };
+  const n = Math.min(Math.max(1, qty), afford, 999);
+  const cost = n * price;
+  const it = seedItemOf(gid, seed);
+  db.transaction(() => {
+    db.prepare('UPDATE econ_wallets SET coins = coins - ? WHERE guild_id=? AND user_id=?').run(cost, gid, uid);
+    addToBag(gid, uid, it.id, n);
+  })();
+  const have = seedsInBag(gid, uid, seed);
+  return { embed: new EmbedBuilder().setColor(brandColor()).setTitle('🌱 買好了')
+    .setDescription(`${seed.emoji || '🌱'}**${seed.name}** ×**${n}** 已經放進背包（現在有 ${have} 包）。\n`
+      + `花費：${money(gc, cost)}\n\n`
+      + `要種的時候到 **${PLOT[seed.plot_type]}** 按「🌱 種植」，或打 \`/種植 ${seed.name} 數量\`。`)
+    .setFooter({ text: `餘額 ${(w.coins - cost).toLocaleString('en-US')} ${gc.currency_name}` }) };
+}
+
+// 一口氣種多格：從背包拿 qty 包種子種進 qty 個空格（不再當場扣錢）。
+// 實際種下的數量會被「空格數」和「背包存量」夾住，不會因為選太多就整批失敗。
+function plantSeeds(gid, uid, uname, seedId, qty) {
+  const c = ccfg(gid);
+  const seed = db.prepare('SELECT * FROM crop_seeds WHERE guild_id=? AND enabled=1 AND id=?').get(gid, seedId);
+  if (!seed) return { error: '這個種子已經不存在了。' };
   const max = slotsOf(c, seed.plot_type, unlockedOf(gid, uid), gid, uid);
   if (max <= 0) return { error: `你還沒有${PLOT[seed.plot_type]}！可以用 \`/設施商店\` 買一塊，或用 \`/製作\` 開一格。` };
   const used = db.prepare('SELECT slot FROM crop_plots WHERE guild_id=? AND user_id=? AND plot_type=?').all(gid, uid, seed.plot_type).map(r => r.slot);
   const free = [];
   for (let s = 0; s < max; s++) if (!used.includes(s)) free.push(s);
   if (!free.length) return { error: `你的${PLOT[seed.plot_type]}已經滿了（${max} 格）。等成熟 \`/採收\` 後再種，或去 \`/設施商店\` 升級擴充。` };
-  const w = wallet(gid, uid, uname);
-  const price = Math.max(1, seed.seed_price);
-  const afford = Math.floor(w.coins / price);
-  if (afford < 1) return { error: `${gc.currency_name}不夠：一包 ${seed.seed_price}，你只有 ${w.coins.toLocaleString('en-US')}。` };
-  const n = Math.min(Math.max(1, qty), free.length, afford);
-  const cost = n * seed.seed_price;
+  const it = seedItemOf(gid, seed);
+  const have = seedsInBag(gid, uid, seed);
+  if (have < 1) return { error: `你的背包沒有 ${seed.emoji || ''}${seed.name}，先去 \`/種子商店\` 買。` };
+  const n = Math.min(Math.max(1, qty), free.length, have);
   const readyAt = Date.now() + applySpeed(Math.max(1, seed.grow_minutes) * 60000, facilityBonus(gid, uid, seed.plot_type).speed);
   const slots = free.slice(0, n);
-  const tx = db.transaction(() => {
-    db.prepare('UPDATE econ_wallets SET coins = coins - ? WHERE guild_id=? AND user_id=?').run(cost, gid, uid);
+  db.transaction(() => {
+    db.prepare('UPDATE gather_inventory SET count = count - ? WHERE guild_id=? AND user_id=? AND item_id=?').run(n, gid, uid, it.id);
     const ins = db.prepare('INSERT INTO crop_plots (guild_id,user_id,plot_type,slot,seed_id,ready_at) VALUES (?,?,?,?,?,?)');
     for (const s of slots) ins.run(gid, uid, seed.plot_type, s, seed.id, readyAt);
-  });
-  tx();
+  })();
   const p = productOf(seed.product_item_id);
   const usedNow = used.length + n;
   const left = Math.max(0, max - usedNow);
   // 選太多時說明為什麼只種了這些，免得玩家以為系統吃掉指令
   const capped = n < qty
-    ? `\n\n（你選了 ${qty} 格，但${free.length < qty ? `只剩 ${free.length} 個空格` : `${gc.currency_name}只夠買 ${afford} 包`}，所以種了 ${n} 格）`
+    ? `\n\n（你選了 ${qty} 格，但${free.length < qty ? `只剩 ${free.length} 個空格` : `背包只有 ${have} 包種子`}，所以種了 ${n} 格）`
     : '';
   return { embed: new EmbedBuilder().setColor(brandColor()).setTitle('🌱 種植成功')
     .setDescription(`在${PLOT[seed.plot_type]}種下 ${seed.emoji || ''}**${seed.name}** ×**${n}**（第 ${slots.map(s => s + 1).join('、')} 格）\n` +
-      `花費：${money(gc, cost)}\n成熟時間：<t:${Math.floor(readyAt / 1000)}:R>（<t:${Math.floor(readyAt / 1000)}:t>）\n` +
+      `成熟時間：<t:${Math.floor(readyAt / 1000)}:R>（<t:${Math.floor(readyAt / 1000)}:t>）\n` +
       `成熟後用 \`/採收\` 可收成 ${seed.yield_count * n}× ${p ? (p.emoji || '') + p.name : '產物'}。\n\n` +
       `${PLOT[seed.plot_type]}：**${usedNow}/${max} 格**已使用${left ? `（還可種 ${left} 格）` : '（已滿）'}${capped}`)
-    .setFooter({ text: `餘額 ${(w.coins - cost).toLocaleString('en-US')} ${gc.currency_name}` }) };
+    .setFooter({ text: `背包還有 ${have - n} 包 ${seed.name}` }) };
+}
+
+/** 背包裡這個類型可以種的種子（同居能力的「自動種植」也用這支） */
+function plantableSeeds(gid, uid, type) {
+  const list = db.prepare('SELECT * FROM crop_seeds WHERE guild_id=? AND enabled=1 AND plot_type=? ORDER BY sort, id').all(gid, type);
+  return list.map(sd => ({ seed: sd, have: seedsInBag(gid, uid, sd) })).filter(x => x.have > 0);
 }
 
 function init(client) {
@@ -118,33 +172,28 @@ function init(client) {
   const CROP_BTN = { 'adv:farm': '農地', 'adv:greenhouse': '溫室', 'adv:reap': '採收', 'adv:cropshop': '種子商店' };
 
   client.on('interactionCreate', async (i) => {
-    // 種子商店的購買選單
+    // 種子商店的購買選單：買了進背包，種不種、什麼時候種由玩家自己決定
     if (i.isStringSelectMenu() && i.customId === 'seedbuy') {
       try {
         const gid = i.guildId, uid = i.user.id, uname = i.user.username;
         const sid = parseInt(i.values[0], 10);
         const seed = seedById(gid, sid);
         if (!seed) return i.update({ content: '這個種子已經不在商店裡了。', components: [], embeds: [] }).catch(() => {});
-        const c = ccfg(gid), gc = gcfg(gid);
-        const max = slotsOf(c, seed.plot_type, unlockedOf(gid, uid), gid, uid);
-        const usedN = db.prepare('SELECT COUNT(*) n FROM crop_plots WHERE guild_id=? AND user_id=? AND plot_type=?').get(gid, uid, seed.plot_type).n;
-        const freeN = Math.max(0, max - usedN);
+        const gc = gcfg(gid);
         const w = wallet(gid, uid, uname);
-        const afford = Math.floor(w.coins / Math.max(1, seed.seed_price));
-        const canDo = Math.min(freeN, afford);
-        if (max <= 0) return i.update({ content: `你還沒有${PLOT[seed.plot_type]}！可以用 \`/設施商店\` 買一塊，或用 \`/製作\` 開一格。`, components: [], embeds: [] }).catch(() => {});
-        if (freeN <= 0) return i.update({ content: `你的${PLOT[seed.plot_type]}已經滿了（${max} 格）。等成熟 \`/採收\` 後再種。`, components: [], embeds: [] }).catch(() => {});
-        if (afford <= 0) return i.update({ content: `${gc.currency_name}不夠：一包 ${seed.seed_price}，你只有 ${w.coins.toLocaleString('en-US')}。`, components: [], embeds: [] }).catch(() => {});
-        // 只列「格子夠、錢也夠」的數量，選了就一定種得成
-        const amts = [...new Set([1, 2, 3, 5, 10].filter(x => x < canDo).concat([canDo]))].sort((a, b) => a - b);
-        const menu = new StringSelectMenuBuilder().setCustomId('seedqty:' + sid).setPlaceholder('要種幾格？')
+        const price = Math.max(1, seed.seed_price);
+        const afford = Math.floor(w.coins / price);
+        if (afford <= 0) return i.update({ content: `${gc.currency_name}不夠：一包 ${price.toLocaleString('en-US')}，你只有 ${w.coins.toLocaleString('en-US')}。`, components: [], embeds: [] }).catch(() => {});
+        const cap = Math.min(afford, 999);
+        const amts = [...new Set([1, 5, 10, 25, 50, 100].filter(x => x < cap).concat([cap]))].sort((a, b) => a - b);
+        const menu = new StringSelectMenuBuilder().setCustomId('seedqty:' + sid).setPlaceholder('要買幾包？')
           .addOptions(amts.slice(0, 25).map(a => ({
-            label: a === canDo && canDo > 1 ? `全部空格（${a} 格）` : `種 ${a} 格`,
-            description: `花 ${(a * seed.seed_price).toLocaleString('en-US')} ${gc.currency_name}，收成 ${a * seed.yield_count} 個`.slice(0, 100),
+            label: a === cap && cap > 1 ? `買好買滿（${a} 包）` : `買 ${a} 包`,
+            description: `${(a * price).toLocaleString('en-US')} ${gc.currency_name}`.slice(0, 100),
             value: String(a)
           })));
         return i.update({
-          content: `${seed.emoji || '🌱'}**${seed.name}**：要種幾格？（${PLOT[seed.plot_type]}空 ${freeN} 格，餘額買得起 ${afford} 包）`,
+          content: `${seed.emoji || '🌱'}**${seed.name}**：要買幾包？（一包 ${price.toLocaleString('en-US')} ${gc.currency_name}，你買得起 ${afford.toLocaleString('en-US')} 包）\n買到的種子會進背包，之後在${PLOT[seed.plot_type]}按「🌱 種植」種下。`,
           embeds: [], components: [new ActionRowBuilder().addComponents(menu)]
         }).catch(() => {});
       } catch (e) {
@@ -152,11 +201,47 @@ function init(client) {
         return i.reply({ content: '執行失敗，管理員可到後台的系統錯誤紀錄查看原因。', flags: MessageFlags.Ephemeral }).catch(() => {});
       }
     }
-    // 選好數量 → 一次種下
-    if (i.isStringSelectMenu() && i.customId.startsWith('seedqty:')) {
+    // 從背包挑種子種下（農地／溫室面板的「🌱 種植」）
+    if (i.isStringSelectMenu() && (i.customId === 'plantpick:field' || i.customId === 'plantpick:greenhouse')) {
+      try {
+        const gid = i.guildId, uid = i.user.id;
+        const sid = parseInt(i.values[0], 10);
+        const seed = seedById(gid, sid);
+        if (!seed) return i.update({ content: '這個種子已經不存在了。', components: [], embeds: [] }).catch(() => {});
+        const c = ccfg(gid);
+        const max = slotsOf(c, seed.plot_type, unlockedOf(gid, uid), gid, uid);
+        const usedN = db.prepare('SELECT COUNT(*) n FROM crop_plots WHERE guild_id=? AND user_id=? AND plot_type=?').get(gid, uid, seed.plot_type).n;
+        const freeN = Math.max(0, max - usedN);
+        const have = seedsInBag(gid, uid, seed);
+        if (freeN <= 0) return i.update({ content: `你的${PLOT[seed.plot_type]}已經滿了（${max} 格）。等成熟 \`/採收\` 後再種。`, components: [], embeds: [] }).catch(() => {});
+        if (have <= 0) return i.update({ content: `背包已經沒有 ${seed.name} 了。`, components: [], embeds: [] }).catch(() => {});
+        const canDo = Math.min(freeN, have);
+        const amts = [...new Set([1, 2, 3, 5, 10].filter(x => x < canDo).concat([canDo]))].sort((a, b) => a - b);
+        const menu = new StringSelectMenuBuilder().setCustomId('plantqty:' + sid).setPlaceholder('要種幾格？')
+          .addOptions(amts.slice(0, 25).map(a => ({
+            label: a === canDo && canDo > 1 ? `全部種下（${a} 格）` : `種 ${a} 格`,
+            description: `收成 ${a * seed.yield_count} 個｜種完背包剩 ${have - a} 包`.slice(0, 100),
+            value: String(a)
+          })));
+        return i.update({
+          content: `${seed.emoji || '🌱'}**${seed.name}**：要種幾格？（空 ${freeN} 格，背包有 ${have} 包）`,
+          embeds: [], components: [new ActionRowBuilder().addComponents(menu)]
+        }).catch(() => {});
+      } catch (e) {
+        logError(i.guildId, '種植選單失敗：', e.message);
+        return i.reply({ content: '執行失敗，管理員可到後台的系統錯誤紀錄查看原因。', flags: MessageFlags.Ephemeral }).catch(() => {});
+      }
+    }
+    if (i.isStringSelectMenu() && i.customId.startsWith('plantqty:')) {
       const sid = parseInt(i.customId.split(':')[1], 10);
       const qty = parseInt(i.values[0], 10);
       return safeMenu(i, '種下種子', () => plantSeeds(i.guildId, i.user.id, i.user.username, sid, qty));
+    }
+    // 選好包數 → 買進背包
+    if (i.isStringSelectMenu() && i.customId.startsWith('seedqty:')) {
+      const sid = parseInt(i.customId.split(':')[1], 10);
+      const qty = parseInt(i.values[0], 10);
+      return safeMenu(i, '購買種子', () => buySeeds(i.guildId, i.user.id, i.user.username, sid, qty));
     }
     const isBtn = i.isButton();
     const cmdName = isBtn ? CROP_BTN[i.customId] : (i.isChatInputCommand() ? i.commandName : null);
@@ -182,7 +267,9 @@ function init(client) {
         const u0 = unlockedOf(gid, uid);
         const COLOR = { field: 0xf1c40f, greenhouse: 0x1abc9c };
         const embeds = [new EmbedBuilder().setColor(brandColor()).setTitle('🌱 種子商店')
-          .setDescription(`點下方選單選種子 → 再選要種幾格，一次種完不用一格一格點。\n（也可以打 \`/種植 種子名稱 數量\`）\n你的餘額：**${w.coins.toLocaleString('en-US')} ${gc.currency_name}**`)];
+          .setDescription(`種子買了會**放進背包**，什麼時候種、種哪一種由你決定。\n`
+            + `種的時候到 🌾 **農地** 或 🏡 **溫室** 按「🌱 種植」（也可以打 \`/種植 種子名稱 數量\`）。\n`
+            + `你的餘額：**${w.coins.toLocaleString('en-US')} ${gc.currency_name}**`)];
         for (const type of ['field', 'greenhouse']) {
           const list = seeds.filter(sd => sd.plot_type === type);
           if (!list.length) continue;
@@ -196,13 +283,22 @@ function init(client) {
             .setTitle(`${type === 'greenhouse' ? '🏡 溫室花卉' : '🌾 農地作物'}（你有 ${slotsOf(c, type, u0, gid, uid)} 格）`)
             .setDescription(txt.slice(0, 4000)));
         }
-        const opts = seeds.map(sd => ({
-          label: `${sd.plot_type === 'greenhouse' ? '溫室' : '農地'}：${sd.name}`.slice(0, 100),
-          description: `${sd.seed_price.toLocaleString('en-US')} ${gc.currency_name}｜${sd.grow_minutes} 分成熟｜收成 ${sd.yield_count}`.slice(0, 100),
-          value: String(sd.id), emoji: sd.emoji || '🌱'
-        }));
-        const rows = [new ActionRowBuilder().addComponents(
-          new StringSelectMenuBuilder().setCustomId('seedbuy').setPlaceholder('選擇種子（下一步選數量）').addOptions(opts.slice(0, 25)))];
+        const opts = seeds.map(sd => {
+          const have = seedsInBag(gid, uid, sd);
+          return {
+            label: `${sd.plot_type === 'greenhouse' ? '溫室' : '農地'}：${sd.name}`.slice(0, 100),
+            description: `${sd.seed_price.toLocaleString('en-US')} ${gc.currency_name}｜${sd.grow_minutes} 分｜收成 ${sd.yield_count}${have ? `｜背包 ${have} 包` : ''}`.slice(0, 100),
+            value: String(sd.id), emoji: sd.emoji || '🌱'
+          };
+        });
+        // 種子超過 25 種時要分成好幾個下拉，不然排後面的買不到
+        const rows = [];
+        for (let n = 0; n < opts.length && rows.length < 5; n += 25) {
+          rows.push(new ActionRowBuilder().addComponents(
+            new StringSelectMenuBuilder().setCustomId('seedbuy')
+              .setPlaceholder(rows.length === 0 ? '選擇種子（下一步選包數）' : '更多種子')
+              .addOptions(opts.slice(n, n + 25))));
+        }
         return await reply({ embeds: embeds.slice(0, 10), components: rows });
       }
 
@@ -212,6 +308,7 @@ function init(client) {
         const seed = seedByName(gid, what);
         if (!seed) return await reply({ content: `找不到種子「${what}」，用 \`/種子商店\` 看看有哪些。` });
         const qty = i.options.getInteger('數量') || 1;
+        if (seedsInBag(gid, uid, seed) < 1) return await reply({ content: `你的背包沒有 ${seed.emoji || ''}${seed.name}，先用 \`/種子商店\` 買。` });
         const r = plantSeeds(gid, uid, uname, seed.id, qty);
         if (r.error) return await reply({ content: r.error });
         return await reply({ embeds: [r.embed] });
@@ -241,8 +338,28 @@ function init(client) {
             ? `\`${s + 1}\`｜${nm}　<t:${Math.floor(row.ready_at / 1000)}:R>`
             : `\`${s + 1}\`｜✅ ${nm} 可採收`);
         }
-        embed.setDescription(lines.join('\n')).setFooter({ text: `${max} 格｜/種植 種子　/採收 收成　/種子商店 買種子` });
-        return await reply({ embeds: [embed] });
+        embed.setDescription(lines.join('\n')).setFooter({ text: `${max} 格｜/採收 收成　/種子商店 買種子` });
+        // 看自己的田才給種植選單（看別人的只是觀看）
+        const rows2 = [];
+        if (target.id === uid) {
+          const bag = plantableSeeds(gid, uid, type);
+          const freeN = max - plots.length;
+          if (!bag.length) {
+            embed.addFields({ name: '🌱 種植', value: `背包沒有${PLOT[type]}種子，先去 \`/種子商店\` 買。` });
+          } else if (freeN <= 0) {
+            embed.addFields({ name: '🌱 種植', value: '格子滿了，等成熟 `/採收` 後再種。' });
+          } else {
+            rows2.push(new ActionRowBuilder().addComponents(
+              new StringSelectMenuBuilder().setCustomId(`plantpick:${type}`)
+                .setPlaceholder(`🌱 種植（空 ${freeN} 格，背包有 ${bag.length} 種種子）`)
+                .addOptions(bag.slice(0, 25).map(({ seed, have }) => ({
+                  label: `${seed.name}（背包 ${have} 包）`.slice(0, 100),
+                  description: `${seed.grow_minutes} 分成熟｜收成 ${seed.yield_count}`.slice(0, 100),
+                  value: String(seed.id), emoji: seed.emoji || '🌱'
+                })))));
+          }
+        }
+        return await reply({ embeds: [embed], components: rows2 });
       }
 
       // ---- 採收 ----
@@ -282,4 +399,4 @@ function init(client) {
   console.log('  ↳ 種植模組已載入（農地種作物／溫室種花卉／採收）');
 }
 
-module.exports = { init, seedCrops };
+module.exports = { init, seedCrops, plantSeeds, plantableSeeds, seedsInBag, seedItemOf };

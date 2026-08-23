@@ -23,6 +23,16 @@ const mats = (v) => {
     .map(x => ({ item: String(x.item), count: Math.max(1, int(x.count, 1, 1)) })));
 };
 const buff = (v) => (v && BUFF_TYPES[v]) ? v : '';
+// 好感階段數值：[{lv,min,max}]，由低到高。lv＝好感度階級門檻。
+const tiers = (v) => {
+  let a = v;
+  if (typeof v === 'string') { try { a = JSON.parse(v); } catch { a = []; } }
+  if (!Array.isArray(a)) a = [];
+  return JSON.stringify(a
+    .filter(x => x && x.lv !== undefined && x.lv !== null && x.lv !== '')
+    .map(x => ({ lv: int(x.lv, 0, 0), min: int(x.min, 0, 0), max: int(x.max, 0, 0) }))
+    .sort((p, q) => p.lv - q.lv));
+};
 
 // ---------- 給前端的選項清單 ----------
 router.get('/home-meta', (req, res) => {
@@ -30,7 +40,15 @@ router.get('/home-meta', (req, res) => {
     buff_types: Object.entries(BUFF_TYPES).map(([key, label]) => ({ key, label })),
     metrics: Object.entries(METRICS).map(([key, m]) => ({ key, label: m.name, unit: m.unit || '', derived: !!m.derived })),
     items: db.prepare('SELECT name, emoji, kind FROM gather_items WHERE guild_id=? AND enabled=1 ORDER BY kind, price').all(req.guildId),
-    titles: db.prepare('SELECT id, name, emoji FROM title_defs WHERE guild_id=? ORDER BY sort, id').all(req.guildId)
+    titles: db.prepare('SELECT id, name, emoji FROM title_defs WHERE guild_id=? ORDER BY sort, id').all(req.guildId),
+    // 同居能力：程式支援的 18 種行為（後台只能從這裡挑 code，新增能力要同時實作）
+    abilities: (() => {
+      const { ABILITIES, KIND_LABEL } = require('../bot/features/partnerskills');
+      return Object.entries(ABILITIES).map(([code, a]) => ({
+        code, name: a.name, kind: a.kind, kind_label: KIND_LABEL[a.kind] || a.kind,
+        unit: a.unit, passive: a.passive || '', desc: a.desc
+      }));
+    })()
   });
 });
 
@@ -155,11 +173,19 @@ const TABLES = {
   // 同居角色的能力池：勾選要開哪些、調 % 與被抽中的權重
   'home-partner-skills': {
     table: 'partner_skills', order: 'sort, id',
-    fields: (b) => ({
-      name: str(b.name), skill: b.skill === 'harvest' ? 'harvest' : '',
-      buff_type: buff(b.buff_type), base_pct: int(b.base_pct, 0, 0),
-      weight: int(b.weight, 10, 1), sort: int(b.sort, 0, 0), enabled: b.enabled ? 1 : 0
-    })
+    fields: (b) => {
+      const { ABILITIES } = require('../bot/features/partnerskills');
+      const a = ABILITIES[str(b.code)] || null;
+      return {
+        name: str(b.name), code: a ? str(b.code) : '',
+        // kind 與 buff_type 一律由 code 決定，避免後台改出程式看不懂的組合
+        kind: a ? a.kind : 'buff', buff_type: a ? (a.passive || '') : buff(b.buff_type),
+        val_min: int(b.val_min, 0, 0), val_max: int(b.val_max, 0, 0),
+        tiers: tiers(b.tiers), description: str(b.description),
+        skill: '', base_pct: 0, weight: int(b.weight, 10, 1),
+        sort: int(b.sort, 0, 0), enabled: b.enabled ? 1 : 0
+      };
+    }
   },
   'home-affinity-levels': {
     table: 'affinity_levels', order: 'level',
@@ -207,19 +233,45 @@ for (const [path, def] of Object.entries(TABLES)) {
 }
 
 // 把程式內建的預設能力池寫進資料庫（讓管理員可以在上面增刪改）
+// 已經有同 code 的會跳過，不會覆蓋管理員調過的數值 —— 所以可以重複按（之後新增能力也靠它補進來）。
 router.post('/home-partner-skills/seed', (req, res) => {
   const gid = req.guildId;
-  const { DEFAULT_PARTNER_SKILLS } = require('../bot/features/affinity');
-  const has = db.prepare('SELECT COUNT(*) n FROM partner_skills WHERE guild_id=?').get(gid).n;
-  if (has) return res.status(400).json({ error: '已經有能力設定了，請直接編輯（或先刪光再匯入）。' });
-  const ins = db.prepare(
-    'INSERT INTO partner_skills (guild_id,name,skill,buff_type,base_pct,weight,sort) VALUES (?,?,?,?,?,?,?)');
+  const { seedSkills, DEFAULT_SKILLS } = require('../bot/features/partnerskills');
+  const before = db.prepare('SELECT COUNT(*) n FROM partner_skills WHERE guild_id=?').get(gid).n;
+  seedSkills(gid);
+  const after = db.prepare('SELECT COUNT(*) n FROM partner_skills WHERE guild_id=?').get(gid).n;
+  audit(req.user.name, `匯入同居能力預設池（新增 ${after - before} 種）`);
+  res.json({ ok: true, count: after - before, total: DEFAULT_SKILLS.length });
+});
+
+// ---------- 角色 × 能力（後台勾選）----------
+// 每位角色可以勾多個「候選能力」，玩家同居後只能從中選 1 個啟用。
+// 一位角色一個都沒勾＝所有啟用中的能力都可選（新角色不必先設定就能用）。
+router.get('/role-skills', (req, res) => {
+  const gid = req.guildId;
+  res.json({
+    roles: db.prepare(
+      'SELECT id, name, author, enabled FROM wheel_roles WHERE guild_id=? ORDER BY author, name').all(gid),
+    skills: db.prepare(
+      'SELECT id, name, code, kind, enabled FROM partner_skills WHERE guild_id=? ORDER BY sort, id').all(gid),
+    picked: db.prepare('SELECT role_id, skill_id FROM role_skills WHERE guild_id=?').all(gid)
+  });
+});
+
+// 設定某位角色的候選能力（整份覆蓋）。也可以帶 role_ids 一次套用到多位角色。
+router.post('/role-skills', (req, res) => {
+  const gid = req.guildId, b = req.body || {};
+  const roleIds = (Array.isArray(b.role_ids) && b.role_ids.length ? b.role_ids : [b.role_id])
+    .map(x => int(x, 0, 0)).filter(Boolean);
+  if (!roleIds.length) return res.status(400).json({ error: '請指定角色' });
+  const skillIds = (Array.isArray(b.skill_ids) ? b.skill_ids : []).map(x => int(x, 0, 0)).filter(Boolean);
+  const del = db.prepare('DELETE FROM role_skills WHERE guild_id=? AND role_id=?');
+  const ins = db.prepare('INSERT OR IGNORE INTO role_skills (guild_id,role_id,skill_id) VALUES (?,?,?)');
   db.transaction(() => {
-    (DEFAULT_PARTNER_SKILLS || []).forEach((x, idx) =>
-      ins.run(gid, x.name, x.skill || '', x.buff_type || '', x.base || 0, x.weight || 10, idx));
+    for (const rid of roleIds) { del.run(gid, rid); for (const sid of skillIds) ins.run(gid, rid, sid); }
   })();
-  audit(req.user.name, '匯入同居能力預設池');
-  res.json({ ok: true, count: (DEFAULT_PARTNER_SKILLS || []).length });
+  audit(req.user.name, `設定角色可用能力：${roleIds.length} 位角色 × ${skillIds.length} 種能力`);
+  res.json({ ok: true, roles: roleIds.length, skills: skillIds.length });
 });
 
 // ---------- 逛街角色名單 ----------

@@ -219,6 +219,30 @@ ensureColumns('ranch_config', {
 
 // 房屋稅：房子越大稅越重，避免全民衝頂階後家園加成人人有、稅金零負擔。
 // house_base × 房屋階級 ^ house_curve，階級越高成長越陡。
+// 種子改成「買進背包、玩家自己決定何時種」：每種種子在背包裡對應一個 gather_items(kind='seed')
+ensureColumns('crop_seeds', { seed_item_id: 'INTEGER NOT NULL DEFAULT 0' });
+// 同居能力系統：能力池從「隨機抽一個 %加成」改成「後台針對每個角色勾選候選能力，
+// 玩家同居後自己選 1 個啟用」。數值可依好感階段成長（tiers）。
+ensureColumns('partner_skills', {
+  code:        "TEXT NOT NULL DEFAULT ''",       // 能力代碼，對應 partnerskills.js 的 ABILITIES
+  kind:        "TEXT NOT NULL DEFAULT 'buff'",   // produce／adventure／care／economy／buff
+  val_min:     'INTEGER NOT NULL DEFAULT 0',     // 基礎數值下限（數量或金額）
+  val_max:     'INTEGER NOT NULL DEFAULT 0',     // 基礎數值上限（等於下限就是固定值）
+  tiers:       "TEXT NOT NULL DEFAULT '[]'",     // 好感階段數值：[{lv,min,max,pct}]，由低到高
+  description: "TEXT NOT NULL DEFAULT ''"
+});
+// 玩家實際啟用的那一個能力（同時只能一個），與最後一次每日結算的日期
+ensureColumns('home_partners', {
+  skill_id: 'INTEGER NOT NULL DEFAULT 0',
+  last_run: "TEXT NOT NULL DEFAULT ''"
+});
+// 後台勾選：每位角色可以用哪些能力（可複選；玩家只能從中選 1 個啟用）
+db.exec(`CREATE TABLE IF NOT EXISTS role_skills (
+  guild_id TEXT NOT NULL DEFAULT '',
+  role_id  INTEGER NOT NULL,
+  skill_id INTEGER NOT NULL,
+  PRIMARY KEY (guild_id, role_id, skill_id)
+)`);
 ensureColumns('tax_config', {
   house_enabled: 'INTEGER NOT NULL DEFAULT 1',
   house_base:    'INTEGER NOT NULL DEFAULT 300',   // 每一階的基礎稅額
@@ -591,7 +615,7 @@ const GUILD_TABLES = [
   'ranch_config', 'ranch_animals', 'ranch_slots', 'ranch_steal', 'ranch_steal_routes',
   'ranch_hatch_defs', 'ranch_incubator', 'ranch_unlocks',
   'special_config', 'special_items', 'special_redeems', 'special_shops',
-  'crop_config', 'crop_seeds', 'crop_plots', 'crop_unlocks',
+  'crop_config', 'crop_seeds', 'crop_plots', 'crop_unlocks', 'role_skills',
   'aquarium_config', 'aquarium_fish', 'aquarium_slots', 'aquarium_steal', 'aquarium_unlocks',
   'charity_config', 'charity_donations', 'charity_payouts',
   'loan_config', 'loans', 'loan_collaterals',

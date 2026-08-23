@@ -14,7 +14,7 @@ App.page('home', {
     const TABS = [
       ['config', '⚙️ 總設定'], ['levels', '🏠 小屋階級'], ['furniture', '🛋️ 家具'],
       ['kitchen', '🍳 廚房與料理'], ['pets', '🐾 寵物'], ['ach', '🏅 成就'],
-      ['affinity', '💕 好感度'], ['partner', '💞 同居能力'], ['stroll', '🛍️ 逛街角色'], ['players', '👥 玩家現況']
+      ['affinity', '💕 好感度'], ['partner', '💞 同居能力'], ['roleskill', '🎭 角色能力'], ['stroll', '🛍️ 逛街角色'], ['players', '👥 玩家現況']
     ];
     let tab = sessionStorage.getItem('w2_home_tab') || 'config';
     if (!TABS.some(t => t[0] === tab)) tab = 'config';
@@ -64,17 +64,22 @@ App.page('home', {
 
     // 共用：新增／編輯彈窗
     const crud = (path, title, formHTML, toBody, after) => ({
-      open: (row = {}) => UI.modal({
-        title: row.id ? `編輯：${row.name || row.level || ''}` : title,
-        bodyHTML: formHTML(row),
-        onOk: async (back) => {
-          const body = toBody(back, row);
-          try {
-            if (row.id) await PUT(`/${path}/${row.id}`, body); else await POST(`/${path}`, body);
-          } catch (e) { UI.err(e.message); return false; }
-          UI.ok('已儲存'); draw();
-        }
-      }),
+      open: (row = {}) => {
+        const m = UI.modal({
+          title: row.id ? `編輯：${row.name || row.level || ''}` : title,
+          bodyHTML: formHTML(row),
+          onOk: async (back) => {
+            const body = toBody(back, row);
+            try {
+              if (row.id) await PUT(`/${path}/${row.id}`, body); else await POST(`/${path}`, body);
+            } catch (e) { UI.err(e.message); return false; }
+            UI.ok('已儲存'); draw();
+          }
+        });
+        // after：開窗後才能綁的事件（例如表單裡自己會長出來的欄位）
+        if (after) { try { after(m.back, row); } catch (e) { console.error(e); } }
+        return m;
+      },
       del: async (row) => {
         if (!await UI.confirm(`刪除「${row.name || ('Lv.' + row.level)}」？玩家已經擁有的不會被收回，但之後就買不到／解不到了。`)) return;
         try { await DEL(`/${path}/${row.id}`); UI.ok('已刪除'); draw(); } catch (e) { UI.err(e.message); }
@@ -518,55 +523,172 @@ App.page('home', {
 
       if (tab === 'partner') {
         const rows = await GET('/home-partner-skills');
+        const meta = await GET('/home-meta');
+        const abil = meta.abilities || [];
+        const abilOf = (code) => abil.find(a => a.code === code) || null;
+        const UNIT = { count: '數量（個）', coins: '金額（星幣）', pct: '百分比（%）', none: '不需數值' };
+        // 好感階段數值：後台每一列填「好感度到第幾階 → 數值」，由低到高
+        const tierRows = (t) => (t || []).map((x, n) => `
+          <div class="form-row tier-row" data-n="${n}">
+            <div class="field"><label>好感階級 ≥</label><input class="t-lv" type="number" min="0" value="${x.lv ?? 0}"></div>
+            <div class="field"><label>數值下限</label><input class="t-min" type="number" value="${x.min ?? 0}"></div>
+            <div class="field"><label>數值上限</label><input class="t-max" type="number" value="${x.max ?? 0}"></div>
+            <button type="button" class="btn tiny danger t-del" style="align-self:flex-end;margin-bottom:6px">刪</button>
+          </div>`).join('');
+        const parseTiers = (r) => { try { return JSON.parse(r.tiers || '[]'); } catch { return []; } };
+
         const c = crud('home-partner-skills', '新增同居能力',
-          (r = {}) => `
+          (r = {}) => {
+            const a = abilOf(r.code);
+            return `
+            <div class="field"><label>能力行為</label><select name="code">
+              <option value="">— 請選擇 —</option>
+              ${abil.map(x => `<option value="${x.code}" ${r.code === x.code ? 'selected' : ''}>${x.kind_label}｜${UI.esc(x.name)}（${UI.esc(x.desc)}）</option>`).join('')}
+            </select>
+              <div class="hint">程式支援的 18 種行為。分類與加成種類會跟著這個選擇自動決定。</div></div>
             <div class="form-row">
-              <div class="field"><label>顯示名稱</label><input name="name" value="${UI.esc(r.name || '')}" placeholder="👨‍🍳 廚藝指導"></div>
-              <div class="field"><label>被抽中的權重</label><input name="weight" type="number" min="1" value="${r.weight ?? 10}">
-                <div class="hint">越大越常抽到（其他都 10 的話，設 20 就是兩倍機率）。</div></div>
-            </div>
-            <div class="field"><label>特殊能力</label><select name="skill">
-              <option value="" ${r.skill !== 'harvest' ? 'selected' : ''}>— 一般加成（用下面的設定）—</option>
-              <option value="harvest" ${r.skill === 'harvest' ? 'selected' : ''}>🧺 幫忙收成（每天自動收牧場產物）</option>
-            </select></div>
-            <div class="form-row">
-              <div class="field"><label>加成種類</label>${buffSelect('buff_type', r.buff_type)}</div>
-              <div class="field"><label>基礎 %</label><input name="base_pct" type="number" min="0" value="${r.base_pct ?? 0}">
-                <div class="hint">實際給的 ＝ 基礎 % ×（1 ＋ 好感度階級 × 10%）。</div></div>
+              <div class="field"><label>顯示名稱</label><input name="name" value="${UI.esc(r.name || '')}" placeholder="⛏️ 挖礦助手"></div>
               <div class="field"><label>排序</label><input name="sort" type="number" value="${r.sort ?? 0}"></div>
             </div>
-            <div class="field">${H.toggle('enabled', r.id ? r.enabled : 1, '啟用（會被抽到）')}</div>`,
-          (back) => H.collect(back));
+            <div class="form-row">
+              <div class="field"><label>基礎數值下限</label><input name="val_min" type="number" min="0" value="${r.val_min ?? 0}"></div>
+              <div class="field"><label>基礎數值上限</label><input name="val_max" type="number" min="0" value="${r.val_max ?? 0}">
+                <div class="hint">${a ? UI.esc(UNIT[a.unit] || '') : '選好能力行為後會說明單位'}。上下限相同＝固定值。</div></div>
+            </div>
+            <div class="field"><label>好感階段數值（可留空＝一律用基礎數值）</label>
+              <div id="tiers">${tierRows(parseTiers(r))}</div>
+              <button type="button" class="btn tiny secondary" id="tadd">＋ 新增一階</button>
+              <div class="hint">好感度到第幾階就換成那一階的數值。例：低好感 ×5、階級 8 起 ×7、階級 10 起 ×10。</div></div>
+            <div class="field"><label>補充說明（玩家選單看得到）</label><input name="description" value="${UI.esc(r.description || '')}"></div>
+            <div class="field">${H.toggle('enabled', r.id ? r.enabled : 1, '啟用（角色可以選）')}</div>`;
+          },
+          (back) => {
+            const f = H.collect(back);
+            f.tiers = [...back.querySelectorAll('.tier-row')].map(row => ({
+              lv: row.querySelector('.t-lv').value,
+              min: row.querySelector('.t-min').value,
+              max: row.querySelector('.t-max').value
+            }));
+            return f;
+          },
+          // crud 開窗後綁定「新增一階／刪一階」
+          (back) => {
+            const box = back.querySelector('#tiers');
+            const bind = () => back.querySelectorAll('.t-del').forEach(b => b.onclick = () => { b.closest('.tier-row').remove(); });
+            back.querySelector('#tadd').onclick = () => {
+              const n = box.querySelectorAll('.tier-row').length;
+              box.insertAdjacentHTML('beforeend', `
+                <div class="form-row tier-row" data-n="${n}">
+                  <div class="field"><label>好感階級 ≥</label><input class="t-lv" type="number" min="0" value="0"></div>
+                  <div class="field"><label>數值下限</label><input class="t-min" type="number" value="0"></div>
+                  <div class="field"><label>數值上限</label><input class="t-max" type="number" value="0"></div>
+                  <button type="button" class="btn tiny danger t-del" style="align-self:flex-end;margin-bottom:6px">刪</button>
+                </div>`);
+              bind();
+            };
+            bind();
+          });
+
+        const valText = (r) => {
+          const a = abilOf(r.code);
+          if (!a || a.unit === 'none') return '—';
+          const t = parseTiers(r);
+          const base = r.val_min === r.val_max ? `${r.val_min}` : `${r.val_min}～${r.val_max}`;
+          const grow = t.length ? `　→ ${t.map(x => `Lv.${x.lv}：${x.min === x.max ? x.min : `${x.min}～${x.max}`}`).join('／')}` : '';
+          return `${base}${a.unit === 'pct' ? '%' : ''}${grow}`;
+        };
 
         body.innerHTML = `
           <div class="toolbar">
             <button class="btn" id="add">＋ 新增能力</button>
-            ${rows.length ? '' : '<button class="btn secondary" id="seed">📥 匯入預設 12 種能力</button>'}
+            <button class="btn secondary" id="seed">📥 匯入／補齊預設 18 種能力</button>
             <div class="spacer" style="flex:1"></div><span class="hint">共 ${rows.length} 種</span>
           </div>
           <div class="hint" style="margin-bottom:10px">
-            角色搬進玩家家裡時，會從這裡<b>隨機</b>抽一個能力。不想出現的取消「啟用」就好；
-            清單是空的時候會用程式內建的預設池（按上面的按鈕可以匯入成可編輯的資料）。
+            這裡是<b>能力池</b>：定義有哪些能力、數值多少、怎麼隨好感度成長。<br>
+            哪一位角色可以用哪些能力，到「🎭 角色能力」分頁勾選；玩家同居後只能從勾選的候選裡<b>啟用 1 個</b>。
           </div>
           <div class="table-wrap"><table class="list">
-            <thead><tr><th>能力</th><th>類型</th><th>基礎 %</th><th>權重</th><th>狀態</th><th></th></tr></thead>
-            <tbody>${rows.length ? rows.map(r => `<tr>
-              <td>${UI.esc(r.name)}</td>
-              <td>${r.skill === 'harvest' ? '🧺 幫忙收成' : UI.esc(buffLabel(r.buff_type))}</td>
-              <td>${r.skill === 'harvest' ? '—' : '+' + r.base_pct + '%'}</td>
-              <td>${r.weight}</td>
+            <thead><tr><th>能力</th><th>分類</th><th>數值</th><th>狀態</th><th></th></tr></thead>
+            <tbody>${rows.length ? rows.map(r => {
+              const a = abilOf(r.code);
+              return `<tr>
+              <td>${UI.esc(r.name)}${r.code ? '' : ' <span class="hint">（舊資料，請重設能力行為）</span>'}</td>
+              <td>${a ? UI.esc(a.kind_label) : '—'}</td>
+              <td>${UI.esc(valText(r))}</td>
               <td>${H.enabledTag(r.enabled)}</td>
               <td><button class="btn tiny secondary" data-edit="${r.id}">編輯</button>
-                  <button class="btn tiny danger" data-del="${r.id}">刪除</button></td></tr>`).join('')
-        : '<tr><td colspan="6" class="hint">目前使用程式內建的預設池（廚藝指導、礦脈直覺、幫忙收成…共 12 種）。按上面的按鈕匯入就能編輯。</td></tr>'}
+                  <button class="btn tiny danger" data-del="${r.id}">刪除</button></td></tr>`;
+            }).join('')
+        : '<tr><td colspan="5" class="hint">還沒有能力。按上面的「匯入預設 18 種能力」開始。</td></tr>'}
             </tbody></table></div>`;
         body.querySelector('#add').onclick = () => c.open();
-        const seedBtn = body.querySelector('#seed');
-        if (seedBtn) seedBtn.onclick = async () => {
+        body.querySelector('#seed').onclick = async () => {
           const r = await POST('/home-partner-skills/seed', {});
-          UI.ok(`已匯入 ${r.count} 種`); draw();
+          UI.ok(r.count ? `已補進 ${r.count} 種` : '已經是最新的了'); draw();
         };
         bindRows(body, c, rows);
+        return;
+      }
+
+      if (tab === 'roleskill') {
+        const d = await GET('/role-skills');
+        const skills = d.skills.filter(x => x.enabled);
+        const byRole = new Map();
+        for (const p of d.picked) {
+          if (!byRole.has(p.role_id)) byRole.set(p.role_id, new Set());
+          byRole.get(p.role_id).add(p.skill_id);
+        }
+        const roleRow = (r) => {
+          const set = byRole.get(r.id) || new Set();
+          return `<tr data-role="${r.id}">
+            <td>${UI.esc(r.name)}<div class="hint">${UI.esc(r.author || '')}</div></td>
+            <td>${set.size ? `${set.size} 種` : '<span class="hint">未設定＝全部可選</span>'}</td>
+            <td><button class="btn tiny secondary" data-pick="${r.id}">設定能力</button></td></tr>`;
+        };
+        body.innerHTML = `
+          <div class="card">
+            <h3>🎭 每位角色可以用哪些能力</h3>
+            <div class="hint" style="margin-bottom:10px">
+              勾選的是<b>候選能力</b>（可複選）。玩家把角色請進家裡後，只能從候選裡<b>選 1 個啟用</b>，之後隨時可以換。<br>
+              一位角色一個都沒勾＝所有啟用中的能力都能選，所以<b>新增角色不必先設定就能用</b>。
+            </div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">
+              <input id="kw" placeholder="搜尋角色名字" style="max-width:200px">
+              <div class="spacer" style="flex:1"></div>
+              <span class="hint">共 ${d.roles.length} 位角色｜${skills.length} 種可用能力</span>
+            </div>
+            <div class="table-wrap" style="max-height:520px;overflow:auto"><table class="list">
+              <thead><tr><th>角色</th><th>已勾選</th><th></th></tr></thead>
+              <tbody id="rlist">${d.roles.map(roleRow).join('')}</tbody>
+            </table></div>
+          </div>`;
+        const bindPick = () => body.querySelectorAll('[data-pick]').forEach(b => b.onclick = () => {
+          const rid = parseInt(b.dataset.pick, 10);
+          const role = d.roles.find(x => x.id === rid);
+          const set = byRole.get(rid) || new Set();
+          UI.modal({
+            title: `${role.name}　可用能力`,
+            bodyHTML: `
+              <div class="hint" style="margin-bottom:8px">全部不勾＝所有能力都能選。</div>
+              <div id="sk" style="display:flex;flex-direction:column;gap:6px;max-height:50vh;overflow:auto">
+                ${skills.map(x => `<label style="display:flex;gap:8px;align-items:center">
+                  <input type="checkbox" value="${x.id}" ${set.has(x.id) ? 'checked' : ''}>${UI.esc(x.name)}</label>`).join('')}
+              </div>`,
+            onOk: async (back) => {
+              const ids = [...back.querySelectorAll('#sk input:checked')].map(x => parseInt(x.value, 10));
+              await POST('/role-skills', { role_id: rid, skill_ids: ids });
+              UI.ok('已儲存'); draw();
+            }
+          });
+        });
+        body.querySelector('#kw').oninput = (e) => {
+          const kw = e.target.value.trim();
+          body.querySelector('#rlist').innerHTML = d.roles
+            .filter(r => !kw || (r.name || '').includes(kw)).map(roleRow).join('');
+          bindPick();
+        };
+        bindPick();
         return;
       }
 
