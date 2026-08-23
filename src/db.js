@@ -393,6 +393,11 @@ ensureColumns('ranch_incubator', {
   rolled: 'INTEGER NOT NULL DEFAULT 0'
 });
 
+// 背包分兩袋：locked 0＝跟著用途自動判斷（材料/食材/種子/蛋/禮物進保管袋）、1＝手動鎖進保管袋、2＝手動放進自由背包
+ensureColumns('gather_inventory', {
+  locked: 'INTEGER NOT NULL DEFAULT 0'
+});
+
 // 動物生產改成「每單位獨立計時」：記錄上次結算時間（unix 毫秒），成熟一單位就能收一單位
 ensureColumns('ranch_slots', {
   last_produce_ms: 'INTEGER NOT NULL DEFAULT 0'

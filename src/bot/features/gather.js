@@ -2,6 +2,7 @@
 // 一個指令 + 冷卻 → 隨機掉落（N/R/SR/SSR）→ 賣出換貨幣 → 買更好的竿子/鎬子提升稀有率。
 // 設計重點：互動極輕（打一個指令就好），靠冷卻讓人固定回來，順便把經濟系統帶起來。
 const { EmbedBuilder, MessageFlags, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { selectRows, isSelect } = require('../../util/menu');
 const { db, guildConfig, logError } = require('../../db');
 const { brandColor } = require('../../util/brand');
 // 行情倍率：財經新聞會改變「賣價」（買價不受影響）。新聞系統關閉時 livePrice 就等於基準價。
@@ -852,12 +853,47 @@ function cmdPerm(gid, cmd) {
 // 管理員判定：伺服器管理權限即可，不必另外設身分組
 const isAdmin = (member) => !!member && (member.permissions.has('Administrator') || member.permissions.has('ManageGuild'));
 
+// ---- 物品用途標記 ----
+// 玩家最怕的就是 `/賣出 全部` 把做料理、做工具、要種要孵的東西一起清掉。
+// 這裡把「這個物品在別的系統還有用」的清單算出來，背包與賣出選單都會標示。
+const USE_ICON = { craft: '🔨', cook: '🍳', seed: '🌱', hatch: '🥚', gift: '🎁' };
+const USE_NAME = { craft: '製作材料', cook: '料理食材', seed: '可種植', hatch: '可孵化', gift: '可送禮' };
+const _useCache = new Map();   // guild_id → { at, map }
+function itemUses(gid) {
+  const hit = _useCache.get(gid);
+  if (hit && Date.now() - hit.at < 60000) return hit.map;
+  const map = new Map();
+  const mark = (id, tag) => {
+    if (!id) return;
+    if (!map.has(id)) map.set(id, new Set());
+    map.get(id).add(tag);
+  };
+  const parse = (raw) => { try { return JSON.parse(raw || '[]'); } catch { return []; } };
+  // 製作／鍛造：materials 存 item_id
+  for (const r of db.prepare('SELECT materials FROM gather_recipes WHERE guild_id=? AND enabled=1').all(gid))
+    for (const m of parse(r.materials)) mark(m.item_id, 'craft');
+  // 料理：materials 存物品「名稱」，要換回 id
+  const byName = new Map(db.prepare('SELECT id, name FROM gather_items WHERE guild_id=?').all(gid).map(r => [r.name, r.id]));
+  for (const r of db.prepare('SELECT materials FROM cook_recipes WHERE guild_id=? AND enabled=1').all(gid))
+    for (const m of parse(r.materials)) mark(byName.get(m.item), 'cook');
+  for (const r of db.prepare('SELECT seed_item_id FROM crop_seeds WHERE guild_id=? AND enabled=1').all(gid)) mark(r.seed_item_id, 'seed');
+  for (const r of db.prepare('SELECT egg_item_id FROM ranch_hatch_defs WHERE guild_id=? AND enabled=1').all(gid)) mark(r.egg_item_id, 'hatch');
+  for (const r of db.prepare('SELECT id FROM gather_items WHERE guild_id=? AND gift_aff > 0').all(gid)) mark(r.id, 'gift');
+  _useCache.set(gid, { at: Date.now(), map });
+  return map;
+}
+// 這個物品的用途圖示（沒用途回空字串）
+const useTags = (uses, id) => [...(uses.get(id) || [])].map(t => USE_ICON[t]).join('');
+const useWords = (uses, id) => [...(uses.get(id) || [])].map(t => USE_NAME[t]).join('／');
+
 // 「挑數量賣」用的物品選單：背包空了回 null
 // 把整個背包分成多個下拉（每個上限 25）一次列出全部，同類物品排在一起好找（不用先選類別）
 function sellItemRows(gid, uid) {
+  const uses = itemUses(gid);
   const rows = db.prepare(
-    `SELECT v.count, it.* FROM gather_inventory v JOIN gather_items it ON it.id=v.item_id
-      WHERE v.guild_id=? AND v.user_id=? AND v.count>0 ORDER BY it.kind, it.price DESC`).all(gid, uid);
+    `SELECT v.count, v.locked, it.* FROM gather_inventory v JOIN gather_items it ON it.id=v.item_id
+      WHERE v.guild_id=? AND v.user_id=? AND v.count>0 ORDER BY it.kind, it.price DESC`).all(gid, uid)
+    .filter(r => !inKeepBag(uses, r));   // 保管袋的東西不出現在賣出選單
   if (!rows.length) return null;
   const menus = [];
   for (let p = 0; p < rows.length && menus.length < 5; p += 25) {
@@ -892,7 +928,7 @@ function init(client) {
       return safeMenu(i, '製作', () => craftRecipe(i.guildId, i.user.id, i.user.username, parseInt(i.values[0], 10), 1));
     }
     // 商店下拉選單購買（道具／設施共用）
-    if (i.isStringSelectMenu() && i.customId === 'shopbuy') {
+    if (i.isStringSelectMenu() && isSelect(i.customId, 'shopbuy')) {
       const [kind, rawId] = String(i.values[0]).split(':');
       // 禮物常常要一次買一疊（送角色很吃量），所以多問一次數量；
       // 道具是一人一件、體力選項本身就帶數量，維持點一下就買。
@@ -949,11 +985,12 @@ function init(client) {
     }
     // 面板「賣出」按鈕 → 跳出可多選的賣出清單（不勾的留著）
     if (i.isButton() && i.customId === 'adv:sellpick') {
+      const usesPanel = itemUses(i.guildId);
       const rows = db.prepare(
-        `SELECT v.count, it.* FROM gather_inventory v JOIN gather_items it ON it.id = v.item_id
+        `SELECT v.count, v.locked, it.* FROM gather_inventory v JOIN gather_items it ON it.id = v.item_id
           WHERE v.guild_id=? AND v.user_id=? AND v.count > 0 ORDER BY it.price DESC`
-      ).all(i.guildId, i.user.id);
-      if (!rows.length) return i.reply({ content: '背包是空的，沒東西可以賣。', flags: MessageFlags.Ephemeral });
+      ).all(i.guildId, i.user.id).filter(r => !inKeepBag(usesPanel, r));   // 只列自由背包
+      if (!rows.length) return i.reply({ content: '自由背包是空的（🔒 保管袋裡的東西不會被賣掉）。', flags: MessageFlags.Ephemeral });
       const menu = new StringSelectMenuBuilder().setCustomId('sellpick')
         .setPlaceholder('勾選要賣的（可多選，不勾的留著）').setMinValues(1).setMaxValues(Math.min(rows.length + 1, 25))
         .addOptions([
@@ -972,6 +1009,72 @@ function init(client) {
       const menus = sellItemRows(i.guildId, i.user.id);
       if (!menus) return i.update({ content: '背包是空的，沒東西可以賣。', components: [], embeds: [] }).catch(() => {});
       return i.update({ content: '要賣哪一種？（下拉可能有好幾個，往下找）', components: menus, embeds: [] }).catch(() => {});
+    }
+    // ---- 背包搬運：把東西在「保管袋」與「自由背包」之間搬 ----
+    if (i.isButton() && i.customId.startsWith('bagmove:')) {
+      const gid = i.guildId, uid = i.user.id;
+      const toFree = i.customId.split(':')[1] === 'free';
+      const uses = itemUses(gid);
+      const rows = db.prepare(
+        `SELECT v.count, v.locked, it.* FROM gather_inventory v JOIN gather_items it ON it.id=v.item_id
+          WHERE v.guild_id=? AND v.user_id=? AND v.count>0 ORDER BY it.kind, it.price DESC`).all(gid, uid)
+        .filter(r => inKeepBag(uses, r) === toFree);
+      if (!rows.length) return i.reply({ content: toFree ? '保管袋是空的。' : '自由背包是空的。', flags: MessageFlags.Ephemeral }).catch(() => {});
+      const menus = [];
+      for (let p = 0; p < rows.length && menus.length < 5; p += 25) {
+        const slice = rows.slice(p, p + 25);
+        menus.push(new ActionRowBuilder().addComponents(
+          new StringSelectMenuBuilder().setCustomId(`bagset:${toFree ? 'free' : 'keep'}:${p / 25}`)
+            .setPlaceholder(rows.length > 25 ? `選要搬的東西（第 ${p + 1}-${p + slice.length} 種）` : '選要搬的東西')
+            .setMinValues(1).setMaxValues(Math.min(25, slice.length + (p === 0 ? 1 : 0)))
+            .addOptions([
+              // 第一個下拉附一個「整袋搬」的選項：材料上百種，不可能一個一個點
+              ...(p === 0 ? [{
+                label: toFree ? '🔓 整個保管袋都放行' : '🔒 自由背包全部鎖起來',
+                value: '__all__',
+                description: `一次搬 ${rows.length} 種`.slice(0, 100)
+              }] : []),
+              ...slice.map(r => ({
+                label: `${r.emoji || ''}${r.name}`.slice(0, 100),
+                description: `持有 ${r.count}${useWords(uses, r.id) ? `　${useWords(uses, r.id)}` : ''}`.slice(0, 100),
+                value: String(r.id)
+              }))])));
+      }
+      return i.reply({
+        content: toFree
+          ? '要把哪些東西放進 💰 **自由背包**？（放進去就賣得掉了，可以複選）'
+          : '要把哪些東西鎖進 🔒 **保管袋**？（`/賣出` 就不會再動到它們，可以複選）',
+        components: menus, flags: MessageFlags.Ephemeral
+      }).catch(() => {});
+    }
+    if (i.isStringSelectMenu() && i.customId.startsWith('bagset:')) {
+      const gid = i.guildId, uid = i.user.id;
+      const toFree = i.customId.split(':')[1] === 'free';
+      const target = toFree ? 2 : 1;
+      if (i.values.includes('__all__')) {
+        const uses2 = itemUses(gid);
+        const all = db.prepare('SELECT v.locked, v.item_id id FROM gather_inventory v WHERE v.guild_id=? AND v.user_id=? AND v.count>0').all(gid, uid)
+          .filter(r => inKeepBag(uses2, r) === toFree);
+        const upd0 = db.prepare('UPDATE gather_inventory SET locked=? WHERE guild_id=? AND user_id=? AND item_id=?');
+        db.transaction(() => { for (const r of all) upd0.run(target, gid, uid, r.id); })();
+        return i.update({
+          content: toFree
+            ? `✅ 已把 **${all.length} 種**東西全部放進 💰 **自由背包**（現在都賣得掉了）。`
+            : `🔒 已把 **${all.length} 種**東西全部鎖進 **保管袋**（\`/賣出\` 不會再動到）。`,
+          components: []
+        }).catch(() => {});
+      }
+      const ids = i.values.map(Number).filter(Boolean);
+      const upd = db.prepare('UPDATE gather_inventory SET locked=? WHERE guild_id=? AND user_id=? AND item_id=?');
+      db.transaction(() => { for (const id of ids) upd.run(target, gid, uid, id); })();
+      const names = db.prepare(`SELECT name, emoji FROM gather_items WHERE id IN (${ids.map(() => '?').join(',')})`).all(...ids)
+        .map(r => `${r.emoji || ''}${r.name}`).join('、');
+      return i.update({
+        content: toFree
+          ? `✅ 已把 ${names} 放進 💰 **自由背包**（現在賣得掉了）。`
+          : `🔒 已把 ${names} 鎖進 **保管袋**（\`/賣出\` 不會再動到）。`,
+        components: []
+      }).catch(() => {});
     }
     // 選好物品 → 列出數量選項（全部／一半／固定階梯，只顯示 ≤ 持有量的）
     if (i.isStringSelectMenu() && i.customId.startsWith('sellone:')) {
@@ -1013,12 +1116,14 @@ function init(client) {
     if (i.isStringSelectMenu() && i.customId === 'sellpick') {
       const gid = i.guildId, uid = i.user.id, uname = i.user.username, cc = cfg(gid);
       let rows;
+      const usesPick = itemUses(gid);
       if (i.values.includes('__all__')) {
-        rows = db.prepare('SELECT v.count, it.* FROM gather_inventory v JOIN gather_items it ON it.id=v.item_id WHERE v.guild_id=? AND v.user_id=? AND v.count>0').all(gid, uid);
+        rows = db.prepare('SELECT v.count, v.locked, it.* FROM gather_inventory v JOIN gather_items it ON it.id=v.item_id WHERE v.guild_id=? AND v.user_id=? AND v.count>0').all(gid, uid);
       } else {
         const ids = i.values.map(Number).filter(Boolean);
-        rows = ids.length ? db.prepare(`SELECT v.count, it.* FROM gather_inventory v JOIN gather_items it ON it.id=v.item_id WHERE v.guild_id=? AND v.user_id=? AND v.count>0 AND it.id IN (${ids.map(() => '?').join(',')})`).all(gid, uid, ...ids) : [];
+        rows = ids.length ? db.prepare(`SELECT v.count, v.locked, it.* FROM gather_inventory v JOIN gather_items it ON it.id=v.item_id WHERE v.guild_id=? AND v.user_id=? AND v.count>0 AND it.id IN (${ids.map(() => '?').join(',')})`).all(gid, uid, ...ids) : [];
       }
+      rows = rows.filter(r => !inKeepBag(usesPick, r));   // 保管袋的東西一律不賣
       if (!rows.length) return i.update({ content: '這些東西已經沒有了。', components: [], embeds: [] }).catch(() => {});
       let gained = 0; const lines = [];
       const tx = db.transaction(() => {
@@ -1227,16 +1332,23 @@ function init(client) {
         ).all(gid, target.id);
         if (!rows.length) return i.reply({ content: `${target.username} 的背包是空的，先去 \`/釣魚\` 或 \`/挖礦\` 吧！`, flags: MessageFlags.Ephemeral });
         const total = rows.reduce((a, r) => a + r.count * livePrice(gid, r), 0);
-        const kindsInBag = Object.keys(KIND_NAME).filter(k => rows.some(r => r.kind === k));
+        // 背包分兩袋：🔒 保管袋（賣不掉）／💰 自由背包（可賣）。兩袋都能交易、都能做料理做東西。
+        const uses = itemUses(gid);
+        const keep = rows.filter(r => inKeepBag(uses, r));
+        const free = rows.filter(r => !inKeepBag(uses, r));
+        const freeTotal = free.reduce((a, r) => a + r.count * livePrice(gid, r), 0);
         const embed = new EmbedBuilder().setColor(brandColor())
           .setTitle(`${target.username} 的背包`)
-          .setFooter({ text: `全部賣掉可得 ${total.toLocaleString('en-US')} ${c.currency_name}` });
-        let budget = 5500, cut = false;   // 預留給標題/footer，避免超過 embed 6000 字硬上限
-        for (const k of kindsInBag) {
-          if (cut) break;
-          const lines = rows.filter(r => r.kind === k)
-            .map(r => `${r.emoji || ''} **${r.name}** \`${r.rarity}\` ×${r.count}　(${livePrice(gid, r) * r.count})${priceTag(gid, r)}`);
-          // 一個類別太長就拆成多欄（欄位上限 1024 字），避免物品被截掉
+          .setDescription(`🔒 **保管袋 ${keep.length} 種**　\`/賣出\` 不會動到（製作 🔨／料理 🍳／種植 🌱／孵化 🥚／送禮 🎁 用得到的東西會自動放這裡）\n`
+            + `💰 **自由背包 ${free.length} 種**　全賣可得 ${freeTotal.toLocaleString('en-US')}\n`
+            + '兩袋都可以 `/交易`、都能拿去製作與料理，差別只在賣不賣得掉。')
+          .setFooter({ text: `兩袋全賣才是 ${total.toLocaleString('en-US')} ${c.currency_name}` });
+        let budget = 5000, cut = false;   // 預留給標題/說明/footer，避免超過 embed 6000 字硬上限
+        const addBlock = (title, list, withTags) => {
+          if (cut || !list.length) return;
+          const lines = list.map(r =>
+            `${r.emoji || ''} **${r.name}** \`${r.rarity}\` ×${r.count}　(${livePrice(gid, r) * r.count})${priceTag(gid, r)}`
+            + (withTags ? `　${useTags(uses, r.id) || '🔒'}` : ''));
           const chunks = []; let buf = '';
           for (const ln of lines) {
             if (buf && buf.length + ln.length + 1 > 1024) { chunks.push(buf); buf = ''; }
@@ -1246,22 +1358,48 @@ function init(client) {
           for (let idx = 0; idx < chunks.length; idx++) {
             if (budget - chunks[idx].length < 0 || embed.data.fields?.length >= 24) { cut = true; break; }
             budget -= chunks[idx].length + 24;
-            embed.addFields({ name: `${KIND_EMOJI[k]} ${KIND_NAME[k]}${chunks.length > 1 ? ` (${idx + 1})` : ''}`, value: chunks[idx] });
+            embed.addFields({ name: `${title}${chunks.length > 1 ? ` (${idx + 1})` : ''}`, value: chunks[idx] });
           }
-        }
-        if (cut) embed.setDescription('_物品太多，這裡顯示不完——用 `/賣出` 或 `/圖鑑` 查看其餘。_');
-        return await reply({ embeds: [embed] });
+        };
+        const kindsOf = (list) => Object.keys(KIND_NAME).filter(k => list.some(r => r.kind === k));
+        for (const k of kindsOf(keep)) addBlock(`🔒 ${KIND_EMOJI[k]} ${KIND_NAME[k]}`, keep.filter(r => r.kind === k), true);
+        addBlock('🔒 🎁 禮物・其他', keep.filter(r => !KIND_NAME[r.kind]), true);
+        for (const k of kindsOf(free)) addBlock(`💰 ${KIND_EMOJI[k]} ${KIND_NAME[k]}`, free.filter(r => r.kind === k), false);
+        addBlock('💰 其他', free.filter(r => !KIND_NAME[r.kind]), false);
+        if (cut) embed.setDescription(embed.data.description + '\n_物品太多，這裡顯示不完——用 `/賣出` 或 `/圖鑑` 查看其餘。_');
+        // 自己的背包才給搬運鈕（看別人的背包不能動人家的東西）
+        const bagRowsBtn = target.id === uid
+          ? [new ActionRowBuilder().addComponents(
+              new ButtonBuilder().setCustomId('bagmove:free').setLabel('🔓 移到自由背包（可賣）').setStyle(ButtonStyle.Secondary).setDisabled(!keep.length),
+              new ButtonBuilder().setCustomId('bagmove:keep').setLabel('🔒 移進保管袋（不賣）').setStyle(ButtonStyle.Secondary).setDisabled(!free.length))]
+          : [];
+        return await reply({ embeds: [embed], components: bagRowsBtn });
       }
 
       // ---- 賣出 ----（面板按鈕＝賣出全部）
       if (name === '賣出') {
         const what = isBtn ? '全部' : (i.options.getString('物品') || '全部').trim();
         const qty = isBtn ? 0 : (i.options.getInteger('數量') || 0);
+        const usesSell = itemUses(gid);
         let rows = db.prepare(
-          `SELECT v.count, it.* FROM gather_inventory v JOIN gather_items it ON it.id = v.item_id
+          `SELECT v.count, v.locked, it.* FROM gather_inventory v JOIN gather_items it ON it.id = v.item_id
             WHERE v.guild_id=? AND v.user_id=? AND v.count > 0`
         ).all(gid, uid);
         if (!rows.length) return i.reply({ content: '背包是空的，沒東西可以賣。', flags: MessageFlags.Ephemeral });
+        // 保管袋：指名要賣就明說賣不了並教他怎麼放行；賣「全部／稀有度」則直接跳過，不會被誤賣
+        const named = what !== '全部' && !RARITY.includes(what.toUpperCase());
+        if (named) {
+          const hit = rows.find(r => r.name === what);
+          if (hit && inKeepBag(usesSell, hit)) {
+            return i.reply({
+              content: `🔒 **${hit.name}** 在**保管袋**裡（${useWords(usesSell, hit.id) || '手動鎖住'}），不會被賣掉。\n`
+                + '要賣的話先用 `/背包` → 「🔓 移到自由背包」把它放行。',
+              flags: MessageFlags.Ephemeral
+            });
+          }
+        }
+        rows = rows.filter(r => !inKeepBag(usesSell, r));
+        if (!rows.length) return i.reply({ content: '自由背包是空的——你背包裡的東西都在 🔒 保管袋，不會被賣掉。', flags: MessageFlags.Ephemeral });
 
         // 支援：全部 / 稀有度（N R SR SSR）/ 物品名稱
         const up = what.toUpperCase();
@@ -1370,8 +1508,9 @@ function init(client) {
             });
           }
         }
-        const rows = opts.length ? [new ActionRowBuilder().addComponents(
-          new StringSelectMenuBuilder().setCustomId('shopbuy').setPlaceholder('選擇要購買的東西').addOptions(opts.slice(0, 25)))] : [];
+        // 新玩家的商店同時有 15 把工具＋9 種禮物＋體力，早就超過一個下拉的 25 項上限，
+        // 以前直接 slice 會讓後面的禮物與體力整個消失。
+        const rows = selectRows('shopbuy', opts, '選擇要購買的東西', { maxRows: 5 });
         // 其他商店的入口不放這裡：主面板的「🏪 商店」分類已經列全，重複放只會佔版面。
         embeds[embeds.length - 1].setFooter({
           text: opts.length ? `餘額 ${w0} ${c.currency_name}｜用下方選單購買` : `餘額 ${w0} ${c.currency_name}｜目前沒有可買的東西了`
