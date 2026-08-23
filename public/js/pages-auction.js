@@ -39,8 +39,9 @@ App.page('auction', {
           <div class="field"><label>每次延長幾分鐘</label><input name="extend_min" type="number" min="0" value="${c.extend_min ?? 3}"></div>
           <div class="field"><label>單次出價上限＝身家的 %（0＝不限）</label><input name="max_bid_pct" type="number" min="0" max="100" value="${c.max_bid_pct ?? 0}"></div>
         </div>
-        <div class="field">${H.toggle('to_pool', c.to_pool, '成交金額全數進基金會（建議開啟）')}
-          <div class="hint">出價當下就從玩家錢包扣走、被超越自動退回。開啟這個＝得標金進基金會池；關閉＝直接銷毀（更強的回收）。</div></div>
+        <div class="field">${H.toggle('to_pool', c.to_pool, '成交金額（扣掉手續費的部分）也進基金會')}
+          <div class="hint">出價當下就從玩家錢包扣走、被超越自動退回。<b>手續費一律進基金會</b>；剩下的部分：
+            開啟＝也進基金會池（之後透過普發流回玩家）；關閉＝直接銷毀（通膨回收更強，適合星幣過多時）。</div></div>
         <button class="btn" id="savecfg">儲存設定</button>
       </div>
 

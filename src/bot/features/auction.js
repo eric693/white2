@@ -228,10 +228,14 @@ function closeAuction(gid, a) {
       .run(bid.user_id, bid.username, bid.amount, fee, a.id);
   })();
 
-  // 得標金已經在出價時就從玩家身上扣走了，這裡只是把它送進基金會（而不是憑空消失）
-  if (c.to_pool) {
-    try { require('./charity').fundGet(gid, bid.amount, `拍賣成交：${refInfo(gid, a).name}`); } catch {}
-  }
+  // 得標金在出價時就從玩家身上扣走了，這裡決定它的去向：
+  //   手續費 → 一律進基金會（後台欄位就是這樣寫的）
+  //   其餘   → to_pool 開＝也進基金會（會透過普發流回玩家）；關＝銷毀（更強的通膨回收）
+  try {
+    const { fundGet } = require('./charity');
+    if (fee > 0) fundGet(gid, fee, `拍賣手續費：${refInfo(gid, a).name}`);
+    if (c.to_pool && bid.amount - fee > 0) fundGet(gid, bid.amount - fee, `拍賣成交：${refInfo(gid, a).name}`);
+  } catch {}
   return { ok: true, bid, fee, extraCoins: settled.extraCoins, info: settled.info };
 }
 
