@@ -643,8 +643,12 @@ function searchRoles(gid, q) {
   const kw = String(q || '').trim();
   const top = () => db.prepare(`SELECT id, name, author FROM wheel_roles WHERE guild_id=? AND enabled=1 ORDER BY draw_count DESC LIMIT 25`).all(gid);
   // 搜不到就退回熱門角色，不要丟一個空清單讓玩家卡在「沒有選項符合您的搜尋」
+  // 開頭就命中的排前面（打「陸」先看到「陸晏」而不是「大陸」），Discord 一次最多只能回 25 筆
   let rows = kw
-    ? db.prepare(`SELECT id, name, author FROM wheel_roles WHERE guild_id=? AND enabled=1 AND name LIKE ? ORDER BY draw_count DESC LIMIT 25`).all(gid, `%${kw}%`)
+    ? db.prepare(
+        `SELECT id, name, author FROM wheel_roles WHERE guild_id=? AND enabled=1 AND name LIKE ?
+          ORDER BY CASE WHEN name LIKE ? THEN 0 ELSE 1 END, draw_count DESC LIMIT 25`
+      ).all(gid, `%${kw}%`, `${kw}%`)
     : top();
   if (!rows.length) rows = top();
   return rows.map(r => ({ name: `${r.name}${r.author ? `（${r.author}）` : ''}`.slice(0, 100), value: String(r.id) }));
