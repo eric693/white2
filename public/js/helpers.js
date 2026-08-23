@@ -38,7 +38,10 @@ const H = {
   /** 把畫面上的 Discord ID 補上伺服器暱稱（重複呼叫安全，處理過的不會再處理） */
   paintNicks(root) {
     const scope = root || document;
-    const todo = scope.querySelectorAll('code:not([data-nick])');
+    // 各頁面印 ID 的寫法不一樣：有的包 <code>，有的是表格裡的小字 <div>／<span>。
+    // 一律掃「整格文字剛好是一串 17～20 位數字」的元素，就不用去改每一頁的模板。
+    const todo = scope.querySelectorAll(
+      'code:not([data-nick]), table.list td div:not([data-nick]), table.list td span:not([data-nick])');
     if (!todo.length) return;
     const ids = [];
     todo.forEach(el => {
@@ -55,6 +58,7 @@ const H = {
         const tag = document.createElement('b');
         tag.className = 'nick';
         tag.textContent = nick;
+        tag.title = nick;   // 太長的暱稱會截成一行，滑過去看全名
         el.parentNode.insertBefore(tag, el);
         el.parentNode.insertBefore(document.createElement('br'), el);
       }

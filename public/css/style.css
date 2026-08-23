@@ -282,5 +282,9 @@ table.list th.sort-desc::after { content: '▼'; opacity: 1; color: var(--primar
 }
 
 
-/* 後台清單裡的 Discord ID 上面補的伺服器暱稱（白白 vs sweet_0722） */
-b.nick { display: inline-block; font-weight: 600; }
+/* 後台清單裡的 Discord ID 上面補的伺服器暱稱（白白 vs sweet_0722）。
+   暱稱常常又長又帶裝飾字，截成一行以免整列被撐高；滑鼠移上去（title）看全名。 */
+b.nick {
+  display: block; font-weight: 600; font-size: 13px;
+  max-width: 22ch; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}

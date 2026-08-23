@@ -86,8 +86,9 @@ App.page('currency', {
 
       <div class="card">
         <div class="form-row" style="align-items:flex-end">
-          <div class="field"><label>總流通量</label><div style="font-size:22px;font-weight:700">${coin(total)}</div></div>
-          <div class="field"><label>玩家數</label><div style="font-size:22px">${players.length}</div></div>
+          <div class="field"><label>總流通量</label>
+            <div style="font-size:22px;font-weight:700;overflow-wrap:anywhere;line-height:1.25">${coin(total)}</div></div>
+          <div class="field" style="max-width:120px"><label>玩家數</label><div style="font-size:22px">${players.length}</div></div>
           <div class="field"><label>搜尋玩家（名字或 ID）</label><input id="kw" placeholder="打幾個字就好，不用完整名字"></div>
           <div class="field" style="max-width:180px"><label>排序</label>
             <select id="sort">
