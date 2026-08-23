@@ -234,7 +234,12 @@ const Tbl = {
   // 與其要求每一頁去呼叫，不如直接盯著 DOM：有新表格出現就掛上去。
   observe() {
     let pending;
-    const run = () => { pending = null; Tbl.enhanceAll(document); };
+    const run = () => {
+      pending = null;
+      Tbl.enhanceAll(document);
+      // 順手把畫面上的 Discord ID 補上伺服器暱稱（表格、彈窗都吃得到）
+      try { H.paintNicks(document); } catch (e) {}
+    };
     new MutationObserver(() => { if (!pending) pending = setTimeout(run, 60); })
       .observe(document.body, { childList: true, subtree: true });
     run();

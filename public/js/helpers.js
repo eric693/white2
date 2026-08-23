@@ -20,6 +20,47 @@ const H = {
     H._metaAt = Date.now();
   },
 
+  // ---- 伺服器暱稱 ----
+  //
+  // 後台的清單都是印 Discord username（sweet_0722），但大家在群裡叫的是暱稱（白白），
+  // 管理員對不起來。這裡抓一份 id → 暱稱 的表，再把畫面上所有「純數字 ID」的
+  // <code> 補上一行暱稱 —— 不用去改那十幾個頁面各自的表格模板，新頁面也自動有。
+  nicks: null,
+  _nicksAt: 0,
+
+  async loadNicks(force) {
+    if (!force && H.nicks && (Date.now() - H._nicksAt < 60000)) return H.nicks;
+    H.nicks = await GET('/discord/nicknames').catch(() => H.nicks || {});
+    H._nicksAt = Date.now();
+    return H.nicks;
+  },
+
+  /** 把畫面上的 Discord ID 補上伺服器暱稱（重複呼叫安全，處理過的不會再處理） */
+  paintNicks(root) {
+    const scope = root || document;
+    const todo = scope.querySelectorAll('code:not([data-nick])');
+    if (!todo.length) return;
+    const ids = [];
+    todo.forEach(el => {
+      const t = (el.textContent || '').trim();
+      if (!/^\d{17,20}$/.test(t)) return;
+      el.dataset.nick = '1';
+      ids.push([el, t]);
+    });
+    if (!ids.length) return;
+    H.loadNicks().then(map => {
+      for (const [el, id] of ids) {
+        const nick = map && map[id];
+        if (!nick) continue;
+        const tag = document.createElement('b');
+        tag.className = 'nick';
+        tag.textContent = nick;
+        el.parentNode.insertBefore(tag, el);
+        el.parentNode.insertBefore(document.createElement('br'), el);
+      }
+    }).catch(() => {});
+  },
+
   // 頻道下拉 <select>：文字頻道 + 論壇頻道（論壇會自動開一篇貼文）
   chanSelect(name, selected, { allowEmpty = true } = {}) {
     const textOpts = (H.channels || []).map(c =>

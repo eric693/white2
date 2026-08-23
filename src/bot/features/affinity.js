@@ -542,6 +542,49 @@ function strollPanel(gid, uid, uname) {
 
 
 /** 送禮的物品選單（/送禮 與面板的 🎁 送禮按鈕共用） */
+// 送禮：先選角色。一個下拉 25 位、一則訊息 5 行，所以一頁放 4 個下拉（100 位）＋一行翻頁鈕。
+// 你們有兩百多位角色，之前寫死 LIMIT 125 又只放得下 5 行，第 101 位之後的人根本選不到。
+const GIFT_PER_ROW = 25, GIFT_ROWS = 4, GIFT_PER_PAGE = GIFT_PER_ROW * GIFT_ROWS;
+
+function giftWhoPanel(gid, uid, page = 0) {
+  const known = db.prepare(
+    `SELECT a.role_id, a.points, a.level, r.name FROM affinity a JOIN wheel_roles r ON r.id=a.role_id
+      WHERE a.guild_id=? AND a.user_id=? AND r.enabled=1 ORDER BY a.points DESC`).all(gid, uid);
+  if (!known.length) {
+    return { error: '你還沒有跟任何角色互動過。\n先去 🛍️ **逛街**隨機遇幾位，或用 `/送禮 角色:名字` 直接指定（打幾個字就會跳候選）。' };
+  }
+  const pages = Math.ceil(known.length / GIFT_PER_PAGE);
+  const p = Math.max(0, Math.min(pages - 1, page));
+  const slice = known.slice(p * GIFT_PER_PAGE, (p + 1) * GIFT_PER_PAGE);
+  const opt = (k) => ({
+    label: k.name.slice(0, 100),
+    description: `${levelName(gid, k.level)}（Lv.${k.level}）　好感 ${k.points.toLocaleString('en-US')}`.slice(0, 100),
+    value: String(k.role_id)
+  });
+  const rows = [];
+  for (let n = 0; n < slice.length; n += GIFT_PER_ROW) {
+    const part = slice.slice(n, n + GIFT_PER_ROW);
+    const from = p * GIFT_PER_PAGE + n + 1;
+    rows.push(new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder().setCustomId(`giftwho:${rows.length}`)
+        .setPlaceholder(known.length > GIFT_PER_ROW
+          ? `選一位角色（好感度第 ${from}-${from + part.length - 1} 名）`
+          : '選一位角色')
+        .addOptions(part.map(opt))));
+  }
+  if (pages > 1) {
+    rows.push(new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId(`giftpage:${p - 1}`).setLabel('‹ 上一頁').setStyle(ButtonStyle.Secondary).setDisabled(p === 0),
+      new ButtonBuilder().setCustomId('giftnoop').setLabel(`第 ${p + 1} / ${pages} 頁`).setStyle(ButtonStyle.Secondary).setDisabled(true),
+      new ButtonBuilder().setCustomId(`giftpage:${p + 1}`).setLabel('下一頁 ›').setStyle(ButtonStyle.Secondary).setDisabled(p >= pages - 1)));
+  }
+  return {
+    content: `要送禮給誰？（已相遇 **${known.length}** 位，依好感度排序${pages > 1 ? `，第 ${p + 1}／${pages} 頁` : ''}）\n`
+      + '想送還沒相遇過的角色，用 `/送禮 角色:名字` 打名字搜尋。',
+    components: rows
+  };
+}
+
 function giftMenu(gid, uid, uname, rid) {
   const role = roleOf(gid, rid);
   if (!role) return { error: '找不到這位角色。' };
@@ -656,38 +699,16 @@ function init(client) {
         // 想送沒互動過的角色還是可以用 /送禮 打名字搜尋。
         if (i.isButton() && (i.customId === 'giftpanel' || i.customId === 'adv:gift')) {
           seedAffinity(gid);
-          // 一個下拉最多 25 項，但一則訊息可以放 5 行 —— 相遇超過 25 位就自動分成多個下拉，
-          // 不然好感度排在 26 名之後的角色會整個消失（玩家會以為送禮不見了）。
-          const known = db.prepare(
-            `SELECT a.role_id, a.points, a.level, r.name FROM affinity a JOIN wheel_roles r ON r.id=a.role_id
-              WHERE a.guild_id=? AND a.user_id=? AND r.enabled=1 ORDER BY a.points DESC LIMIT 125`).all(gid, uid);
-          if (!known.length) {
-            return i.reply({
-              content: '你還沒有跟任何角色互動過。\n先去 🛍️ **逛街**隨機遇幾位，或用 `/送禮 角色:名字` 直接指定（打幾個字就會跳候選）。',
-              ...eph
-            }).catch(() => {});
-          }
-          const opt = (k) => ({
-            label: k.name.slice(0, 100),
-            description: `${levelName(gid, k.level)}（Lv.${k.level}）　好感 ${k.points.toLocaleString('en-US')}`.slice(0, 100),
-            value: String(k.role_id)
-          });
-          const rows = [];
-          for (let p = 0; p < known.length && rows.length < 5; p += 25) {
-            const slice = known.slice(p, p + 25);
-            rows.push(new ActionRowBuilder().addComponents(
-              new StringSelectMenuBuilder().setCustomId(`giftwho:${p / 25}`)
-                .setPlaceholder(known.length > 25
-                  ? `選一位角色（好感度第 ${p + 1}-${p + slice.length} 名）`
-                  : '選一位角色')
-                .addOptions(slice.map(opt))));
-          }
-          return i.reply({
-            content: `要送禮給誰？（已相遇 ${known.length} 位，依好感度排序${known.length > 25 ? '，分成多個下拉' : ''}）\n`
-              + '想送還沒相遇過的角色，用 `/送禮 角色:名字` 打名字搜尋。',
-            components: rows,
-            ...eph
-          }).catch(() => {});
+          const out = giftWhoPanel(gid, uid, 0);
+          if (out.error) return i.reply({ content: out.error, ...eph }).catch(() => {});
+          return i.reply({ ...out, ...eph }).catch(() => {});
+        }
+        // 相遇的角色超過 100 位時的翻頁（一頁 4 個下拉＝100 位，第 5 行留給翻頁鈕）
+        if (i.isButton() && i.customId.startsWith('giftpage:')) {
+          const page = parseInt(i.customId.split(':')[1], 10) || 0;
+          const out = giftWhoPanel(gid, uid, page);
+          if (out.error) return i.update({ content: out.error, components: [] }).catch(() => {});
+          return i.update(out).catch(() => {});
         }
         if (i.isStringSelectMenu() && i.customId.startsWith('giftwho')) {
           const rid = parseInt(i.values[0], 10);

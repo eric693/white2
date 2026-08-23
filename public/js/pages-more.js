@@ -113,6 +113,9 @@ App.page('wheels', {
       </div>
       <div class="field">${H.toggle('no_repeat', w.no_repeat ?? 1, '同一玩家不重複抽到相同角色（抽完自動重置新一輪）')}</div>
       <div class="field">${H.toggle('exclude_chatted', w.exclude_chatted ?? 0, '已點過聊天室的角色不再推薦（體驗完自動重置）')}</div>
+      <div class="field">${H.toggle('public_result', w.public_result ?? 0, '把抽到的結果公開發到轉盤所在的頻道（大家都看得到誰抽到誰）')}
+        <div class="hint">關閉＝只有抽的人自己看得到（現在的行為）。開啟後，抽的人還是會先看到自己的完整結果，
+          頻道再多一則公開訊息：「🎉 白白 抽到了 ✨ 某某角色」，含角色圖片。</div></div>
       <hr>
       <div class="field">${H.toggle('card_enabled', w.card_enabled ?? 0, '抽到角色時做成圖片小卡（角色沒放圖片就不會有圓框）')}</div>
       <div class="field"><label>小卡背景圖（可空＝用角色圖當背景，都沒有就用漸層）</label>

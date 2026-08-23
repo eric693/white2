@@ -393,6 +393,17 @@ function init(client) {
     } else payload.content = tagNote;
     // 只有本人看得到（ephemeral）→ 頻道對其他人永遠乾淨；玩家關掉/重整 Discord 就會消失
     await i.editReply(payload).catch(() => {});
+
+    // 後台開了「公開結果」的轉盤：另外在同一個頻道發一則大家看得到的訊息
+    if (wheel.public_result && i.channel) {
+      const who = i.member?.displayName || i.user.username;
+      const pub = new EmbedBuilder().setColor(brandColor())
+        .setTitle(`🎉 ${who} 抽到了 ${role.name}`)
+        .setDescription([wheel.name, role.intro || ''].filter(Boolean).join('\n').slice(0, 500) || null);
+      const img = role.image_url ? absUrl(role.image_url) : '';
+      if (img) pub.setImage(img);
+      await i.channel.send({ embeds: [pub] }).catch(() => {});
+    }
   }
 
   client._postWheel = (wheelId, chId) => postWheel(client, wheelId, chId);

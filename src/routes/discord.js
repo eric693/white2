@@ -192,6 +192,21 @@ router.get('/discord/members', async (req, res) => {
   res.json(members);
 });
 
+// 全伺服器成員的暱稱表（後台清單顯示「伺服器暱稱」用）：
+// Discord 的 username 常常跟大家在群裡互相稱呼的名字不一樣（sweet_0722 vs 白白），
+// 只顯示 username 管理員根本認不出是誰。
+router.get('/discord/nicknames', async (req, res) => {
+  const guild = bot.mainGuild(req.guildId);
+  if (!guild) return res.json({});
+  try { await guild.members.fetch(); } catch {}
+  const out = {};
+  for (const m of guild.members.cache.values()) {
+    const nick = m.nickname || (m.user && m.user.globalName) || '';
+    if (nick && nick !== m.user.username) out[m.id] = nick;
+  }
+  res.json(out);
+});
+
 // 機器人狀態
 router.get('/discord/status', (req, res) => {
   const guild = bot.mainGuild(req.guildId);

@@ -280,3 +280,7 @@ table.list th.sort-desc::after { content: '▼'; opacity: 1; color: var(--primar
   .tbl-bar input.tbl-q { max-width: none; }
   .tbl-bar select { flex: 1 1 130px; }
 }
+
+
+/* 後台清單裡的 Discord ID 上面補的伺服器暱稱（白白 vs sweet_0722） */
+b.nick { display: inline-block; font-weight: 600; }

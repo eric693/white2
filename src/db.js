@@ -392,6 +392,11 @@ ensureColumns('ranch_slots', {
   last_produce_ms: 'INTEGER NOT NULL DEFAULT 0'
 });
 
+// 轉盤：抽到的結果要不要同時公開發到頻道（讓大家看得到誰抽到誰）
+ensureColumns('role_wheels', {
+  public_result: 'INTEGER NOT NULL DEFAULT 0'
+});
+
 // 財經新聞：股價衝擊是一次性的，套用過就標記，避免每個 tick 重複加成
 ensureColumns('market_news', {
   stock_done: 'INTEGER NOT NULL DEFAULT 0',

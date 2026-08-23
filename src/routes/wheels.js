@@ -31,6 +31,7 @@ function wheelFields(b) {
     tags: csvField(b.tags), enabled: b.enabled ? 1 : 0, listed: b.listed ? 1 : 0,
     daily_limit: parseInt(b.daily_limit, 10) || 0,
     no_repeat: b.no_repeat ? 1 : 0, exclude_chatted: b.exclude_chatted ? 1 : 0,
+    public_result: b.public_result ? 1 : 0,
     card_enabled: b.card_enabled ? 1 : 0, card_bg: b.card_bg || '',
     card_sign: b.card_sign ? 1 : 0, card_date: b.card_date ? 1 : 0,
     start_at: b.start_at || '', end_at: b.end_at || '',
@@ -47,9 +48,9 @@ router.post('/wheels', (req, res) => {
   if (!b.name) return res.status(400).json({ error: '請填寫轉盤名稱' });
   const info = db.prepare(
     `INSERT INTO role_wheels (guild_id, name, description, image_url, tags, enabled, listed, daily_limit,
-       no_repeat, exclude_chatted, card_enabled, card_bg, card_sign, card_date, start_at, end_at)
+       no_repeat, exclude_chatted, card_enabled, card_bg, card_sign, card_date, start_at, end_at, public_result)
      VALUES (@guild_id,@name,@description,@image_url,@tags,@enabled,@listed,@daily_limit,
-       @no_repeat,@exclude_chatted,@card_enabled,@card_bg,@card_sign,@card_date,@start_at,@end_at)`
+       @no_repeat,@exclude_chatted,@card_enabled,@card_bg,@card_sign,@card_date,@start_at,@end_at,@public_result)`
   ).run({ ...wheelFields(b), guild_id: req.guildId });
   audit(req.user.name, `新增轉盤：${b.name}`);
   res.json({ id: info.lastInsertRowid });
@@ -60,7 +61,8 @@ router.put('/wheels/:id', (req, res) => {
     `UPDATE role_wheels SET name=@name, description=@description, image_url=@image_url, tags=@tags,
        enabled=@enabled, listed=@listed, daily_limit=@daily_limit, no_repeat=@no_repeat,
        exclude_chatted=@exclude_chatted, card_enabled=@card_enabled, card_bg=@card_bg, card_sign=@card_sign, card_date=@card_date,
-       start_at=@start_at, end_at=@end_at, ad_line=@ad_line, ad_line2=@ad_line2, ad_line3=@ad_line3
+       start_at=@start_at, end_at=@end_at, ad_line=@ad_line, ad_line2=@ad_line2, ad_line3=@ad_line3,
+       public_result=@public_result
      WHERE id=@id AND guild_id=@guild_id`
   ).run({ ...wheelFields(req.body || {}), id: req.params.id, guild_id: req.guildId });
   audit(req.user.name, `修改轉盤 #${req.params.id}`);
