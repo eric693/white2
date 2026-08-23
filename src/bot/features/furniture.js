@@ -137,7 +137,7 @@ const defsOf = (gid, cat) => db.prepare(
   'SELECT * FROM home_furniture WHERE guild_id=? AND enabled=1' + (cat ? ' AND category=?' : '') + ' ORDER BY sort, id')
   .all(...(cat ? [gid, cat] : [gid]));
 const ownedOf = (gid, uid) => db.prepare(
-  `SELECT o.*, f.name, f.emoji, f.category, f.buff_type, f.buff_pct
+  `SELECT o.*, f.name, f.emoji, f.category, f.buff_type, f.buff_pct, f.price
      FROM home_furniture_owned o JOIN home_furniture f ON f.id=o.furniture_id
     WHERE o.guild_id=? AND o.user_id=? AND o.count>0 ORDER BY f.sort`).all(gid, uid);
 const placedCount = (gid, uid) =>
@@ -216,6 +216,27 @@ function togglePlace(gid, uid, uname, fid, place) {
   return { ok: '已擺出來，加成生效！' };
 }
 
+/** 賣掉一件家具：退回製作售價的一半（材料不退）。只能賣倉庫裡的，擺出來的要先收起來。 */
+const SELL_PCT = 0.5;
+const furnRefund = (f) => Math.max(1, Math.floor(f.price * SELL_PCT));
+function sellFurniture(gid, uid, uname, fid) {
+  const row = db.prepare('SELECT * FROM home_furniture_owned WHERE guild_id=? AND user_id=? AND furniture_id=?').get(gid, uid, fid);
+  if (!row || row.count <= 0) return { error: '你沒有這件家具。' };
+  const f = db.prepare('SELECT * FROM home_furniture WHERE guild_id=? AND id=?').get(gid, fid);
+  if (!f) return { error: '找不到這件家具。' };
+  // 擺出來的不能直接賣：不然加成會憑空消失，玩家也容易手滑賣掉正在生效的東西
+  if (row.count - row.placed <= 0) {
+    return { error: `${f.emoji || ''}**${f.name}** 都擺在家裡。先用「📦 收起來」收回倉庫，再賣。` };
+  }
+  const refund = furnRefund(f);
+  db.transaction(() => {
+    if (row.count - 1 <= 0) db.prepare('DELETE FROM home_furniture_owned WHERE guild_id=? AND user_id=? AND furniture_id=?').run(gid, uid, fid);
+    else db.prepare('UPDATE home_furniture_owned SET count = count - 1 WHERE guild_id=? AND user_id=? AND furniture_id=?').run(gid, uid, fid);
+    addCoins(gid, uid, uname, refund);
+  })();
+  return { sold: f, refund };
+}
+
 // ---- 家具面板（家園面板的「🛋️ 家具」分頁會用同一份） ----
 function furniturePanel(gid, uid, uname) {
   const home = homeOf(gid, uid, uname);
@@ -224,7 +245,7 @@ function furniturePanel(gid, uid, uname) {
   const gc = gcfg(gid);
   const embed = new EmbedBuilder().setColor(brandColor()).setTitle('🛋️ 家具')
     .setDescription(`擺出來的家具才有加成，收在倉庫沒有效果。\n目前擺放：**${placedCount(gid, uid)} / ${def.furniture_cap}** 件`)
-    .setFooter({ text: '用下方選單買家具；已擁有的可以擺放或收起' });
+    .setFooter({ text: '用下方選單買家具；已擁有的可以擺放、收起，或半價賣掉（要先收回倉庫）' });
   if (owned.length) {
     embed.addFields({
       name: '你的家具',
@@ -254,13 +275,24 @@ function furniturePanel(gid, uid, uname) {
           value: `${o.furniture_id}:on`
         })))));
   }
-  if (canStore.length) {
+  if (canStore.length && rows.length < 5) {
     rows.push(new ActionRowBuilder().addComponents(
       new StringSelectMenuBuilder().setCustomId('furnstore').setPlaceholder('📦 收起來（放回倉庫）')
         .addOptions(canStore.slice(0, 25).map(o => ({
           label: `${o.emoji || ''}${o.name}`.slice(0, 100),
           description: `已擺 ${o.placed} 件　點一下收起 1 件`.slice(0, 100),
           value: `${o.furniture_id}:off`
+        })))));
+  }
+  // 賣掉：只列倉庫裡的（擺出來的先收起來），售價是製作價的一半
+  const canSell = owned.filter(o => o.count - o.placed > 0);
+  if (canSell.length && rows.length < 5) {
+    rows.push(new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder().setCustomId('furnsell').setPlaceholder('💸 賣掉（半價回收，一次 1 件）')
+        .addOptions(canSell.slice(0, 25).map(o => ({
+          label: `${o.emoji || ''}${o.name}`.slice(0, 100),
+          description: `倉庫 ${o.count - o.placed} 件　賣 1 件回 ${furnRefund(o).toLocaleString('en-US')} ${gc.currency_name}`.slice(0, 100),
+          value: String(o.furniture_id)
         })))));
   }
   return { embeds: [embed], components: rows };
@@ -330,6 +362,14 @@ function init(client) {
         if (out.error) return i.reply({ content: out.error, ...eph }).catch(() => {});
         await i.update(furniturePanel(gid, uid, uname)).catch(() => {});
         return i.followUp({ content: out.ok, ...eph }).catch(() => {});
+      }
+      if (i.isStringSelectMenu() && i.customId === 'furnsell') {
+        const out = sellFurniture(gid, uid, uname, parseInt(i.values[0], 10));
+        if (out.error) return i.reply({ content: out.error, ...eph }).catch(() => {});
+        await i.update(furniturePanel(gid, uid, uname)).catch(() => {});
+        return i.followUp({
+          content: `💸 賣掉了 ${out.sold.emoji || ''}**${out.sold.name}**，回收 **${out.refund.toLocaleString('en-US')}** ${gcfg(gid).currency_name}（原價的一半，材料不退）。`, ...eph
+        }).catch(() => {});
       }
       if (i.isChatInputCommand() && i.commandName === '家具') {
         seedFurniture(gid);
