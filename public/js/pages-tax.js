@@ -225,7 +225,7 @@ App.page('tax', {
     };
 
     const showResult = (r) => {
-      const rows = r.top.map(t => `<tr><td>${UI.esc(t.username || t.user_id)}</td><td>${coin(t.balance)}</td>
+      const rows = r.top.map(t => `<tr><td>${H.who(t.user_id, t.username)}</td><td>${coin(t.balance)}</td>
         <td>${coin(t.income)}</td><td>${coin(t.land)}</td><td>${coin(t.breed)}</td><td><b>${coin(t.total)}</b></td></tr>`).join('');
       UI.modal({
         title: r.dryRun ? `試算結果（未扣款）` : `已課徵 ${r.period}`,
@@ -250,7 +250,7 @@ App.page('tax', {
         title: `${b.dataset.period} 稅單明細`,
         bodyHTML: `<div class="table-wrap"><table class="list">
           <thead><tr><th>玩家</th><th>當時餘額</th><th>所得稅</th><th>農地稅</th><th>養殖稅</th><th>證券稅</th><th>消費稅</th><th>慈善折抵</th><th>應繳</th><th>實繳</th></tr></thead>
-          <tbody>${rows.map(r => `<tr><td>${UI.esc(r.username || r.user_id)}</td><td>${coin(r.balance)}</td>
+          <tbody>${rows.map(r => `<tr><td>${H.who(r.user_id, r.username)}</td><td>${coin(r.balance)}</td>
             <td>${coin(r.income_tax)}</td><td>${coin(r.land_tax)}</td><td>${coin(r.breed_tax)}</td><td>${coin(r.stock_tax)}</td><td>${coin(r.spend_tax)}</td>
             <td>${r.charity_credit ? `−${coin(r.charity_credit)}` : '—'}</td>
             <td>${coin(r.total)}</td><td>${r.total > r.paid ? `<span style="color:#e67e22">${coin(r.paid)}（未繳 ${coin(r.total - r.paid)}）</span>` : coin(r.paid)}</td>

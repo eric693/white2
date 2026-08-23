@@ -35,20 +35,31 @@ const H = {
     return H.nicks;
   },
 
+  /**
+   * 玩家欄位：顯示名字，並帶上 data-uid 讓 paintNicks 補伺服器暱稱。
+   * 用在「只有 username、畫面上沒印 ID」的清單（貸款、稅務、捐款、股票成交…）。
+   */
+  who(userId, username) {
+    const name = UI.esc(username || userId || '—');
+    return userId ? `<span data-uid="${UI.esc(userId)}">${name}</span>` : name;
+  },
+
   /** 把畫面上的 Discord ID 補上伺服器暱稱（重複呼叫安全，處理過的不會再處理） */
   paintNicks(root) {
     const scope = root || document;
     // 各頁面印 ID 的寫法不一樣：有的包 <code>，有的是表格裡的小字 <div>／<span>。
     // 一律掃「整格文字剛好是一串 17～20 位數字」的元素，就不用去改每一頁的模板。
     const todo = scope.querySelectorAll(
-      'code:not([data-nick]), table.list td div:not([data-nick]), table.list td span:not([data-nick])');
+      'code:not([data-nick]), table.list td div:not([data-nick]), table.list td span:not([data-nick]), [data-uid]:not([data-nick])');
     if (!todo.length) return;
     const ids = [];
     todo.forEach(el => {
+      // data-uid 是「這一格是某位玩家」的標記（畫面上只印名字、沒印 ID 的清單用）
+      const uid = el.dataset.uid;
       const t = (el.textContent || '').trim();
-      if (!/^\d{17,20}$/.test(t)) return;
+      if (!uid && !/^\d{17,20}$/.test(t)) return;
       el.dataset.nick = '1';
-      ids.push([el, t]);
+      ids.push([el, uid || t]);
     });
     if (!ids.length) return;
     H.loadNicks().then(map => {
@@ -59,8 +70,14 @@ const H = {
         tag.className = 'nick';
         tag.textContent = nick;
         tag.title = nick;   // 太長的暱稱會截成一行，滑過去看全名
-        el.parentNode.insertBefore(tag, el);
-        el.parentNode.insertBefore(document.createElement('br'), el);
+        if (el.dataset.uid) {
+          // 這一格印的是名字：暱稱補在名字下面
+          el.insertAdjacentElement('afterend', tag);
+        } else {
+          // 這一格印的是 ID：暱稱補在 ID 上面
+          el.parentNode.insertBefore(tag, el);
+          el.parentNode.insertBefore(document.createElement('br'), el);
+        }
       }
     }).catch(() => {});
   },

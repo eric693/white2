@@ -65,7 +65,7 @@ App.page('auction', {
               <td>${STATUS[r.status] || r.status}</td>
               <td>${r.status === 'ended'
           ? `${coin(r.final_price)}<div class="hint" style="font-size:12px">${UI.esc(r.winner_name)}｜手續費 ${coin(r.fee)}</div>`
-          : (top ? `${coin(top.amount)}<div class="hint" style="font-size:12px">${UI.esc(top.username)}｜${r.bids} 次</div>` : '—')}</td>
+          : (top ? `${coin(top.amount)}<div class="hint" style="font-size:12px">${H.who(top.user_id, top.username)}｜${r.bids} 次</div>` : '—')}</td>
               <td>${['ended', 'cancelled'].includes(r.status) ? ''
           : `<button class="btn tiny secondary" data-edit="${r.id}">編輯</button>
                    <button class="btn tiny danger" data-del="${r.id}">取消</button>`}</td>

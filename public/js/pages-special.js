@@ -112,7 +112,7 @@ App.page('special', {
           <tbody>
             ${redeems.length ? redeems.map(r => `<tr>
               <td class="hint">${UI.esc(r.created_at || '')}</td>
-              <td>${UI.esc(r.username || r.user_id)}</td>
+              <td>${H.who(r.user_id, r.username)}</td>
               <td>${UI.esc(r.item_name)}</td>
               <td>×${r.qty || 1}</td>
               <td>${coin(r.paid > 0 ? r.paid : r.price * (r.qty || 1))}</td>

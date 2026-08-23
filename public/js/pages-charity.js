@@ -51,7 +51,7 @@ App.page('charity', {
         <div class="table-wrap"><table class="list">
           <thead><tr><th>玩家</th><th>累計捐款</th><th>筆數</th></tr></thead>
           <tbody>${(c.top || []).length ? c.top.map((t, i) => `<tr>
-            <td>${i + 1}. ${UI.esc(t.username || t.user_id)}</td><td>${coin(t.amount)}</td><td>${t.times}</td></tr>`).join('')
+            <td>${i + 1}. ${H.who(t.user_id, t.username)}</td><td>${coin(t.amount)}</td><td>${t.times}</td></tr>`).join('')
         : '<tr><td colspan="3" class="hint">還沒有人捐款。</td></tr>'}</tbody>
         </table></div>
       </div>
@@ -61,7 +61,7 @@ App.page('charity', {
         <div class="table-wrap"><table class="list">
           <thead><tr><th>時間</th><th>玩家</th><th>金額</th><th>當時可折抵</th></tr></thead>
           <tbody>${(c.recent || []).length ? c.recent.map(r => `<tr>
-            <td>${UI.esc(r.created_at)}</td><td>${UI.esc(r.username || r.user_id)}</td><td>${coin(r.amount)}</td><td>${coin(r.credit)}</td></tr>`).join('')
+            <td>${UI.esc(r.created_at)}</td><td>${H.who(r.user_id, r.username)}</td><td>${coin(r.amount)}</td><td>${coin(r.credit)}</td></tr>`).join('')
         : '<tr><td colspan="4" class="hint">還沒有捐款紀錄。</td></tr>'}</tbody>
         </table></div>
       </div>

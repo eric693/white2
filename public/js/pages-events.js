@@ -684,7 +684,7 @@ App.page('giveaways', {
         <div style="margin-bottom:12px">${r.locked.length ? r.locked.map(u => `<span class="tag warn">${UI.esc(u.username || u.user_id)}</span>`).join(' ') : '<span style="color:var(--muted)">（無）</span>'}</div>
         <div class="table-wrap" style="max-height:340px;overflow:auto"><table class="list">
           <thead><tr><th>玩家</th><th>獎品</th><th>時間</th></tr></thead>
-          <tbody>${r.recent.length ? r.recent.map(w => `<tr><td>${UI.esc(w.username || w.user_id)}</td><td>${UI.esc(w.prize)}</td>
+          <tbody>${r.recent.length ? r.recent.map(w => `<tr><td>${H.who(w.user_id, w.username)}</td><td>${UI.esc(w.prize)}</td>
             <td>${new Date(w.won_at * 1000).toLocaleString('zh-TW', { hour12: false })}</td></tr>`).join('')
             : '<tr><td colspan="3" class="empty">尚無紀錄</td></tr>'}</tbody></table></div>` });
     };

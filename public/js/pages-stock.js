@@ -162,7 +162,7 @@ App.page('stock', {
         <thead><tr><th>時間</th><th>玩家</th><th>股票</th><th>買賣</th><th>股數</th><th>成交價</th><th>手續費</th><th>損益</th></tr></thead>
         <tbody>${rows.map(t => `<tr>
           <td>${when(t.ts)}</td>
-          <td>${UI.esc(t.username || t.user_id)}</td>
+          <td>${H.who(t.user_id, t.username)}</td>
           <td>${UI.esc((t.emoji || '') + (t.name || ''))}</td>
           <td>${t.side === 'buy' ? '📥 買' : '📤 賣'}</td>
           <td>${t.shares}</td>

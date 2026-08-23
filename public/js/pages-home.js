@@ -736,7 +736,7 @@ App.page('home', {
           <div class="table-wrap"><table class="list">
             <thead><tr><th>玩家</th><th>房屋</th><th>廚房</th><th>寵物</th><th>擺出家具</th><th>成就</th><th>累計簽到</th><th></th></tr></thead>
             <tbody>${rows.length ? rows.map(r => `<tr>
-              <td>${UI.esc(r.username || r.user_id)}</td>
+              <td>${H.who(r.user_id, r.username)}</td>
               <td>Lv.${r.level}</td><td>${r.kitchen_level ? 'Lv.' + r.kitchen_level : '—'}</td>
               <td>${r.pets}</td><td>${r.furniture}</td><td>${r.achievements}</td><td>${r.checkins} 天</td>
               <td><button class="btn tiny secondary" data-lv="${r.user_id}" data-name="${UI.esc(r.username || '')}"

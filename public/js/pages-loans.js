@@ -49,7 +49,7 @@ App.page('loans', {
         <div class="table-wrap"><table class="list">
           <thead><tr><th>#</th><th>玩家</th><th>借款</th><th>利息</th><th>還欠</th><th>抵押品</th><th>到期</th><th>狀態</th><th></th></tr></thead>
           <tbody>${(c.loans || []).length ? c.loans.map(l => `<tr>
-            <td>${l.id}</td><td>${UI.esc(l.username || l.user_id)}</td><td>${coin(l.principal)}</td><td>${coin(l.interest)}</td>
+            <td>${l.id}</td><td>${H.who(l.user_id, l.username)}</td><td>${coin(l.principal)}</td><td>${coin(l.interest)}</td>
             <td>${l.status === 'open' ? `<b>${coin(l.owed)}</b>` : coin(l.owed)}</td>
             <td>${(l.collaterals || []).map(x => UI.esc(x.detail)).join('、') || '<span class="hint">已沒收／已贖回</span>'}</td>
             <td>${when(l.due_ms)}</td>
