@@ -150,6 +150,21 @@ function fundGet(gid, amount) {
   return n;
 }
 
+/**
+ * 一般撥款：從基金池取出最多 amount（不足就有多少給多少），回傳實際取出的金額。
+ * 跟 takeFromPool 的差別是不看 to_relief —— 那個旗標是「普發救濟金」專用的，
+ * 大賽獎金這種也走基金會的支出不該被它擋住。
+ */
+function fundTake(gid, amount) {
+  const c = cfg(gid);
+  const n = Math.floor(Number(amount) || 0);
+  if (!c.enabled || n <= 0) return 0;
+  const take = Math.max(0, Math.min(n, c.pool || 0));
+  if (take <= 0) return 0;
+  db.prepare('UPDATE charity_config SET pool = pool - ?, total_out = total_out + ? WHERE guild_id=?').run(take, take, gid);
+  return take;
+}
+
 // 普發撥款：從基金池取出最多 amount，回傳實際取出的金額（不足就給有多少算多少）
 function takeFromPool(gid, amount) {
   const c = cfg(gid);
@@ -306,6 +321,6 @@ function init(client) {
 }
 
 module.exports = {
-  init, cfg, donate, creditFor, takeFromPool, reliefBudget, logPayout, addTax, fundPay, fundGet,
+  init, cfg, donate, creditFor, takeFromPool, fundTake, reliefBudget, logPayout, addTax, fundPay, fundGet,
   periodDonated, periodTop, allTimeTop, infoEmbed, fundName
 };

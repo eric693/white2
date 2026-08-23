@@ -128,6 +128,11 @@ async function announce(client, gid, channelId, payload) {
 function payoutContest(gid, c) {
   const top = ranking(c.id, c.min_score, 3);
   const rewards = [c.reward1, c.reward2, c.reward3];
+  // 獎金優先從慈善基金會池撥（拍賣成交金、稅收、捐款都在裡面），池子不夠的部分才由系統補印。
+  // 這樣大賽就跟普發、拍賣走同一條錢流，不會每週憑空多出一筆星幣。
+  const need = top.reduce((a, _r, i) => a + Math.max(0, rewards[i] || 0), 0);
+  let fromPool = 0;
+  if (need > 0) { try { fromPool = require('./charity').fundTake(gid, need); } catch { fromPool = 0; } }
   db.transaction(() => {
     top.forEach((r, i) => {
       if (rewards[i] > 0) addCoins(gid, r.user_id, r.username, rewards[i]);
@@ -139,6 +144,11 @@ function payoutContest(gid, c) {
     }
     db.prepare("UPDATE contests SET status='ended' WHERE id=?").run(c.id);
   })();
+  top.fundNote = need > 0
+    ? (fromPool >= need ? `獎金 ${need.toLocaleString('en-US')} 全額由${require('./charity').fundName(gid)}撥出。`
+      : fromPool > 0 ? `獎金 ${need.toLocaleString('en-US')}：${require('./charity').fundName(gid)}撥出 ${fromPool.toLocaleString('en-US')}，不足的 ${(need - fromPool).toLocaleString('en-US')} 由系統補上。`
+        : '')
+    : '';
   return top;
 }
 
@@ -177,7 +187,8 @@ async function tick(client) {
         const ended = db.prepare('SELECT * FROM contests WHERE id=?').get(c.id);
         const e = contestEmbed(gid, ended, { final: true });
         if (top[0]) e.setDescription((ended.description ? ended.description + '\n' : '')
-          + `🎉 冠軍是 **${top[0].username}**！${c.title_id ? '專屬成就已經送到，記得去 `/成就` 裝備。' : ''}`);
+          + `🎉 冠軍是 **${top[0].username}**！${c.title_id ? '專屬成就已經送到，記得去 `/成就` 裝備。' : ''}`
+          + (top.fundNote ? `\n💰 ${top.fundNote}` : ''));
         await announce(client, gid, c.channel, { content: '🏆 **大賽結束！**', embeds: [e] });
         scheduleNext(gid, c);
       }
