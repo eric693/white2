@@ -810,12 +810,17 @@ function init(client) {
           if (r.ready_at > now) continue;
           const a = animalById(gid, r.animal_id);
           if (!a) { db.prepare('DELETE FROM ranch_incubator WHERE guild_id=? AND user_id=? AND slot=?').run(gid, uid, r.slot); continue; }
-          // 孵化失敗機率：失敗那顆蛋就沒了
-          const def = db.prepare('SELECT fail_pct FROM ranch_hatch_defs WHERE guild_id=? AND egg_item_id=? AND animal_id=?').get(gid, r.egg_item_id, r.animal_id);
-          if (def && def.fail_pct > 0 && Math.random() * 100 < def.fail_pct) {
-            db.prepare('DELETE FROM ranch_incubator WHERE guild_id=? AND user_id=? AND slot=?').run(gid, uid, r.slot);
-            failed.push(a);
-            continue;
+          // 孵化失敗機率：失敗那顆蛋就沒了。每顆蛋只骰一次（骰完就標記 rolled），
+          // 否則牧場滿了領不走的動物，每重開一次孵化室就被重骰一輪，會愈看愈少。
+          if (!r.rolled) {
+            const def = db.prepare('SELECT fail_pct FROM ranch_hatch_defs WHERE guild_id=? AND egg_item_id=? AND animal_id=?').get(gid, r.egg_item_id, r.animal_id);
+            if (def && def.fail_pct > 0 && Math.random() * 100 < def.fail_pct) {
+              db.prepare('DELETE FROM ranch_incubator WHERE guild_id=? AND user_id=? AND slot=?').run(gid, uid, r.slot);
+              failed.push(a);
+              continue;
+            }
+            db.prepare('UPDATE ranch_incubator SET rolled=1 WHERE guild_id=? AND user_id=? AND slot=?').run(gid, uid, r.slot);
+            r.rolled = 1;
           }
           const slot = freeRanchSlot(gid, uid, effRanchSlots(gid, uid, c));
           if (slot < 0) { blocked.push({ a, slot: r.slot }); continue; }

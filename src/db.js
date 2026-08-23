@@ -387,6 +387,12 @@ ensureColumns('ranch_animals', {
   produce_interval_minutes: 'INTEGER NOT NULL DEFAULT 0'   // 每產 1 單位要幾分鐘（0＝由每日產量自動換算，一天平均分配）
 });
 
+// 孵化失敗只能骰一次：蛋成熟時骰完就寫進 rolled，之後再打開孵化室都不會重骰
+// （以前是每次查看孵化室就重骰一輪，牧場滿了領不走的動物會被反覆抽掉）
+ensureColumns('ranch_incubator', {
+  rolled: 'INTEGER NOT NULL DEFAULT 0'
+});
+
 // 動物生產改成「每單位獨立計時」：記錄上次結算時間（unix 毫秒），成熟一單位就能收一單位
 ensureColumns('ranch_slots', {
   last_produce_ms: 'INTEGER NOT NULL DEFAULT 0'
