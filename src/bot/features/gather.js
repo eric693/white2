@@ -886,6 +886,13 @@ function itemUses(gid) {
 const useTags = (uses, id) => [...(uses.get(id) || [])].map(t => USE_ICON[t]).join('');
 const useWords = (uses, id) => [...(uses.get(id) || [])].map(t => USE_NAME[t]).join('／');
 
+// 背包分兩袋：
+//   🔒 保管袋＝/賣出 碰不到（預設放「別的系統用得到」的東西，玩家也可以手動鎖／放行）
+//   💰 自由背包＝可以賣
+// 兩袋都能交易、都能拿去製作／料理／送禮，差別只在賣不賣得掉。
+// locked：0＝跟著用途自動判斷、1＝手動鎖住、2＝手動放行
+const inKeepBag = (uses, row) => row.locked === 1 || (row.locked !== 2 && uses.has(row.id));
+
 // 「挑數量賣」用的物品選單：背包空了回 null
 // 把整個背包分成多個下拉（每個上限 25）一次列出全部，同類物品排在一起好找（不用先選類別）
 function sellItemRows(gid, uid) {
@@ -1020,25 +1027,22 @@ function init(client) {
           WHERE v.guild_id=? AND v.user_id=? AND v.count>0 ORDER BY it.kind, it.price DESC`).all(gid, uid)
         .filter(r => inKeepBag(uses, r) === toFree);
       if (!rows.length) return i.reply({ content: toFree ? '保管袋是空的。' : '自由背包是空的。', flags: MessageFlags.Ephemeral }).catch(() => {});
-      const menus = [];
+      // 「整袋搬」做成按鈕：塞進下拉會讓選項超過 25 個上限（Discord 會直接回 Invalid number value）
+      const menus = [new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId(`bagall:${toFree ? 'free' : 'keep'}`)
+          .setLabel(toFree ? `🔓 整袋放行（${rows.length} 種）` : `🔒 整袋鎖起來（${rows.length} 種）`)
+          .setStyle(ButtonStyle.Primary))];
       for (let p = 0; p < rows.length && menus.length < 5; p += 25) {
         const slice = rows.slice(p, p + 25);
         menus.push(new ActionRowBuilder().addComponents(
           new StringSelectMenuBuilder().setCustomId(`bagset:${toFree ? 'free' : 'keep'}:${p / 25}`)
             .setPlaceholder(rows.length > 25 ? `選要搬的東西（第 ${p + 1}-${p + slice.length} 種）` : '選要搬的東西')
-            .setMinValues(1).setMaxValues(Math.min(25, slice.length + (p === 0 ? 1 : 0)))
-            .addOptions([
-              // 第一個下拉附一個「整袋搬」的選項：材料上百種，不可能一個一個點
-              ...(p === 0 ? [{
-                label: toFree ? '🔓 整個保管袋都放行' : '🔒 自由背包全部鎖起來',
-                value: '__all__',
-                description: `一次搬 ${rows.length} 種`.slice(0, 100)
-              }] : []),
-              ...slice.map(r => ({
-                label: `${r.emoji || ''}${r.name}`.slice(0, 100),
-                description: `持有 ${r.count}${useWords(uses, r.id) ? `　${useWords(uses, r.id)}` : ''}`.slice(0, 100),
-                value: String(r.id)
-              }))])));
+            .setMinValues(1).setMaxValues(slice.length)
+            .addOptions(slice.map(r => ({
+              label: `${r.emoji || ''}${r.name}`.slice(0, 100),
+              description: `持有 ${r.count}${useWords(uses, r.id) ? `　${useWords(uses, r.id)}` : ''}`.slice(0, 100),
+              value: String(r.id)
+            })))));
       }
       return i.reply({
         content: toFree
@@ -1047,23 +1051,25 @@ function init(client) {
         components: menus, flags: MessageFlags.Ephemeral
       }).catch(() => {});
     }
+    if (i.isButton() && i.customId.startsWith('bagall:')) {
+      const gid = i.guildId, uid = i.user.id;
+      const toFree = i.customId.split(':')[1] === 'free';
+      const uses = itemUses(gid);
+      const all = db.prepare('SELECT v.locked, v.item_id id FROM gather_inventory v WHERE v.guild_id=? AND v.user_id=? AND v.count>0').all(gid, uid)
+        .filter(r => inKeepBag(uses, r) === toFree);
+      const upd = db.prepare('UPDATE gather_inventory SET locked=? WHERE guild_id=? AND user_id=? AND item_id=?');
+      db.transaction(() => { for (const r of all) upd.run(toFree ? 2 : 1, gid, uid, r.id); })();
+      return i.update({
+        content: toFree
+          ? `✅ 已把 **${all.length} 種**東西全部放進 💰 **自由背包**（現在都賣得掉了）。`
+          : `🔒 已把 **${all.length} 種**東西全部鎖進 **保管袋**（\`/賣出\` 不會再動到）。`,
+        components: []
+      }).catch(() => {});
+    }
     if (i.isStringSelectMenu() && i.customId.startsWith('bagset:')) {
       const gid = i.guildId, uid = i.user.id;
       const toFree = i.customId.split(':')[1] === 'free';
       const target = toFree ? 2 : 1;
-      if (i.values.includes('__all__')) {
-        const uses2 = itemUses(gid);
-        const all = db.prepare('SELECT v.locked, v.item_id id FROM gather_inventory v WHERE v.guild_id=? AND v.user_id=? AND v.count>0').all(gid, uid)
-          .filter(r => inKeepBag(uses2, r) === toFree);
-        const upd0 = db.prepare('UPDATE gather_inventory SET locked=? WHERE guild_id=? AND user_id=? AND item_id=?');
-        db.transaction(() => { for (const r of all) upd0.run(target, gid, uid, r.id); })();
-        return i.update({
-          content: toFree
-            ? `✅ 已把 **${all.length} 種**東西全部放進 💰 **自由背包**（現在都賣得掉了）。`
-            : `🔒 已把 **${all.length} 種**東西全部鎖進 **保管袋**（\`/賣出\` 不會再動到）。`,
-          components: []
-        }).catch(() => {});
-      }
       const ids = i.values.map(Number).filter(Boolean);
       const upd = db.prepare('UPDATE gather_inventory SET locked=? WHERE guild_id=? AND user_id=? AND item_id=?');
       db.transaction(() => { for (const id of ids) upd.run(target, gid, uid, id); })();
