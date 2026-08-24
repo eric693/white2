@@ -22,8 +22,8 @@ function noTradeIds(gid) {
   const hit = _noTradeCache.get(gid);
   if (hit && Date.now() - hit.at < 60000) return hit.ids;
   const ids = new Set();
+  // 只鎖「種子」，蛋開放交易
   for (const r of db.prepare('SELECT seed_item_id id FROM crop_seeds WHERE guild_id=? AND seed_item_id>0').all(gid)) ids.add(r.id);
-  for (const r of db.prepare('SELECT egg_item_id id FROM ranch_hatch_defs WHERE guild_id=? AND egg_item_id>0').all(gid)) ids.add(r.id);
   // 後台自己新增、kind 標成 seed 的也一併算進去
   for (const r of db.prepare("SELECT id FROM gather_items WHERE guild_id=? AND kind='seed'").all(gid)) ids.add(r.id);
   _noTradeCache.set(gid, { at: Date.now(), ids });
@@ -37,11 +37,11 @@ function createProposal(gid, fromUser, to, giveName, wantName, giveCount, wantCo
   const want = itemByName(gid, wantName);
   if (!give) return { error: `找不到物品「${giveName}」。填背包裡的物品名稱（可用 /背包 查看）。` };
   if (!want) return { error: `找不到物品「${wantName}」。` };
-  // 種子與蛋不能交易（兩邊都擋，不然反過來提案就繞過去了）
+  // 種子不能交易（兩邊都擋，不然反過來提案就繞過去了）；蛋開放
   const noTrade = noTradeIds(gid);
   const blocked = [give, want].filter(x => noTrade.has(x.id));
   if (blocked.length) {
-    return { error: `🚫 ${blocked.map(x => `${x.emoji || ''}**${x.name}**`).join('、')} 不能交易——種子與可孵化的蛋只能自己用。\n想要的話請到 \`/種子商店\` 買，或自己去採集。` };
+    return { error: `🚫 ${blocked.map(x => `${x.emoji || ''}**${x.name}**`).join('、')} 不能交易——種子只能自己種。\n想要的話請到 \`/種子商店\` 買，或自己去採集。` };
   }
   const have = invCount(gid, fromUser.id, give.id);
   if (have < giveCount) return { error: `你的 ${give.emoji || ''}${give.name} 不夠（有 ${have}，要給 ${giveCount}）。` };
