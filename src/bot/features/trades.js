@@ -15,6 +15,21 @@ const takeFromBag = (gid, uid, itemId, n) => db.prepare('UPDATE gather_inventory
 const label = (it, n) => `${it.emoji || ''}${it.name} ×${n}`;
 
 // 建立一筆交易提案（/交易 與 面板交易按鈕共用）。回傳 {error} 或 {payload, tid}。
+// ---- 不可交易的物品：種子與可孵化的蛋 ----
+// 這兩種是「產能」而不是「產物」，能自由轉手的話，繁殖與種植的上限就形同虛設。
+const _noTradeCache = new Map();   // guild_id → { at, ids:Set }
+function noTradeIds(gid) {
+  const hit = _noTradeCache.get(gid);
+  if (hit && Date.now() - hit.at < 60000) return hit.ids;
+  const ids = new Set();
+  for (const r of db.prepare('SELECT seed_item_id id FROM crop_seeds WHERE guild_id=? AND seed_item_id>0').all(gid)) ids.add(r.id);
+  for (const r of db.prepare('SELECT egg_item_id id FROM ranch_hatch_defs WHERE guild_id=? AND egg_item_id>0').all(gid)) ids.add(r.id);
+  // 後台自己新增、kind 標成 seed 的也一併算進去
+  for (const r of db.prepare("SELECT id FROM gather_items WHERE guild_id=? AND kind='seed'").all(gid)) ids.add(r.id);
+  _noTradeCache.set(gid, { at: Date.now(), ids });
+  return ids;
+}
+
 function createProposal(gid, fromUser, to, giveName, wantName, giveCount, wantCount, channelId) {
   giveCount = Math.max(1, giveCount || 1);
   wantCount = Math.max(1, wantCount || 1);
@@ -22,6 +37,12 @@ function createProposal(gid, fromUser, to, giveName, wantName, giveCount, wantCo
   const want = itemByName(gid, wantName);
   if (!give) return { error: `找不到物品「${giveName}」。填背包裡的物品名稱（可用 /背包 查看）。` };
   if (!want) return { error: `找不到物品「${wantName}」。` };
+  // 種子與蛋不能交易（兩邊都擋，不然反過來提案就繞過去了）
+  const noTrade = noTradeIds(gid);
+  const blocked = [give, want].filter(x => noTrade.has(x.id));
+  if (blocked.length) {
+    return { error: `🚫 ${blocked.map(x => `${x.emoji || ''}**${x.name}**`).join('、')} 不能交易——種子與可孵化的蛋只能自己用。\n想要的話請到 \`/種子商店\` 買，或自己去採集。` };
+  }
   const have = invCount(gid, fromUser.id, give.id);
   if (have < giveCount) return { error: `你的 ${give.emoji || ''}${give.name} 不夠（有 ${have}，要給 ${giveCount}）。` };
   const tid = db.prepare(
@@ -44,7 +65,8 @@ function init(client) {
       // ===== 交易精靈：全程用選單，不用打字 =====
       const invItems = (gid, uid) => db.prepare(
         `SELECT it.id, it.name, it.emoji, v.count FROM gather_inventory v JOIN gather_items it ON it.id = v.item_id
-          WHERE v.guild_id=? AND v.user_id=? AND v.count>0 ORDER BY it.kind, it.price DESC`).all(gid, uid);
+          WHERE v.guild_id=? AND v.user_id=? AND v.count>0 ORDER BY it.kind, it.price DESC`).all(gid, uid)
+        .filter(r => !noTradeIds(gid).has(r.id));   // 種子與蛋不出現在交易選單
       const itemById = (id) => db.prepare('SELECT * FROM gather_items WHERE id=?').get(id);
       // 把整個背包分成多個下拉（每個上限 25），一次列出全部、不用先選類別；同類物品排在一起好找
       const invMenuRows = (gid, uid, base, placeholder) => {
