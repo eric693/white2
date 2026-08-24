@@ -162,15 +162,40 @@ async function applyAppearance() {
   } catch (e) { console.warn('設定機器人狀態失敗：', e.message); }
 }
 
+// ---- 卡頓偵測 ----
+// 「互動無回應」常常不是那個功能壞掉，而是整個 event loop 被別的同步工作卡住幾秒
+// （SQLite 是同步的，結算／稅務／股市跑大批資料時會這樣）。這裡每 200ms 量一次延遲，
+// 卡超過 1 秒就記一筆，並記下當下正在處理哪些互動——下次玩家喊「指令沒反應」就查得到元凶。
+const LAG_TICK = 200, LAG_WARN = 1000;
+let lastTick = Date.now(), peakLag = 0;
+const inFlight = new Map();   // 互動 id → { what, user, at }
+setInterval(() => {
+  const now = Date.now();
+  const lag = now - lastTick - LAG_TICK;
+  lastTick = now;
+  if (lag > peakLag) peakLag = lag;
+  if (lag >= LAG_WARN) {
+    const busy = [...inFlight.values()].map(x => x.what).slice(0, 5).join('、') || '（沒有進行中的互動，可能是排程工作）';
+    try {
+      require('../db').logError('', '機器人卡頓：', `event loop 停了 ${lag}ms，當下處理中的互動：${busy}`);
+    } catch {}
+  }
+}, LAG_TICK).unref?.();
+
 // ---- 互動看門狗：3 秒內沒有任何模組回應就記一筆，避免玩家只看到「應用程式沒有回應」卻查不到原因 ----
 client.on('interactionCreate', (i) => {
   const what = i.isChatInputCommand() ? `/${i.commandName}`
     : (i.isButton() || i.isStringSelectMenu()) ? `元件 ${i.customId}` : null;
   if (!what) return;
+  inFlight.set(i.id, { what, user: i.user?.username || i.user?.id, at: Date.now() });
+  // 回應完就從「處理中」拿掉；沒回應的也在 5 秒後清掉，避免一直累積
+  setTimeout(() => inFlight.delete(i.id), 5000);
   setTimeout(() => {
     if (i.replied || i.deferred) return;
     const { logError } = require('../db');
-    logError(i.guildId || '', '互動無回應：', `${what}（使用者 ${i.user?.username || i.user?.id}，頻道 ${i.channelId}）`);
+    logError(i.guildId || '', '互動無回應：',
+      `${what}（使用者 ${i.user?.username || i.user?.id}，頻道 ${i.channelId}）｜同時卡住的互動 ${inFlight.size} 個，近期最大延遲 ${peakLag}ms`);
+    peakLag = 0;
   }, 2800);
 });
 
