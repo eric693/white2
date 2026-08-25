@@ -293,12 +293,22 @@ function init(client) {
             WHERE f.user_id = ? AND w.guild_id = ? ORDER BY f.created_at DESC LIMIT 25`
         ).all(i.user.id, i.guild.id);
         if (!favs.length) return i.reply({ content: '你還沒有收藏任何角色。抽到喜歡的按「收藏角色」吧！', flags: MessageFlags.Ephemeral });
-        const embed = new EmbedBuilder().setColor(0xeb459e).setTitle('我的收藏')
-          .setDescription(favs.map((f, n) => {
-            const ls = roleLinks(f);
-            return `**${n + 1}. ${f.name}**（${f.wheel_name}）`
-              + (ls.length ? '\n　　' + ls.map(l => `[${l.label || '連結'}](${l.url})`).join('　') : '');
-          }).join('\n'));
+        // Embed 描述上限 4096 字：收藏多又附連結的人（20 個就可能破表）以前會直接整個
+        // 互動失敗、什麼都看不到。這裡逐筆累加，裝不下就停下來並說明還有幾個。
+        const lines = favs.map((f, n) => {
+          const ls = roleLinks(f);
+          return `**${n + 1}. ${f.name}**（${f.wheel_name}）`
+            + (ls.length ? '\n　　' + ls.map(l => `[${l.label || '連結'}](${l.url})`).join('　') : '');
+        });
+        const LIMIT = 3900;   // 留餘裕給結尾的提示文字
+        let desc = '', shown = 0;
+        for (const line of lines) {
+          if (desc.length + line.length + 1 > LIMIT) break;
+          desc += (desc ? '\n' : '') + line;
+          shown++;
+        }
+        if (shown < lines.length) desc += `\n\n…還有 **${lines.length - shown}** 個收藏沒列出來（訊息長度有限，先顯示最新的 ${shown} 個）。`;
+        const embed = new EmbedBuilder().setColor(0xeb459e).setTitle('我的收藏').setDescription(desc);
         return i.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
       }
 
@@ -397,7 +407,19 @@ function init(client) {
       payload.content = `${tagNote ? tagNote + '　' : ''}今日已抽 ${todayDraws(i.user.id, wheel.id)}/${wheel.daily_limit} 次`;
     } else payload.content = tagNote;
     // 只有本人看得到（ephemeral）→ 頻道對其他人永遠乾淨；玩家關掉/重整 Discord 就會消失
-    await i.editReply(payload).catch(() => {});
+    // 這裡以前是靜默 catch，失敗時訊息會永遠停在「轉盤轉動中……」而沒有任何線索，
+    // 所以改成記錄原因；卡片送不出去至少退回純文字版，不要讓玩家看到轉盤卡住。
+    await i.editReply(payload).catch(async (e) => {
+      const detail = e && Array.isArray(e.errors)
+        ? e.errors.map(x => (x && x.message) || String(x)).join(' ｜ ')
+        : '';
+      logError(wheel.guild_id, '轉盤結果送出失敗：', `${e.message}${detail ? ` 〔${detail}〕` : ''}`
+        + `（角色 #${role.id} ${role.name}，卡片 ${payload.files ? '有' : '無'}）`);
+      await i.editReply({
+        content: `${payload.content || ''}\n\n🎴 **${role.name}**${role.intro ? `\n${role.intro}` : ''}`.trim(),
+        embeds: [], files: [], components: payload.components || []
+      }).catch(() => {});
+    });
 
     // 後台開了「公開結果」的轉盤：另外在同一個頻道發一則大家看得到的訊息
     if (wheel.public_result && i.channel) {
