@@ -206,6 +206,14 @@ function render(d, token, msg, authed) {
       <p class="muted">交易會扣交易稅；買進受每人持股上限限制。</p>`
     : `<p class="muted">目前沒有掛牌的股票。</p>`;
 
+  // 花錢操作區（登入後才出現）
+  const mini = (path, ph, btn) => `<form method="post" action="/play/${token}/${path}" class="mini"><input name="amount" type="text" inputmode="numeric" autocomplete="off" placeholder="${ph}"><button class="act sm">${btn}</button></form>`;
+  const actionsBody = `
+    <div class="acts">${actBtn('feed', '🍤 一鍵餵魚')}${actBtn('sellbag', '🎒 一鍵賣光背包')}</div>
+    <h3>❤️ 捐款慈善基金會（可折抵所得稅）</h3>${mini('donate', '捐款金額', '捐')}
+    <h3>💳 貸款／還款</h3>${mini('repay', '還款金額', '還款')}${mini('credit', '信用貸款金額（免抵押）', '借')}
+    <p class="muted">神秘商店兌換、物資貸款、買工具／種植仍請回 Discord，之後會陸續補上。</p>`;
+
   // 登入狀態列：唯讀時給「登入解鎖」，登入後給操作區＋登出
   const authBar = authed
     ? `<div class="authbar ok">🔓 已用本人身分登入，可在這裡買賣操作　·　<a href="/play/${token}/logout">登出</a></div>`
@@ -262,6 +270,10 @@ td:nth-child(n+2),th:nth-child(n+2){text-align:right}
 .trade select,.trade input{width:100%;padding:11px;margin:0 0 10px;border:1px solid var(--line);border-radius:12px;font-size:15px;background:#fff;color:var(--ink)}
 .trade .seg{display:flex;gap:10px;margin-bottom:10px}
 .trade .seg label{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:9px;border:1px solid var(--line);border-radius:12px;font-size:14px;cursor:pointer}
+.acts{display:flex;gap:10px;margin-bottom:6px}.acts form{flex:1;margin-top:0!important}
+.mini{display:flex;gap:8px;margin-bottom:6px}
+.mini input{flex:1;padding:11px;border:1px solid var(--line);border-radius:12px;font-size:15px;background:#fff;color:var(--ink)}
+.act.sm{width:auto;padding:11px 18px;font-size:14px}
 </style></head><body><div class="wrap">
   <div class="hero">
     <div class="name">👋 ${esc(d.username)}</div>
@@ -273,6 +285,7 @@ td:nth-child(n+2),th:nth-child(n+2){text-align:right}
   ${card('🧾 稅單（本期預估）', taxBody)}
   ${card('📈 我的持股', stockBody)}
   ${authed ? card('💹 買賣股票', tradeBody) : ''}
+  ${authed ? card('🛠️ 操作', actionsBody) : ''}
   ${card('🐠 魚缸', aqBody)}
   ${card('🐔 牧場', ranchBody)}
   ${card('🌾 農地／溫室', cropBody)}
@@ -396,6 +409,36 @@ router.post('/play/:token/stock', (req, res) => doAuthedAct(req, res, (gid, uid)
   if (r && r.error) return r.error;
   const coins = (db.prepare('SELECT coins FROM econ_wallets WHERE guild_id=? AND user_id=?').get(gid, uid) || {}).coins || 0;
   return `${side === 'sell' ? '📤 賣出' : '📥 買進'}成交！目前餘額 ${num(coins)}。`;
+}));
+
+const uname = (gid, uid) => (db.prepare('SELECT username FROM econ_wallets WHERE guild_id=? AND user_id=?').get(gid, uid) || {}).username || '玩家';
+
+router.post('/play/:token/feed', (req, res) => doAuthedAct(req, res, (gid, uid) => {
+  const r = require('../bot/features/aquarium').feedAll(gid, uid, uname(gid, uid));
+  return r.error ? r.error : '🍤 餵魚完成！魚兒又能撐一陣子了。';
+}));
+router.post('/play/:token/sellbag', (req, res) => doAuthedAct(req, res, (gid, uid) => {
+  const r = require('../bot/features/gather').sellAllBag(gid, uid, uname(gid, uid));
+  if (r.empty) return '背包沒有可賣的東西（工具／保管袋不會賣掉）。';
+  return `🎒 賣光背包：${r.kinds} 種，共 +${num(r.total)} 星幣。`;
+}));
+router.post('/play/:token/donate', (req, res) => doAuthedAct(req, res, (gid, uid) => {
+  const amt = Math.floor(Number((req.body && req.body.amount) || 0));
+  if (!(amt > 0)) return '請填要捐的金額。';
+  const r = require('../bot/features/charity').donate(gid, uid, uname(gid, uid), amt);
+  return r.ok ? `❤️ 捐款成功 ${num(r.amount)}！折抵稅額 ${num(r.credit || 0)}，餘額 ${num(r.coins)}。` : r.msg;
+}));
+router.post('/play/:token/repay', (req, res) => doAuthedAct(req, res, (gid, uid) => {
+  const amt = Math.floor(Number((req.body && req.body.amount) || 0));
+  if (!(amt > 0)) return '請填要還的金額。';
+  const r = require('../bot/features/loans').repay(gid, uid, amt);
+  return r.ok ? `💳 還款 ${num(r.paid)}${r.cleared ? '，這筆已還清 ✅' : ''}，餘額 ${num(r.coins)}。` : r.msg;
+}));
+router.post('/play/:token/credit', (req, res) => doAuthedAct(req, res, (gid, uid) => {
+  const amt = Math.floor(Number((req.body && req.body.amount) || 0));
+  if (!(amt > 0)) return '請填要借的金額。';
+  const r = require('../bot/features/loans').borrowCredit(gid, uid, uname(gid, uid), amt);
+  return r.ok ? `💳 信用貸款核准！到手 ${num(amt)}，餘額 ${num(r.coins)}（記得準時 /還款）。` : r.msg;
 }));
 
 router.get('/play', (req, res) => {

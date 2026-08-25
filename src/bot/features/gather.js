@@ -927,6 +927,28 @@ function sellItemRows(gid, uid) {
   return menus;
 }
 
+// 一鍵賣光背包（給 /play App 用）：只賣「自由背包」裡有正賣價的東西，
+// 保管袋／工具等 inKeepBag 的一律不賣，跟賣出選單同一套判斷。
+function sellAllBag(gid, uid, uname) {
+  const uses = itemUses(gid);
+  const rows = db.prepare(
+    `SELECT v.count, v.locked, it.* FROM gather_inventory v JOIN gather_items it ON it.id=v.item_id
+      WHERE v.guild_id=? AND v.user_id=? AND v.count>0`).all(gid, uid)
+    .filter(r => !inKeepBag(uses, r) && sellUnit(gid, uid, r) > 0);
+  if (!rows.length) return { empty: true };
+  let total = 0; const lines = [];
+  db.transaction(() => {
+    for (const r of rows) {
+      const gained = r.count * sellUnit(gid, uid, r);
+      if (gained <= 0) continue;
+      db.prepare('UPDATE gather_inventory SET count = count - ? WHERE guild_id=? AND user_id=? AND item_id=?').run(r.count, gid, uid, r.id);
+      total += gained; lines.push(`${r.emoji || ''}${r.name}×${r.count}`);
+    }
+    if (total > 0) { addCoins(gid, uid, uname, total); bumpQuests(gid, uid, { type: 'sell', amount: total }); }
+  })();
+  return { total, kinds: lines.length, lines };
+}
+
 function init(client) {
   // 開機時先把每台伺服器的預設物品/道具建起來，管理員一進後台就看得到東西可以調，
   // 不用等到有人第一次打指令才生成。
@@ -1975,4 +1997,4 @@ function init(client) {
   console.log('  ↳ 釣魚挖礦模組已載入（冷卻/稀有掉落/商店道具/圖鑑/經濟）');
 }
 
-module.exports = { init, wallet, addCoins, addToBag, seedGuild, seedMaterials, staminaState, staminaBoughtToday, bumpPoints, addPointsBonus, menuResult, safeMenu, RARITY, RARITY_LABEL };
+module.exports = { init, wallet, addCoins, addToBag, seedGuild, seedMaterials, staminaState, staminaBoughtToday, bumpPoints, addPointsBonus, menuResult, safeMenu, RARITY, RARITY_LABEL, sellAllBag };
