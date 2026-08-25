@@ -317,7 +317,12 @@ function init(client) {
         return i.reply({ embeds: [embed], flags: MessageFlags.Ephemeral });
       }
     } catch (e) {
-      logError(i.guild && i.guild.id, '轉盤互動失敗：', e.message);
+      // AggregateError（builders 驗證失敗）的細節在 e.errors 裡，只印 message 會變成
+      // 沒有資訊的「Received one or more errors」，這裡把子錯誤一起攤開來方便追。
+      const detail = e && Array.isArray(e.errors)
+        ? e.errors.map(x => (x && x.message) || String(x)).join(' ｜ ')
+        : '';
+      logError(i.guild && i.guild.id, '轉盤互動失敗：', e.message + (detail ? ` 〔${detail}〕` : '') + ` (customId=${i.customId || '-'})`);
       if (!i.replied && !i.deferred) i.reply({ content: '操作失敗，請稍後再試。', flags: MessageFlags.Ephemeral }).catch(() => {});
     }
   });

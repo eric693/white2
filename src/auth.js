@@ -1,5 +1,5 @@
 const jwt = require('jsonwebtoken');
-const { db, SECRET } = require('./db');
+const { db, SECRET, guildCtx } = require('./db');
 
 const COOKIE = 'w2_admin';
 const TOKEN_TTL = '7d';
@@ -154,7 +154,8 @@ function requireAuth() {
     req.allowedGuilds = allowed;
     const gid = (req.headers['x-guild-id'] || '').trim();
     req.guildId = (gid && allowed.includes(gid)) ? gid : (allowed[0] || HOME_GUILD);
-    next();
+    // 把目前伺服器放進上下文，讓底下所有 audit() 不用改呼叫端就能記到正確的伺服器
+    guildCtx.run({ guildId: req.guildId }, next);
   };
 }
 

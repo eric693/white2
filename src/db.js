@@ -790,9 +790,18 @@ const UI_TEXT_KEYS = [
   'invite_contact'                                          // 邀請制：未開通伺服器看到的聯繫訊息
 ];
 
+// 後台請求的「目前管理的伺服器」上下文。
+// 絕大多數 audit() 呼叫點沒有把 guildId 傳進來，以前會一律記成 HOME_GUILD（.env 的
+// GUILD_ID），導致在 A 伺服器做的事被記到 B 伺服器上，稽核軌跡失真。
+// 這裡用 AsyncLocalStorage 由 requireAuth 帶入 req.guildId，呼叫端不用改就能記對。
+const { AsyncLocalStorage } = require('async_hooks');
+const guildCtx = new AsyncLocalStorage();
+
 function audit(actor, action, module = '', detail = '', guildId = '') {
+  const ctx = guildCtx.getStore();
+  const gid = guildId || (ctx && ctx.guildId) || HOME_GUILD;
   db.prepare('INSERT INTO audit_log (actor, action, module, detail, guild_id) VALUES (?, ?, ?, ?, ?)')
-    .run(actor || '', action || '', module || '', detail || '', guildId || HOME_GUILD);
+    .run(actor || '', action || '', module || '', detail || '', gid);
 }
 
 // error_logs 的 guild_id：空字串＝全站層級（登入/斷線/載入失敗等，所有伺服器都看得到）
@@ -835,6 +844,6 @@ function activeGuildIds() {
 }
 
 module.exports = {
-  db, SECRET, ensureColumns, getSetting, setSetting, UI_TEXT_KEYS, audit,
+  db, SECRET, ensureColumns, getSetting, setSetting, UI_TEXT_KEYS, audit, guildCtx,
   HOME_GUILD, guildConfig, ensureGuild, resetGuildData, activeGuildIds, GUILD_TABLES, logError
 };
