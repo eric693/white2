@@ -235,6 +235,12 @@ function render(d, token, msg, authed) {
       <p class="muted">交易會扣交易稅；買進受每人持股上限限制。</p>`
     : `<p class="muted">目前沒有掛牌的股票。</p>`;
 
+  // 主動玩法（登入後才出現；會消耗體力/冷卻，所以要本人登入）
+  const gBtn = (kind, label) => `<form method="post" action="/play/${token}/gather" class="gitem"><input type="hidden" name="kind" value="${kind}"><button class="gbtn">${label}</button></form>`;
+  const gameBody = `<div class="grid5">
+      ${gBtn('fish', '🎣 釣魚')}${gBtn('mine', '⛏️ 挖礦')}${gBtn('wood', '🪓 伐木')}${gBtn('forage', '🧺 採集')}${gBtn('hunt', '🏹 狩獵')}
+    </div><p class="muted">每次消耗體力／有冷卻，抽到的東西直接進背包。想換地圖、看圖鑑仍可回 Discord。</p>`;
+
   // 花錢操作區（登入後才出現）
   const mini = (path, ph, btn) => `<form method="post" action="/play/${token}/${path}" class="mini"><input name="amount" type="text" inputmode="numeric" autocomplete="off" placeholder="${ph}"><button class="act sm">${btn}</button></form>`;
   // 下拉選 + （可選）數量 + 送出
@@ -315,6 +321,10 @@ td:nth-child(n+2),th:nth-child(n+2){text-align:right}
 .mini{display:flex;gap:8px;margin-bottom:6px}
 .mini input,.mini select{flex:1;min-width:0;padding:11px;border:1px solid var(--line);border-radius:12px;font-size:15px;background:#fff;color:var(--ink)}
 .act.sm{width:auto;padding:11px 18px;font-size:14px}
+.grid5{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.gitem{margin:0!important}
+.gbtn{width:100%;padding:14px 4px;border:1px solid var(--line);border-radius:14px;background:var(--bg1);color:var(--ink);font-size:15px;font-weight:700;cursor:pointer}
+.gbtn:active{background:#fbe7f3}
 </style></head><body><div class="wrap">
   <div class="hero">
     <div class="name">👋 ${esc(d.username)}</div>
@@ -325,6 +335,7 @@ td:nth-child(n+2),th:nth-child(n+2){text-align:right}
   ${authBar}
   ${card('🧾 稅單（本期預估）', taxBody)}
   ${card('📈 我的持股', stockBody)}
+  ${authed ? card('🎮 玩法（採集）', gameBody) : ''}
   ${authed ? card('💹 買賣股票', tradeBody) : ''}
   ${authed ? card('🛠️ 操作', actionsBody) : ''}
   ${card('🐠 魚缸', aqBody)}
@@ -461,6 +472,22 @@ router.post('/play/:token/stock', (req, res) => doAuthedAct(req, res, (gid, uid)
 }));
 
 const uname = (gid, uid) => (db.prepare('SELECT username FROM econ_wallets WHERE guild_id=? AND user_id=?').get(gid, uid) || {}).username || '玩家';
+
+const GATHER_LABEL = { fish: '釣魚', mine: '挖礦', wood: '伐木', forage: '採集', hunt: '狩獵' };
+router.post('/play/:token/gather', (req, res) => doAuthedAct(req, res, (gid, uid) => {
+  const kind = String((req.body && req.body.kind) || '');
+  if (!GATHER_LABEL[kind]) return '不認得的玩法。';
+  const r = require('../bot/features/gather').doGather(gid, uid, uname(gid, uid), kind);
+  if (r.error) return r.error;
+  const rare = r.item.rarity ? `〔${r.item.rarity}〕` : '';
+  const bits = [`🎉 ${GATHER_LABEL[kind]}到 ${(r.item.emoji || '') + r.item.name}${rare}${r.isNew ? ' 🆕圖鑑新收錄' : ''}`,
+    `可賣 ${num(r.sellPrice)}，持有 ${num(r.count)}`];
+  if (r.stLeft != null) bits.push(`體力剩 ${r.stLeft}/${r.stMax}`);
+  if (r.toolBroke) bits.push(`⚠️ ${(r.tool.emoji || '') + r.tool.name} 壞了，去 /修理`);
+  else if (r.toolLeft != null && r.toolLeft <= 5) bits.push(`工具耐久 ${r.toolLeft}/${r.toolDur}（快壞）`);
+  if (r.doneQuests && r.doneQuests.length) bits.push(`📜 任務達成 ${r.doneQuests.length} 個，回 Discord /任務 領獎`);
+  return bits.join('｜');
+}));
 
 router.post('/play/:token/feed', (req, res) => doAuthedAct(req, res, (gid, uid) => {
   const r = require('../bot/features/aquarium').feedAll(gid, uid, uname(gid, uid));

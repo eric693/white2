@@ -639,6 +639,65 @@ function readMaterials(recipe) {
 }
 
 
+// ---- 單次採集（Discord 指令與 /play App 共用的核心）----
+// 跟下方 interactionCreate 裡 GATHER_CMD 分支呼叫「同一批」helper（currentTool/checkCooldown/
+// rollItem/markUsed/addToBag/bumpQuests），順序也一致，所以網頁跟 Discord 結果一致。
+// 回傳結構化結果讓兩邊各自排版；Discord 那條保留原本的 embed 版面沒動。
+// ⚠️ 之後改採集規則（冷卻/體力/掉落）記得這裡和 interactionCreate 的 GATHER_CMD 分支要一起改。
+function doGather(gid, uid, uname, kind) {
+  const c = cfg(gid);
+  const tool = currentTool(gid, uid, kind);
+  if (c.require_tool && !tool.id) {
+    const any = db.prepare('SELECT name, emoji FROM gather_tools WHERE guild_id=? AND kind=? AND enabled=1 ORDER BY tier ASC LIMIT 1').get(gid, kind);
+    if (any) return { error: `✋ 徒手不能${KIND_NAME[kind]}：你目前沒有可用的工具（壞掉、還沒買，或被抵押走了）。先修理、買一支 ${any.emoji || ''}${any.name}，或還款把工具贖回。` };
+  }
+  const base = kind === 'fish' ? c.fish_cooldown : (kind === 'mine' ? c.mine_cooldown : (c.other_cooldown || c.fish_cooldown));
+  const wait = Math.max(1, Math.round(base * (1 - (tool.cooldown_cut || 0) / 100)));
+  const map = activeMap(gid, uid);
+  const pool = c.daily_points || 0;
+  const cost = mapCost(map);
+  if (pool > 0) {
+    const st = staminaState(gid, uid);
+    if (cost > st.left) return { error: `今日體力不足：剩 ${st.left}/${st.max} 點，${map ? (map.emoji || '') + map.name : '這裡'}每次要 ${cost} 點。可換便宜的地圖、去特殊商店買體力，或明天午夜（台灣時間）重置。` };
+  } else if (map && map.daily_limit > 0 && totalGathersToday(gid, uid) >= map.daily_limit) {
+    return { error: `今天在 ${map.emoji || ''}${map.name} 的採集次數已用完（每日 ${map.daily_limit} 次）。換張地圖或明天再來。` };
+  }
+  const cd = checkCooldown(gid, uid, kind, wait, (map || pool > 0) ? 0 : c.daily_limit);
+  if (!cd.ok) {
+    return { error: cd.daily
+      ? `今天的${KIND_NAME[kind]}次數已用完（每日上限 ${cd.limit} 次），明天再來！`
+      : `還要休息 ${fmtWait(cd.wait)} 才能再${KIND_NAME[kind]}。`, wait: cd.wait };
+  }
+  const buffLuck = activeLuck(gid, uid);
+  const mapLuck = map ? (map.luck_bonus || 0) : 0;
+  const item = rollItem(gid, kind, (tool.luck || 0) + buffLuck + mapLuck, uid);
+  if (!item) return { error: `管理員還沒設定任何${KIND_NAME[kind]}掉落物。` };
+  markUsed(gid, uid, kind, wait, cd.day, cd.usedToday);
+  if (pool > 0) bumpPoints(gid, uid, cost);
+  addToBag(gid, uid, item.id, 1);
+  wallet(gid, uid, uname);
+  let toolBroke = false, toolLeft = null;
+  if (tool.id && tool.durability > 0) {
+    db.prepare('INSERT OR IGNORE INTO gather_user_tools (guild_id,user_id,tool_id,uses_left) VALUES (?,?,?,?)').run(gid, uid, tool.id, tool.durability);
+    toolLeft = Math.max(0, (tool.uses_left ?? tool.durability) - 1);
+    db.prepare('UPDATE gather_user_tools SET uses_left=? WHERE guild_id=? AND user_id=? AND tool_id=?').run(toolLeft, gid, uid, tool.id);
+    toolBroke = toolLeft <= 0;
+  }
+  const inv = db.prepare('SELECT * FROM gather_inventory WHERE guild_id=? AND user_id=? AND item_id=?').get(gid, uid, item.id);
+  const doneQuests = [
+    ...bumpQuests(gid, uid, { type: 'gather', kind, itemId: item.id, rarity: item.rarity }),
+    ...bumpQuests(gid, uid, { type: 'rarity', kind, itemId: item.id, rarity: item.rarity }),
+    ...bumpQuests(gid, uid, { type: 'item', kind, itemId: item.id, rarity: item.rarity })
+  ];
+  const st = pool > 0 ? staminaState(gid, uid) : null;
+  return {
+    ok: true, kind, item, isNew: inv.total_caught === 1, count: inv.count,
+    sellPrice: livePrice(gid, item), tool, toolBroke, toolLeft, toolDur: tool.durability,
+    wait, map, cost, pool, stLeft: st ? st.left : null, stMax: st ? st.max : null,
+    doneQuests
+  };
+}
+
 // ---- 指令權限與顯示範圍 ----
 // 三條規則的預設值：採集結果公開讓大家看得到戰績；其餘只給本人；富豪榜僅管理員。
 const GATHER_CMDS = ['釣魚', '挖礦', '伐木', '採集', '狩獵'];
@@ -1997,4 +2056,4 @@ function init(client) {
   console.log('  ↳ 釣魚挖礦模組已載入（冷卻/稀有掉落/商店道具/圖鑑/經濟）');
 }
 
-module.exports = { init, wallet, addCoins, addToBag, seedGuild, seedMaterials, staminaState, staminaBoughtToday, bumpPoints, addPointsBonus, menuResult, safeMenu, RARITY, RARITY_LABEL, sellAllBag, buyThing };
+module.exports = { init, wallet, addCoins, addToBag, seedGuild, seedMaterials, staminaState, staminaBoughtToday, bumpPoints, addPointsBonus, menuResult, safeMenu, RARITY, RARITY_LABEL, sellAllBag, buyThing, doGather };
