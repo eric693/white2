@@ -164,6 +164,29 @@ function plantableSeeds(gid, uid, type) {
   return list.map(sd => ({ seed: sd, have: seedsInBag(gid, uid, sd) })).filter(x => x.have > 0);
 }
 
+// 採收：把所有成熟的作物放進背包。回傳 {ok, lines, value} 或 {empty:true}。Discord 與網頁共用。
+function reap(gid, uid) {
+  const now = Date.now();
+  const ripe = db.prepare('SELECT * FROM crop_plots WHERE guild_id=? AND user_id=? AND ready_at<=?').all(gid, uid, now);
+  if (!ripe.length) return { empty: true };
+  const gained = new Map();
+  db.transaction(() => {
+    for (const r of ripe) {
+      const seed = seedById(gid, r.seed_id);
+      if (!seed) { db.prepare('DELETE FROM crop_plots WHERE guild_id=? AND user_id=? AND plot_type=? AND slot=?').run(gid, uid, r.plot_type, r.slot); continue; }
+      addToBag(gid, uid, seed.product_item_id, seed.yield_count);
+      gained.set(seed.product_item_id, (gained.get(seed.product_item_id) || 0) + seed.yield_count);
+      db.prepare('DELETE FROM crop_plots WHERE guild_id=? AND user_id=? AND plot_type=? AND slot=?').run(gid, uid, r.plot_type, r.slot);
+    }
+  })();
+  let value = 0;
+  const lines = [...gained.entries()].map(([itemId, n]) => {
+    const p = productOf(itemId); if (p) value += n * livePrice(gid, p);
+    return `${p ? (p.emoji || '') + p.name : '產物'} ×${n}`;
+  });
+  return { ok: true, lines, value };
+}
+
 function init(client) {
   for (const [gid] of client.guilds.cache) {
     try { seedCrops(gid); } catch (e) { logError(gid, '種植初始化失敗：', e.message); }
@@ -364,28 +387,11 @@ function init(client) {
 
       // ---- 採收 ----
       if (name === '採收') {
-        const now = Date.now();
-        const ripe = db.prepare('SELECT * FROM crop_plots WHERE guild_id=? AND user_id=? AND ready_at<=?').all(gid, uid, now);
-        if (!ripe.length) return await reply({ content: '目前沒有成熟的作物，再等等吧～用 `/農地` 看剩餘時間。' });
-        const gained = new Map();
-        const tx = db.transaction(() => {
-          for (const r of ripe) {
-            const seed = seedById(gid, r.seed_id);
-            if (!seed) { db.prepare('DELETE FROM crop_plots WHERE guild_id=? AND user_id=? AND plot_type=? AND slot=?').run(gid, uid, r.plot_type, r.slot); continue; }
-            addToBag(gid, uid, seed.product_item_id, seed.yield_count);
-            gained.set(seed.product_item_id, (gained.get(seed.product_item_id) || 0) + seed.yield_count);
-            db.prepare('DELETE FROM crop_plots WHERE guild_id=? AND user_id=? AND plot_type=? AND slot=?').run(gid, uid, r.plot_type, r.slot);
-          }
-        });
-        tx();
-        let value = 0;
-        const lines = [...gained.entries()].map(([itemId, n]) => {
-          const p = productOf(itemId); if (p) value += n * livePrice(gid, p);
-          return `${p ? (p.emoji || '') + p.name : '產物'} ×${n}`;
-        });
+        const r = reap(gid, uid);
+        if (r.empty) return await reply({ content: '目前沒有成熟的作物，再等等吧～用 `/農地` 看剩餘時間。' });
         const embed = new EmbedBuilder().setColor(brandColor()).setTitle('🧺 採收成功')
-          .setDescription(lines.join('\n') + `\n\n已放進背包，用 \`/賣出\` 換 ${gc.currency_name}。`)
-          .setFooter({ text: `全部賣出約 ${value.toLocaleString('en-US')} ${gc.currency_name}` });
+          .setDescription(r.lines.join('\n') + `\n\n已放進背包，用 \`/賣出\` 換 ${gc.currency_name}。`)
+          .setFooter({ text: `全部賣出約 ${r.value.toLocaleString('en-US')} ${gc.currency_name}` });
         return await reply({ embeds: [embed] });
       }
     } catch (e) {
@@ -399,4 +405,4 @@ function init(client) {
   console.log('  ↳ 種植模組已載入（農地種作物／溫室種花卉／採收）');
 }
 
-module.exports = { init, seedCrops, plantSeeds, plantableSeeds, seedsInBag, seedItemOf };
+module.exports = { init, seedCrops, plantSeeds, plantableSeeds, seedsInBag, seedItemOf, reap };

@@ -154,6 +154,30 @@ function nextReadyMs(gid, s) {
   return (s.last_produce_ms || Date.now()) + applySpeed(intervalMs(a), speedFor(gid, s.user_id, 'ranch'));
 }
 
+// 收成：把所有動物累積的產物放進背包。回傳 {ok, lines, value} 或 {empty:true}。Discord 與網頁共用。
+function harvest(gid, uid) {
+  accrue(gid, uid);
+  const slots = db.prepare('SELECT * FROM ranch_slots WHERE guild_id=? AND user_id=? AND pending > 0').all(gid, uid);
+  if (!slots.length) return { empty: true };
+  const gained = new Map();
+  db.transaction(() => {
+    for (const s of slots) {
+      const a = animalById(gid, s.animal_id);
+      if (!a) continue;
+      addToBag(gid, uid, a.product_item_id, s.pending);
+      gained.set(a.product_item_id, (gained.get(a.product_item_id) || 0) + s.pending);
+      db.prepare('UPDATE ranch_slots SET pending=0 WHERE guild_id=? AND user_id=? AND slot=?').run(gid, uid, s.slot);
+    }
+  })();
+  bumpAch(gid, uid, 'harvest_count', 1);
+  let value = 0;
+  const lines = [...gained.entries()].map(([itemId, n]) => {
+    const p = productOf(itemId); if (p) value += n * livePrice(gid, p);
+    return `${p ? (p.emoji || '') + p.name : '產物'} ×${n}`;
+  });
+  return { ok: true, lines, value };
+}
+
 const stealCount = (gid, uid) =>
   (db.prepare('SELECT count FROM ranch_steal WHERE guild_id=? AND user_id=? AND day=?').get(gid, uid, today()) || {}).count || 0;
 function bumpSteal(gid, uid) {
@@ -557,29 +581,11 @@ function init(client) {
 
       // ---- 收成 ----
       if (name === '收成') {
-        accrue(gid, uid);
-        const slots = db.prepare('SELECT * FROM ranch_slots WHERE guild_id=? AND user_id=? AND pending > 0').all(gid, uid);
-        if (!slots.length) return await reply({ content: '目前沒有可收成的產物，動物們還在努力生產中～' });
-        const gained = new Map(); // item_id -> count
-        const tx = db.transaction(() => {
-          for (const s of slots) {
-            const a = animalById(gid, s.animal_id);
-            if (!a) continue;
-            addToBag(gid, uid, a.product_item_id, s.pending);
-            gained.set(a.product_item_id, (gained.get(a.product_item_id) || 0) + s.pending);
-            db.prepare('UPDATE ranch_slots SET pending=0 WHERE guild_id=? AND user_id=? AND slot=?').run(gid, uid, s.slot);
-          }
-        });
-        tx();
-        bumpAch(gid, uid, 'harvest_count', 1);
-        let value = 0;
-        const lines = [...gained.entries()].map(([itemId, n]) => {
-          const p = productOf(itemId); if (p) value += n * livePrice(gid, p);
-          return `${p ? (p.emoji || '') + p.name : '產物'} ×${n}`;
-        });
+        const r = harvest(gid, uid);
+        if (r.empty) return await reply({ content: '目前沒有可收成的產物，動物們還在努力生產中～' });
         const embed = new EmbedBuilder().setColor(brandColor()).setTitle('🧺 收成成功')
-          .setDescription(lines.join('\n') + `\n\n已放進背包，用 \`/賣出\` 換 ${gc.currency_name}。`)
-          .setFooter({ text: `全部賣出約 ${value.toLocaleString('en-US')} ${gc.currency_name}` });
+          .setDescription(r.lines.join('\n') + `\n\n已放進背包，用 \`/賣出\` 換 ${gc.currency_name}。`)
+          .setFooter({ text: `全部賣出約 ${r.value.toLocaleString('en-US')} ${gc.currency_name}` });
         return await reply({ embeds: [embed] });
       }
 
@@ -925,4 +931,4 @@ function init(client) {
   console.log('  ↳ 牧場經營模組已載入（養動物/每日產出/收成/偷偷樂/孵化室）');
 }
 
-module.exports = { init, seedRanch, hatchEgg, partnerHarvest };
+module.exports = { init, seedRanch, hatchEgg, partnerHarvest, harvest };

@@ -93,7 +93,7 @@ function collect(gid, uid) {
 }
 
 // ---- 版面（手機卡片式，可安裝 PWA）----
-function render(d, token) {
+function render(d, token, msg) {
   const c = d.cur;
   const money = (n) => `${c.emoji} ${num(n)}`;
   const coins = d.wallet.coins;
@@ -101,6 +101,9 @@ function render(d, token) {
 
   const card = (title, body) => `<section class="card"><h2>${title}</h2>${body}</section>`;
   const row = (l, r) => `<div class="row"><span>${l}</span><b>${r}</b></div>`;
+  // 一鍵領取按鈕（表單 POST，安全動作：只把自己的東西收進自己身上）
+  const actBtn = (path, label) => `<form method="post" action="/play/${token}/${path}" style="margin-top:10px"><button class="act">${label}</button></form>`;
+  const flash = msg ? `<div class="flash">${esc(msg)}</div>` : '';
 
   // 稅單
   let taxBody;
@@ -127,15 +130,16 @@ function render(d, token) {
     : `<p class="muted">目前沒有持股。</p>`;
 
   // 魚缸 / 牧場 / 農地
-  const aqBody = d.fish.length
+  const aqBody = (d.fish.length
     ? d.fish.map(f => `<div class="row"><span>${esc((f.emoji || '🐠') + f.name)}（第 ${f.slot + 1} 格）</span><b>未領 ${money(f.pending)}</b></div>`).join('') + `<div class="tot">可撈金 <b>${money(d.fishPending)}</b></div>`
-    : `<p class="muted">魚缸還沒養魚。</p>`;
-  const ranchBody = d.animals.length
+    : `<p class="muted">魚缸還沒養魚。</p>`) + (d.fishPending > 0 ? actBtn('collect', `🪙 一鍵撈金 ${money(d.fishPending)}`) : '');
+  const ranchBody = (d.animals.length
     ? d.animals.map(a => `<div class="row"><span>${esc((a.emoji || '🐔') + a.name)}（第 ${a.slot + 1} 格）</span><b>未領 ${money(a.pending)}</b></div>`).join('') + `<div class="tot">可收 <b>${money(d.ranchPending)}</b></div>`
-    : `<p class="muted">牧場還沒養動物。</p>`;
-  const cropBody = d.plots.length
+    : `<p class="muted">牧場還沒養動物。</p>`) + (d.ranchPending > 0 ? actBtn('harvest', '🧺 一鍵收成') : '');
+  const readyN = d.plots.filter(p => p.ready).length;
+  const cropBody = (d.plots.length
     ? d.plots.map(p => `<div class="row"><span>${esc((p.emoji || '🌱') + p.name)}（${p.plot_type === 'greenhouse' ? '溫室' : '農地'} 第 ${p.slot + 1} 格）</span><b class="${p.ready ? 'up' : 'muted'}">${p.ready ? '✅ 可採收' : '⏳ 成長中'}</b></div>`).join('')
-    : `<p class="muted">農地／溫室還沒種東西。</p>`;
+    : `<p class="muted">農地／溫室還沒種東西。</p>`) + (readyN > 0 ? actBtn('reap', `🧺 一鍵採收（${readyN} 格成熟）`) : '');
 
   // 任務
   const qBody = d.quests.length
@@ -191,12 +195,16 @@ td:nth-child(n+2),th:nth-child(n+2){text-align:right}
 .bar{height:8px;background:#f2e8f2;border-radius:99px;overflow:hidden}
 .bar span{display:block;height:100%;background:linear-gradient(90deg,#e879b9,#8b7cf6);border-radius:99px}
 .foot{text-align:center;color:var(--muted);font-size:12px;margin-top:6px}
+.act{width:100%;padding:11px;border:0;border-radius:12px;background:linear-gradient(135deg,#e879b9,#8b7cf6);color:#fff;font-size:15px;font-weight:700;cursor:pointer}
+.act:active{opacity:.85}
+.flash{background:#e7f7ec;border:1px solid #b7e4c7;color:#1b6b3a;border-radius:14px;padding:12px 14px;font-size:14px}
 </style></head><body><div class="wrap">
   <div class="hero">
     <div class="name">👋 ${esc(d.username)}</div>
     <div class="coins">${c.emoji} ${num(coins)} <span style="font-size:15px">${esc(c.name)}</span></div>
     <div class="sub">總市值（含持股 ${num(d.stockVal)}）　·　背包約 ${num(d.bagValue)}</div>
   </div>
+  ${flash}
   ${card('🧾 稅單（本期預估）', taxBody)}
   ${card('📈 我的持股', stockBody)}
   ${card('🐠 魚缸', aqBody)}
@@ -204,7 +212,7 @@ td:nth-child(n+2),th:nth-child(n+2){text-align:right}
   ${card('🌾 農地／溫室', cropBody)}
   ${card('📜 任務', qBody)}
   ${card('🎒 背包', bagBody)}
-  <div class="foot">唯讀畫面 · 資料每次開啟即時更新 · 操作請回 Discord。重新整理看最新。</div>
+  <div class="foot">撈金／收成／採收可直接在這裡一鍵領取；買賣、兌換、股票等其他操作目前請回 Discord。重新整理看最新資料。</div>
 </div></body></html>`;
 }
 
@@ -230,8 +238,30 @@ router.get('/play/:token', (req, res) => {
   if (!t) return res.status(403).type('html').send('<h2 style="font-family:sans-serif">連結無效或已過期</h2><p>請回 Discord 用 <b>/家園網頁</b> 或 <b>/遊戲</b> 重新取得你的連結。</p>');
   const d = collect(t.gid, t.uid);
   res.set('Cache-Control', 'no-cache');
-  res.type('html').send(render(d, req.params.token));
+  res.type('html').send(render(d, req.params.token, String(req.query.msg || '').slice(0, 200)));
 });
+
+// ---- 安全的「一鍵領取」動作（只把自己的東西收進自己身上，連結被轉傳也無害）----
+function doAct(req, res, fn) {
+  const t = parseToken(req.params.token);
+  if (!t) return res.redirect('/play');
+  let msg = '';
+  try { msg = fn(t.gid, t.uid) || ''; } catch { msg = '操作失敗，請稍後再試。'; }
+  res.redirect(`/play/${req.params.token}?msg=${encodeURIComponent(msg)}`);
+}
+router.post('/play/:token/collect', (req, res) => doAct(req, res, (gid, uid) => {
+  const uname = (db.prepare('SELECT username FROM econ_wallets WHERE guild_id=? AND user_id=?').get(gid, uid) || {}).username || '玩家';
+  const r = require('../bot/features/aquarium').collect(gid, uid, uname);
+  return r.error ? r.error : '🪙 撈金成功，魚缸的星幣已領進錢包！';
+}));
+router.post('/play/:token/harvest', (req, res) => doAct(req, res, (gid, uid) => {
+  const r = require('../bot/features/ranch').harvest(gid, uid);
+  return r.empty ? '目前沒有可收成的產物。' : `🧺 收成成功：${r.lines.join('、')}，已放進背包。`;
+}));
+router.post('/play/:token/reap', (req, res) => doAct(req, res, (gid, uid) => {
+  const r = require('../bot/features/crops').reap(gid, uid);
+  return r.empty ? '目前沒有成熟的作物。' : `🧺 採收成功：${r.lines.join('、')}，已放進背包。`;
+}));
 
 router.get('/play', (req, res) => {
   res.type('html').send('<h2 style="font-family:sans-serif">璃白冒險 App</h2><p>請回 Discord 用 <b>/遊戲</b>（或 /家園網頁）取得你的專屬連結，就能在手機上看自己的冒險數據，還能「加到主畫面」當 App 用。</p>');
