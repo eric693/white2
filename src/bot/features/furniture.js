@@ -268,7 +268,8 @@ function furniturePanel(gid, uid, uname) {
   const canStore = owned.filter(o => o.placed > 0);
   if (canPlace.length) {
     rows.push(new ActionRowBuilder().addComponents(
-      new StringSelectMenuBuilder().setCustomId('furnplace').setPlaceholder('🪑 擺出來（有擺才有加成）')
+      new StringSelectMenuBuilder().setCustomId('furnplace').setPlaceholder('🪑 擺出來（可勾選多件，有擺才有加成）')
+        .setMinValues(1).setMaxValues(Math.min(canPlace.length, 25))
         .addOptions(canPlace.slice(0, 25).map(o => ({
           label: `${o.emoji || ''}${o.name}`.slice(0, 100),
           description: `擁有 ${o.count} 件，已擺 ${o.placed} 件`.slice(0, 100),
@@ -277,7 +278,8 @@ function furniturePanel(gid, uid, uname) {
   }
   if (canStore.length && rows.length < 5) {
     rows.push(new ActionRowBuilder().addComponents(
-      new StringSelectMenuBuilder().setCustomId('furnstore').setPlaceholder('📦 收起來（放回倉庫）')
+      new StringSelectMenuBuilder().setCustomId('furnstore').setPlaceholder('📦 收起來（可勾選多件放回倉庫）')
+        .setMinValues(1).setMaxValues(Math.min(canStore.length, 25))
         .addOptions(canStore.slice(0, 25).map(o => ({
           label: `${o.emoji || ''}${o.name}`.slice(0, 100),
           description: `已擺 ${o.placed} 件　點一下收起 1 件`.slice(0, 100),
@@ -357,11 +359,19 @@ function init(client) {
         }).catch(() => {});
       }
       if (i.isStringSelectMenu() && (i.customId === 'furnplace' || i.customId === 'furnstore')) {
-        const [fid, act] = i.values[0].split(':');
-        const out = togglePlace(gid, uid, uname, parseInt(fid, 10), act === 'on');
-        if (out.error) return i.reply({ content: out.error, ...eph }).catch(() => {});
+        // 可一次勾選多件：逐件處理，最後回報成功幾件、有沒有卡上限
+        const okNames = []; let lastErr = '';
+        for (const v of i.values) {
+          const [fid, act] = v.split(':');
+          const out = togglePlace(gid, uid, uname, parseInt(fid, 10), act === 'on');
+          if (out.error) lastErr = out.error; else okNames.push(fid);
+        }
         await i.update(furniturePanel(gid, uid, uname)).catch(() => {});
-        return i.followUp({ content: out.ok, ...eph }).catch(() => {});
+        const verb = i.customId === 'furnplace' ? '擺出' : '收起';
+        const msg = okNames.length
+          ? `✅ 已${verb} **${okNames.length}** 件${lastErr ? `（其餘：${lastErr}）` : '。'}`
+          : (lastErr || '沒有變更。');
+        return i.followUp({ content: msg, ...eph }).catch(() => {});
       }
       if (i.isStringSelectMenu() && i.customId === 'furnsell') {
         const out = sellFurniture(gid, uid, uname, parseInt(i.values[0], 10));
