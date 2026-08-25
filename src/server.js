@@ -109,6 +109,8 @@ app.use('/api', require('./routes/contest'));
 app.use('/api', require('./routes/users'));
 // 玩家的個人家園網頁（唯讀，不需登入，網址帶簽章 token）
 app.use('/', require('./routes/homepage'));
+// 玩家遊戲 App（Phase 1 唯讀）：/play/:token，手機可加到主畫面當 PWA
+app.use('/', require('./routes/play'));
 
 // 公開功能介紹頁（乾淨網址 /intro，不需登入）
 // PWA：manifest 與 service worker 要從網站根目錄提供，sw.js 不能被快取住

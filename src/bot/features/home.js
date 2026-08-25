@@ -324,14 +324,19 @@ function checkinPanel(gid, uid, uname) {
  *  漂亮的完整版走網頁；連結帶簽章，別人拿到也只看得到你的家而且改不了。 */
 function webPanel(gid, uid, uname) {
   homeOf(gid, uid, uname);   // 確保有家才給連結
-  const url = `${PUBLIC_URL}/home/${homeToken(gid, uid)}`;
+  const tk = homeToken(gid, uid);
+  const url = `${PUBLIC_URL}/home/${tk}`;
+  const playUrl = `${PUBLIC_URL}/play/${tk}`;
   const embed = new EmbedBuilder().setColor(brandColor()).setTitle('🖼️ 你的家園．完整網頁版')
-    .setDescription('點下面的按鈕打開你的專屬頁面 —— 房屋、升級進度、廚房、家具、寵物、成就、好感度、圖鑑全部一頁看完。\n\n這是**唯讀**頁面，所有操作還是回 Discord 這邊點按鈕。資料即時同步，重新整理就是最新的。')
-    .setFooter({ text: '這條連結是你專屬的，別人拿到也只會看到你的家，而且改不了任何東西' });
+    .setDescription('點下面的按鈕打開你的專屬頁面 —— 房屋、升級進度、廚房、家具、寵物、成就、好感度、圖鑑全部一頁看完。\n\n' +
+      '🎮 **「遊戲數據 App」** 則是你的冒險總覽：錢包、稅單、持股、魚缸、牧場、農地、任務、背包一頁看完，**手機還能「加到主畫面」當 App 用**。\n\n' +
+      '兩個都是**唯讀**頁面，操作還是回 Discord 點按鈕。資料即時同步，重新整理就是最新的。')
+    .setFooter({ text: '這條連結是你專屬的，別人拿到也只會看到你的資料，而且改不了任何東西' });
   return {
     embeds: [embed],
     components: [new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setLabel('🖼️ 打開我的家園頁面').setStyle(ButtonStyle.Link).setURL(url))]
+      new ButtonBuilder().setLabel('🖼️ 我的家園頁面').setStyle(ButtonStyle.Link).setURL(url),
+      new ButtonBuilder().setLabel('🎮 遊戲數據 App').setStyle(ButtonStyle.Link).setURL(playUrl))]
   };
 }
 
@@ -542,7 +547,16 @@ function init(client) {
       }
 
       if (!i.isChatInputCommand()) return;
-      if (!['我的家', '升級家園', '家園加成', '簽到', '家園網頁', '家園卡'].includes(i.commandName)) return;
+      if (!['我的家', '升級家園', '家園加成', '簽到', '家園網頁', '家園卡', '遊戲'].includes(i.commandName)) return;
+      // /遊戲：直接給「遊戲數據 App」連結，不受家園系統開關影響
+      if (i.commandName === '遊戲') {
+        const tk = homeToken(gid, uid);
+        const embed = new EmbedBuilder().setColor(brandColor()).setTitle('🎮 你的遊戲數據 App')
+          .setDescription('打開你的冒險總覽：錢包、稅單、持股、魚缸、牧場、農地、任務、背包一頁看完。\n📱 手機可以「**加到主畫面**」當 App 用。\n\n唯讀畫面，操作還是回 Discord。資料即時更新，重新整理就是最新的。')
+          .setFooter({ text: '這條連結是你專屬的，別人看不到你的資料、也改不了' });
+        return i.reply({ embeds: [embed], components: [new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setLabel('🎮 打開遊戲數據 App').setStyle(ButtonStyle.Link).setURL(`${PUBLIC_URL}/play/${tk}`))], flags: MessageFlags.Ephemeral });
+      }
       seedHome(gid);
       const c = hcfg(gid);
       if (!c.enabled) return i.reply({ content: '家園系統目前停用中。', flags: MessageFlags.Ephemeral });

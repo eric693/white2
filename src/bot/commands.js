@@ -177,6 +177,7 @@ const builders = [
   new SlashCommandBuilder().setName('家園卡').setDescription('把你的家園畫成一張圖（房屋、寵物、稱號、加成一次看完）'),
   new SlashCommandBuilder().setName('簽到').setDescription('回小屋簽到領星幣（連續加碼，房子越大領越多）'),
   new SlashCommandBuilder().setName('家園網頁').setDescription('取得你的個人家園網頁連結（完整漂亮版）'),
+  new SlashCommandBuilder().setName('遊戲').setDescription('取得你的遊戲數據 App 連結（錢包/稅單/持股/魚缸/牧場/農地/任務，手機可安裝）'),
   new SlashCommandBuilder().setName('家具').setDescription('買家具、擺放或收起（只有擺出來才有加成）'),
   new SlashCommandBuilder().setName('廚房').setDescription('蓋廚房、升級、做菜、領取料理'),
   new SlashCommandBuilder().setName('烹飪').setDescription('打開廚房做菜'),
