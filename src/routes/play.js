@@ -23,6 +23,36 @@ function parseToken(token) {
   return gid && uid ? { gid, uid } : null;
 }
 
+// ---- Phase 2：Discord OAuth 登入 → 簽章 session cookie（花錢動作才需要）----
+// 唯讀連結可轉傳（無害）；但買賣會花星幣，所以要「本人用 Discord 登入」才解鎖。
+// 登入時比對 OAuth 拿到的 Discord user id 必須等於連結綁定的 uid，別人登入也不能動你的帳。
+const SESS_MAX_AGE = 7 * 24 * 3600;   // 7 天
+function makeSession(gid, uid) {
+  const body = Buffer.from(`${gid}.${uid}.${Date.now() + SESS_MAX_AGE * 1000}`).toString('base64url');
+  const sig = crypto.createHmac('sha256', SECRET).update('sess.' + body).digest('base64url').slice(0, 20);
+  return `${body}.${sig}`;
+}
+function readSession(req) {
+  const raw = (req.headers.cookie || '').split(';').map(s => s.trim()).find(s => s.startsWith('play_sess='));
+  if (!raw) return null;
+  const [body, sig] = raw.slice('play_sess='.length).split('.');
+  if (!body || !sig) return null;
+  const want = crypto.createHmac('sha256', SECRET).update('sess.' + body).digest('base64url').slice(0, 20);
+  if (sig.length !== want.length || !crypto.timingSafeEqual(Buffer.from(sig), Buffer.from(want))) return null;
+  const [gid, uid, exp] = Buffer.from(body, 'base64url').toString().split('.');
+  if (!gid || !uid || Date.now() > Number(exp)) return null;
+  return { gid, uid };
+}
+// 這個 request 是否已用本人身分登入、且對應到連結綁定的同一位玩家
+function authedFor(req, t) {
+  const s = readSession(req);
+  return !!(s && t && s.gid === t.gid && s.uid === t.uid);
+}
+function redirectUri(req) {
+  const proto = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+  return `${proto}://${req.get('host')}/play/auth/callback`;
+}
+
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const num = (n) => Number(n || 0).toLocaleString('en-US');
 const livePrice = (() => { try { return require('../util/market').livePrice; } catch { return (_g, it) => it.price || 0; } })();
@@ -92,8 +122,15 @@ function collect(gid, uid) {
   return { gid, uid, username, cur, wallet, tax, holdings, stockVal, fish, fishPending, animals, ranchPending, plots, quests, bag, bagValue };
 }
 
+// 掛牌股票（給買賣下拉用）
+function tradableStocks(gid) {
+  try {
+    return db.prepare('SELECT code, name, emoji, price FROM stock_symbols WHERE guild_id=? ORDER BY code').all(gid);
+  } catch { return []; }
+}
+
 // ---- 版面（手機卡片式，可安裝 PWA）----
-function render(d, token, msg) {
+function render(d, token, msg, authed) {
   const c = d.cur;
   const money = (n) => `${c.emoji} ${num(n)}`;
   const coins = d.wallet.coins;
@@ -153,6 +190,27 @@ function render(d, token, msg) {
       `<div class="tot">全部賣掉約 <b>${money(d.bagValue)}</b></div>`
     : `<p class="muted">背包是空的。</p>`;
 
+  // 買賣股票（登入後才出現；花星幣所以要本人登入）
+  const opts = tradableStocks(d.gid).map(s =>
+    `<option value="${esc(s.code)}">${esc((s.emoji || '') + s.name)} ${esc(s.code)}｜現價 ${num(s.price)}</option>`).join('');
+  const tradeBody = opts
+    ? `<form method="post" action="/play/${token}/stock" class="trade">
+        <select name="code">${opts}</select>
+        <div class="seg">
+          <label><input type="radio" name="side" value="buy" checked> 📥 買進</label>
+          <label><input type="radio" name="side" value="sell"> 📤 賣出</label>
+        </div>
+        <input name="shares" type="text" inputmode="numeric" autocomplete="off" placeholder="股數（賣出可填「全部」）">
+        <button class="act">送出交易</button>
+      </form>
+      <p class="muted">交易會扣交易稅；買進受每人持股上限限制。</p>`
+    : `<p class="muted">目前沒有掛牌的股票。</p>`;
+
+  // 登入狀態列：唯讀時給「登入解鎖」，登入後給操作區＋登出
+  const authBar = authed
+    ? `<div class="authbar ok">🔓 已用本人身分登入，可在這裡買賣操作　·　<a href="/play/${token}/logout">登出</a></div>`
+    : `<form method="get" action="/play/${token}/login" class="authbar"><button class="act">🔐 用 Discord 登入，解鎖買賣操作</button><div class="muted" style="margin-top:6px">看數據免登入；要花星幣（買賣、兌換等）才需登入，確保是你本人。</div></form>`;
+
   const manifest = `/play/${token}/manifest.json`;
   return `<!doctype html><html lang="zh-Hant"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
@@ -198,6 +256,12 @@ td:nth-child(n+2),th:nth-child(n+2){text-align:right}
 .act{width:100%;padding:11px;border:0;border-radius:12px;background:linear-gradient(135deg,#e879b9,#8b7cf6);color:#fff;font-size:15px;font-weight:700;cursor:pointer}
 .act:active{opacity:.85}
 .flash{background:#e7f7ec;border:1px solid #b7e4c7;color:#1b6b3a;border-radius:14px;padding:12px 14px;font-size:14px}
+.authbar{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px}
+.authbar.ok{background:#eef7ff;border-color:#cfe6ff;color:#1c5a8f;font-size:13px}
+.authbar a{color:#8b7cf6}
+.trade select,.trade input{width:100%;padding:11px;margin:0 0 10px;border:1px solid var(--line);border-radius:12px;font-size:15px;background:#fff;color:var(--ink)}
+.trade .seg{display:flex;gap:10px;margin-bottom:10px}
+.trade .seg label{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:9px;border:1px solid var(--line);border-radius:12px;font-size:14px;cursor:pointer}
 </style></head><body><div class="wrap">
   <div class="hero">
     <div class="name">👋 ${esc(d.username)}</div>
@@ -205,14 +269,16 @@ td:nth-child(n+2),th:nth-child(n+2){text-align:right}
     <div class="sub">總市值（含持股 ${num(d.stockVal)}）　·　背包約 ${num(d.bagValue)}</div>
   </div>
   ${flash}
+  ${authBar}
   ${card('🧾 稅單（本期預估）', taxBody)}
   ${card('📈 我的持股', stockBody)}
+  ${authed ? card('💹 買賣股票', tradeBody) : ''}
   ${card('🐠 魚缸', aqBody)}
   ${card('🐔 牧場', ranchBody)}
   ${card('🌾 農地／溫室', cropBody)}
   ${card('📜 任務', qBody)}
   ${card('🎒 背包', bagBody)}
-  <div class="foot">撈金／收成／採收可直接在這裡一鍵領取；買賣、兌換、股票等其他操作目前請回 Discord。重新整理看最新資料。</div>
+  <div class="foot">撈金／收成／採收免登入就能一鍵領取；買賣股票等花星幣的操作，登入後就能在這裡做。兌換、貸款等其他操作仍可回 Discord。重新整理看最新資料。</div>
 </div></body></html>`;
 }
 
@@ -238,7 +304,52 @@ router.get('/play/:token', (req, res) => {
   if (!t) return res.status(403).type('html').send('<h2 style="font-family:sans-serif">連結無效或已過期</h2><p>請回 Discord 用 <b>/家園網頁</b> 或 <b>/遊戲</b> 重新取得你的連結。</p>');
   const d = collect(t.gid, t.uid);
   res.set('Cache-Control', 'no-cache');
-  res.type('html').send(render(d, req.params.token, String(req.query.msg || '').slice(0, 200)));
+  res.type('html').send(render(d, req.params.token, String(req.query.msg || '').slice(0, 200), authedFor(req, t)));
+});
+
+// ---- Discord OAuth：登入 → 回呼 → 種下 session cookie ----
+router.get('/play/:token/login', (req, res) => {
+  const t = parseToken(req.params.token);
+  if (!t) return res.redirect('/play');
+  const p = new URLSearchParams({
+    client_id: process.env.DISCORD_CLIENT_ID || '', redirect_uri: redirectUri(req),
+    response_type: 'code', scope: 'identify', state: req.params.token, prompt: 'consent'
+  });
+  res.redirect('https://discord.com/oauth2/authorize?' + p.toString());
+});
+
+router.get('/play/auth/callback', async (req, res) => {
+  const token = String(req.query.state || '');
+  const t = parseToken(token);
+  if (!t) return res.status(400).type('html').send('<h2 style="font-family:sans-serif">登入狀態無效</h2><p>請回 Discord 用 /遊戲 重新取得連結。</p>');
+  const code = req.query.code;
+  const back = (m) => res.redirect(`/play/${token}?msg=${encodeURIComponent(m)}`);
+  if (!code) return back('已取消登入。');
+  try {
+    const form = new URLSearchParams({
+      client_id: process.env.DISCORD_CLIENT_ID || '', client_secret: process.env.DISCORD_CLIENT_SECRET || '',
+      grant_type: 'authorization_code', code: String(code), redirect_uri: redirectUri(req)
+    });
+    const tokRes = await fetch('https://discord.com/api/oauth2/token', {
+      method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: form.toString()
+    });
+    const tok = await tokRes.json();
+    if (!tok || !tok.access_token) return back('登入失敗，請再試一次。');
+    const meRes = await fetch('https://discord.com/api/users/@me', { headers: { Authorization: `Bearer ${tok.access_token}` } });
+    const me = await meRes.json();
+    if (!me || !me.id) return back('讀不到 Discord 帳號，請再試一次。');
+    if (me.id !== t.uid) return res.status(403).type('html').send('<h2 style="font-family:sans-serif">帳號不符</h2><p>你登入的 Discord 帳號跟這個連結綁定的不是同一人，無法代為操作。請用自己的 /遊戲 連結。</p>');
+    res.setHeader('Set-Cookie',
+      `play_sess=${makeSession(t.gid, t.uid)}; Path=/play; Max-Age=${SESS_MAX_AGE}; HttpOnly; Secure; SameSite=Lax`);
+    return back('🔓 已登入，現在可以在這裡買賣操作了！');
+  } catch (e) {
+    return back('登入過程出錯，請稍後再試。');
+  }
+});
+
+router.get('/play/:token/logout', (req, res) => {
+  res.setHeader('Set-Cookie', 'play_sess=; Path=/play; Max-Age=0; HttpOnly; Secure; SameSite=Lax');
+  res.redirect(`/play/${req.params.token}?msg=${encodeURIComponent('已登出。')}`);
 });
 
 // ---- 安全的「一鍵領取」動作（只把自己的東西收進自己身上，連結被轉傳也無害）----
@@ -261,6 +372,30 @@ router.post('/play/:token/harvest', (req, res) => doAct(req, res, (gid, uid) => 
 router.post('/play/:token/reap', (req, res) => doAct(req, res, (gid, uid) => {
   const r = require('../bot/features/crops').reap(gid, uid);
   return r.empty ? '目前沒有成熟的作物。' : `🧺 採收成功：${r.lines.join('、')}，已放進背包。`;
+}));
+
+// ---- 需登入的花錢動作（session 必須對應到連結綁定的同一位玩家）----
+function doAuthedAct(req, res, fn) {
+  const t = parseToken(req.params.token);
+  if (!t) return res.redirect('/play');
+  if (!authedFor(req, t)) return res.redirect(`/play/${req.params.token}/login`);
+  let msg = '';
+  try { msg = fn(t.gid, t.uid) || ''; } catch (e) { msg = '操作失敗，請稍後再試。'; }
+  res.redirect(`/play/${req.params.token}?msg=${encodeURIComponent(msg)}`);
+}
+router.post('/play/:token/stock', (req, res) => doAuthedAct(req, res, (gid, uid) => {
+  const stock = require('../bot/features/stock');
+  const code = String((req.body && req.body.code) || '').trim();
+  const side = (req.body && req.body.side) === 'sell' ? 'sell' : 'buy';
+  const rawShares = String((req.body && req.body.shares) || '').trim();
+  if (!code) return '請先選一支股票。';
+  const uname = (db.prepare('SELECT username FROM econ_wallets WHERE guild_id=? AND user_id=?').get(gid, uid) || {}).username || '玩家';
+  const r = side === 'sell'
+    ? stock.sell(gid, uid, uname, code, rawShares || '全部')
+    : stock.buy(gid, uid, uname, code, Math.floor(Number(rawShares)));
+  if (r && r.error) return r.error;
+  const coins = (db.prepare('SELECT coins FROM econ_wallets WHERE guild_id=? AND user_id=?').get(gid, uid) || {}).coins || 0;
+  return `${side === 'sell' ? '📤 賣出' : '📥 買進'}成交！目前餘額 ${num(coins)}。`;
 }));
 
 router.get('/play', (req, res) => {
