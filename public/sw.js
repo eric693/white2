@@ -20,6 +20,25 @@ self.addEventListener('activate', (e) => {
   );
 });
 
+// ---- Web Push（/play App 推播通知）----
+self.addEventListener('push', (e) => {
+  let d = {};
+  try { d = e.data ? e.data.json() : {}; } catch { d = { body: e.data && e.data.text ? e.data.text() : '' }; }
+  const title = d.title || '璃白冒險';
+  e.waitUntil(self.registration.showNotification(title, {
+    body: d.body || '', tag: d.tag || 'white2', renotify: true,
+    icon: '/icon-192.png', badge: '/icon-192.png', data: { url: d.url || '/play' }
+  }));
+});
+self.addEventListener('notificationclick', (e) => {
+  e.notification.close();
+  const url = (e.notification.data && e.notification.data.url) || '/play';
+  e.waitUntil(self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
+    for (const c of list) { if (c.url.includes('/play') && 'focus' in c) return c.focus(); }
+    return self.clients.openWindow ? self.clients.openWindow(url) : null;
+  }));
+});
+
 self.addEventListener('fetch', (e) => {
   const url = new URL(e.request.url);
   // API、上傳檔案、跨網域一律直接走網路，不進快取

@@ -312,6 +312,16 @@ async function sweepOverdue(client, gid) {
         .addFields({ name: '被沒收的抵押品', value: items.map(x => `・${x.detail} — 估值 ${money(gid, x.value)}`).join('\n').slice(0, 1024) || '—' })
         .setFooter({ text: '債務已一併結清，之後可以重新貸款' });
     if (u) await u.send({ embeds: [emb] }).catch(() => {});
+    // 推播到 /play App（best-effort，有訂閱才會收到）
+    try {
+      require('../../push').sendPush(gid, loan.user_id, {
+        title: '⚠️ 貸款到期',
+        body: loan.loan_type === 'credit'
+          ? `信用貸款到期，已直接扣款 ${money(gid, loan.owed)}。`
+          : '貸款到期未還，抵押品已被沒收。',
+        tag: 'loan'
+      });
+    } catch (e) {}
     if (c.channel) {
       const ch = await client.channels.fetch(c.channel).catch(() => null);
       if (ch) await ch.send({ embeds: [emb.setDescription(`<@${loan.user_id}> ` + emb.data.description)] }).catch(() => {});

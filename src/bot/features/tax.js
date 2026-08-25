@@ -406,6 +406,17 @@ async function runGuild(client, gid, { force = false, dryRun = false } = {}) {
       db.prepare("UPDATE tax_config SET last_period=?, last_run_at=datetime('now','localtime') WHERE guild_id=?").run(period, gid);
     });
     pay();
+    // 推播到 /play App（best-effort，有訂閱才會收到）
+    for (const b of bills) {
+      const arr = c.no_debt ? Math.max(0, b.total - (b.paid ?? 0)) : 0;
+      try {
+        require('../../push').sendPush(gid, b.userId, {
+          title: '🧾 本期稅單已開徵',
+          body: `本期課稅 ${money(gid, b.paid ?? b.total)}` + (arr > 0 ? `，另有欠稅 ${money(gid, arr)} 下期補收（可在 App 或 /稅單 補繳）。` : '。'),
+          tag: 'tax'
+        });
+      } catch (e) {}
+    }
   }
   if (dryRun) for (const b of bills) b.paid = c.no_debt ? Math.max(0, Math.min(b.total, b.balance)) : b.total;
   const sum = bills.reduce((s, b) => s + (b.paid ?? b.total), 0);

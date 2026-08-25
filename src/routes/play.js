@@ -4,6 +4,7 @@
 const express = require('express');
 const crypto = require('crypto');
 const { db, guildConfig } = require('../db');
+const push = require('../push');
 
 const router = express.Router();
 const SECRET = process.env.JWT_SECRET || 'dev-insecure-secret-change-me';
@@ -261,6 +262,36 @@ function render(d, token, msg, authed) {
     <h3>🌱 買種子</h3>${selForm('buyseed', seeds, s => `<option value="${s.id}">${esc((s.emoji || '') + s.name)}｜${num(s.seed_price)}（${s.plot_type === 'greenhouse' ? '溫室' : '農地'}）</option>`, '買', true)}
     <h3>🌾 種植（種背包裡的種子）</h3>${selForm('plant', plantable, p => `<option value="${p.id}">${esc((p.emoji || '') + p.name)}｜有 ${p.have}（${p.type === 'greenhouse' ? '溫室' : '農地'}）</option>`, '種', true)}`;
 
+  // 推播通知（登入後、且伺服器有設定 VAPID 才出現）
+  const pushOn = authed && push.enabled() && push.publicKey();
+  const subscribed = pushOn && push.hasSubscription(d.gid, d.uid);
+  const pushBody = `
+    <button class="act" id="pushbtn">${subscribed ? '🔔 推播已開啟（可重新綁定這台裝置）' : '🔔 開啟推播通知'}</button>
+    <p class="muted" id="pushmsg">開啟後，稅單開徵、貸款到期、魚缸/牧場滿了會推播到手機。iPhone 要先把本頁「加到主畫面」再開啟。</p>
+    ${subscribed ? actBtn('push-test', '🔔 傳一則測試推播') : ''}`;
+  const pushScript = pushOn ? `<script>
+  (function(){
+    var VAPID=${JSON.stringify(push.publicKey())};
+    var btn=document.getElementById('pushbtn'),msg=document.getElementById('pushmsg');
+    if(!btn)return;
+    if(!('serviceWorker'in navigator)||!('PushManager'in window)){btn.disabled=true;msg.textContent='這個裝置或瀏覽器不支援推播（iPhone 需 iOS16.4+ 且加到主畫面）。';return;}
+    function b64(s){var p='='.repeat((4-s.length%4)%4);var b=(s+p).replace(/-/g,'+').replace(/_/g,'/');var r=atob(b);var a=new Uint8Array(r.length);for(var i=0;i<r.length;i++)a[i]=r.charCodeAt(i);return a;}
+    btn.onclick=async function(){
+      try{
+        btn.disabled=true;msg.textContent='處理中…';
+        var reg=await navigator.serviceWorker.register('/sw.js');await navigator.serviceWorker.ready;
+        var perm=await Notification.requestPermission();
+        if(perm!=='granted'){msg.textContent='你沒有允許通知，無法推播。';btn.disabled=false;return;}
+        var sub=await reg.pushManager.getSubscription();
+        if(!sub)sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64(VAPID)});
+        var res=await fetch(location.pathname.replace(/\\/$/,'')+'/push-subscribe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(sub)});
+        if(res.ok){msg.textContent='✅ 已開啟推播！重新整理頁面就能看到測試按鈕。';btn.textContent='🔔 推播已開啟';}
+        else{msg.textContent='開啟失敗，請重試。';btn.disabled=false;}
+      }catch(e){msg.textContent='開啟失敗：'+((e&&e.message)||e);btn.disabled=false;}
+    };
+  })();
+  </script>` : '';
+
   // 登入狀態列：唯讀時給「登入解鎖」，登入後給操作區＋登出
   const authBar = authed
     ? `<div class="authbar ok">🔓 已用本人身分登入，可在這裡買賣操作　·　<a href="/play/${token}/logout">登出</a></div>`
@@ -335,6 +366,7 @@ td:nth-child(n+2),th:nth-child(n+2){text-align:right}
   ${authBar}
   ${card('🧾 稅單（本期預估）', taxBody)}
   ${card('📈 我的持股', stockBody)}
+  ${pushOn ? card('🔔 推播通知', pushBody) : ''}
   ${authed ? card('🎮 玩法（採集）', gameBody) : ''}
   ${authed ? card('💹 買賣股票', tradeBody) : ''}
   ${authed ? card('🛠️ 操作', actionsBody) : ''}
@@ -343,8 +375,8 @@ td:nth-child(n+2),th:nth-child(n+2){text-align:right}
   ${card('🌾 農地／溫室', cropBody)}
   ${card('📜 任務', qBody)}
   ${card('🎒 背包', bagBody)}
-  <div class="foot">撈金／收成／採收免登入就能一鍵領取；買賣股票等花星幣的操作，登入後就能在這裡做。兌換、貸款等其他操作仍可回 Discord。重新整理看最新資料。</div>
-</div></body></html>`;
+  <div class="foot">撈金／收成／採收免登入就能一鍵領取；買賣股票等花星幣的操作，登入後就能在這裡做。重新整理看最新資料。</div>
+</div>${pushScript}</body></html>`;
 }
 
 // ---- 路由 ----
@@ -487,6 +519,23 @@ router.post('/play/:token/gather', (req, res) => doAuthedAct(req, res, (gid, uid
   else if (r.toolLeft != null && r.toolLeft <= 5) bits.push(`工具耐久 ${r.toolLeft}/${r.toolDur}（快壞）`);
   if (r.doneQuests && r.doneQuests.length) bits.push(`📜 任務達成 ${r.doneQuests.length} 個，回 Discord /任務 領獎`);
   return bits.join('｜');
+}));
+
+// 推播：儲存這台裝置的訂閱（fetch/JSON，回 JSON；一樣要本人登入）
+router.post('/play/:token/push-subscribe', (req, res) => {
+  const t = parseToken(req.params.token);
+  if (!t || !authedFor(req, t)) return res.status(403).json({ error: 'not authed' });
+  try {
+    const ok = push.saveSubscription(t.gid, t.uid, req.body);
+    return ok ? res.json({ ok: true }) : res.status(400).json({ error: 'bad subscription' });
+  } catch (e) { return res.status(500).json({ error: 'save failed' }); }
+});
+router.post('/play/:token/push-test', (req, res) => doAuthedActAsync(req, res, async (gid, uid) => {
+  if (!push.enabled()) return '這個伺服器還沒設定推播。';
+  const r = await push.sendPush(gid, uid, { title: '🔔 測試推播', body: '你的推播設定成功了！以後稅單/貸款到期會通知你。', url: `/play/${req.params.token}` });
+  if (r.sent > 0) return `已送出測試推播（${r.sent} 台裝置），看看手機通知～`;
+  if (r.tried > 0) return '裝置沒收到（訂閱可能過期），請再按一次「開啟推播通知」重新綁定。';
+  return '還沒有已訂閱的裝置，請先按「開啟推播通知」。';
 }));
 
 router.post('/play/:token/feed', (req, res) => doAuthedAct(req, res, (gid, uid) => {
