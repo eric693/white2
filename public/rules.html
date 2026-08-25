@@ -558,8 +558,8 @@
   <div class="scroll"><table>
     <thead><tr><th>稅目</th><th class="wrap">課什麼</th><th class="wrap">預設稅額</th></tr></thead>
     <tbody>
-      <tr><td>💰 所得稅</td><td class="wrap">你目前的<strong>星幣餘額</strong></td><td class="wrap">免稅額（2 萬）以上<strong>累進課稅</strong>（只課超過的部分），5%～25%，見下表</td></tr>
-      <tr><td>📈 證券稅</td><td class="wrap">你的<strong>持股市值</strong>（股數 × 現價）</td><td class="wrap">市值的 10%（10 萬以內免稅）；現價是負數的股票不計入，也不會退稅</td></tr>
+      <tr><td>💰 所得稅</td><td class="wrap">你目前的<strong>星幣餘額</strong></td><td class="wrap">免稅額（5 萬）以上<strong>累進課稅</strong>（只課超過的部分），3%～23%，見下表</td></tr>
+      <tr><td>📈 證券稅</td><td class="wrap">你的<strong>持股市值</strong></td><td class="wrap"><strong>目前停收</strong>（抱著股票不再被課持股稅；買賣時只收 1.5% 交易稅）</td></tr>
       <tr><td>🌾 農地稅</td><td class="wrap">正在<strong>種著作物</strong>的格數（空地不課）</td><td class="wrap">農地／溫室各以格計價，前幾格免稅</td></tr>
       <tr><td>🐄 養殖稅</td><td class="wrap">牧場動物數 ＋ 魚缸的魚數</td><td class="wrap">動物／魚各以隻計價，前幾隻免稅</td></tr>
     </tbody>
@@ -567,23 +567,23 @@
 
   <h3>所得稅是「累進課稅」（只課超過的部分）</h3>
   <p>採<strong>累進級距</strong>：<strong>不是整筆課</strong>，而是每一段各用自己的稅率——跨過門檻，<strong>只有超過的那一段</strong>才適用更高的稅率。所以<strong>不會「多賺一塊整筆爆增」</strong>，越有錢的部分才課越重，中低玩家幾乎沒感覺。</p>
-  <p>免稅額 <strong>2 萬</strong>，超過的部分分段課，最高 25%：</p>
+  <p>免稅額 <strong>5 萬</strong>，超過的部分分段課，最高 23%：</p>
   <div class="scroll"><table>
     <thead><tr><th class="wrap">這一段餘額</th><th class="num">稅率</th></tr></thead>
     <tbody>
-      <tr><td class="wrap">2 萬以下（免稅額）</td><td class="num">0%</td></tr>
-      <tr><td class="wrap">2 萬 ～ 6 萬</td><td class="num">5%</td></tr>
-      <tr><td class="wrap">6 萬 ～ 15 萬</td><td class="num">8%</td></tr>
-      <tr><td class="wrap">15 萬 ～ 50 萬</td><td class="num">12%</td></tr>
-      <tr><td class="wrap">50 萬 ～ 200 萬</td><td class="num">16%</td></tr>
-      <tr><td class="wrap">200 萬 ～ 1000 萬</td><td class="num">20%</td></tr>
-      <tr><td class="wrap">1000 萬以上</td><td class="num">25%</td></tr>
+      <tr><td class="wrap">5 萬以下（免稅額）</td><td class="num">0%</td></tr>
+      <tr><td class="wrap">5 萬 ～ 6 萬</td><td class="num">3%</td></tr>
+      <tr><td class="wrap">6 萬 ～ 15 萬</td><td class="num">6%</td></tr>
+      <tr><td class="wrap">15 萬 ～ 50 萬</td><td class="num">10%</td></tr>
+      <tr><td class="wrap">50 萬 ～ 200 萬</td><td class="num">14%</td></tr>
+      <tr><td class="wrap">200 萬 ～ 1000 萬</td><td class="num">18%</td></tr>
+      <tr><td class="wrap">1000 萬以上</td><td class="num">23%</td></tr>
     </tbody>
   </table></div>
   <div class="note">
     <span class="h">怎麼算的（舉例）</span>
-    餘額 <strong>10 萬</strong>：2～6 萬那段 4 萬 ×5%＝2,000，加 6～10 萬那段 4 萬 ×8%＝3,200，<strong>合計 5,200</strong>（有效稅率才 5.2%）。<br>
-    餘額 <strong>100 萬</strong>：分段加起來約 <strong>13 萬</strong>（13%）。越往上、超過的部分才課越重。
+    餘額 <strong>10 萬</strong>：5～6 萬那段 1 萬 ×3%＝300，加 6～10 萬那段 4 萬 ×6%＝2,400，<strong>合計 2,700</strong>（有效稅率才 2.7%）。<br>
+    餘額 <strong>100 萬</strong>：分段加起來約 <strong>11 萬</strong>（11%）。越往上、超過的部分才課越重。
   </div>
   <p class="sub">級距與免稅額工程師可能會調整，實際以 <code>/稅單</code> 或冒險面板的 🧾稅務 顯示為準。</p>
 
@@ -863,6 +863,7 @@
   <h3>🔄 交易（以物換物）</h3>
   <p><code>/交易</code> 跟其他玩家換東西，提案與成交都會公開在頻道，對方按按鈕接受才會成立。<strong>只能換物品、不能轉星幣</strong>——星幣轉帳目前是關閉的，避免小號刷幣和「先轉我 500 我給你 SSR」這類詐騙。</p>
   <p>物品幾乎都能換，<strong>只有「種子」不能交易</strong>（種子只能自己種、去 <code>/種子商店</code> 買，不列在交易選單裡）。<strong>蛋可以交易</strong>。物品太多時交易選單會分成好幾個下拉（第 1-25 種、26-50 種…），往下找即可；或直接打 <code>/交易</code> 用打字搜尋。</p>
+  <p>⚠️ <strong>成交時買賣雙方各收 100 星幣交易手續費</strong>（直接銷毀，跟所得稅無關）。餘額不足 100 的一方無法成交。提案時就會標明。</p>
 
   <h3>📖 圖鑑</h3>
   <p><code>/圖鑑</code> 看自己收錄了哪些東西。每種掉落物第一次拿到時會標記「🆕 圖鑑新收錄」，全部湊齊是隱藏成就。</p>

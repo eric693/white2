@@ -53,6 +53,16 @@ function addCoins(gid, userId, username, delta) {
 }
 const money = (c, n) => `${c.currency_emoji || '🪙'} ${n.toLocaleString('en-US')} ${c.currency_name || '星幣'}`;
 
+// 賣出單價：市場價 × (1 + 售價加成)。加成＝sell_pct（家園/家具/寵物…）＋魚類再加 fish_price_pct ＋該物品的寵物指定加成。
+// userBuffs 已把每種加成各自封頂，這裡直接相加即可。沒有 uid（純估價）就回市場價。
+function sellUnit(gid, uid, item) {
+  const base = livePrice(gid, item);
+  if (!uid) return base;
+  const b = userBuffs(gid, uid);
+  const pct = (b.sell_pct || 0) + (item.kind === 'fish' ? (b.fish_price_pct || 0) : 0) + itemBoost(gid, uid, item.name);
+  return Math.round(base * (1 + Math.max(0, pct) / 100));
+}
+
 // ---- 預設內容：新伺服器第一次用就有東西可玩，不必先去後台建資料 ----
 // 權重配平：同種類加總 1000，基礎機率約 N 70% / R 22% / SR 6.5% / SSR 1.5%
 const SEED_ITEMS = [
@@ -1005,7 +1015,7 @@ function init(client) {
           { label: '🔢 挑數量賣（選一種）', value: '__qty__', description: '選一種物品，再選要賣幾個（可留一些）' },
           ...rows.slice(0, 23).map(r => ({
             label: `${r.emoji || ''}${r.name}`.slice(0, 100),
-            description: `持有 ${r.count}　單價 ${livePrice(i.guildId, r)}　共 ${(r.count * livePrice(i.guildId, r)).toLocaleString('en-US')}`.slice(0, 100),
+            description: `持有 ${r.count}　單價 ${sellUnit(i.guildId, i.user.id, r)}　共 ${(r.count * sellUnit(i.guildId, i.user.id, r)).toLocaleString('en-US')}`.slice(0, 100),
             value: String(r.id)
           }))
         ]);
@@ -1091,10 +1101,10 @@ function init(client) {
       const amts = [...new Set([1, 5, 10, 25, 50, 100].filter(x => x < N).concat(half < N ? [half] : []).concat([N]))].sort((a, b) => a - b);
       const opts = amts.slice(0, 25).map(a => ({
         label: a === N ? `全部（${N} 個）` : a === half ? `一半（${half} 個）` : `賣 ${a} 個`,
-        description: `+${(a * livePrice(i.guildId, r)).toLocaleString('en-US')} 星幣，剩 ${N - a}`.slice(0, 100), value: String(a)
+        description: `+${(a * sellUnit(i.guildId, i.user.id, r)).toLocaleString('en-US')} 星幣，剩 ${N - a}`.slice(0, 100), value: String(a)
       }));
       const menu = new StringSelectMenuBuilder().setCustomId('sellqty:' + id).setPlaceholder('要賣幾個？').setMinValues(1).setMaxValues(1).addOptions(opts);
-      return i.update({ content: `${r.emoji || ''}${r.name}：要賣幾個？（持有 ${N}，單價 ${livePrice(i.guildId, r)} ${priceTag(i.guildId, r)}）`, components: [new ActionRowBuilder().addComponents(menu)], embeds: [] }).catch(() => {});
+      return i.update({ content: `${r.emoji || ''}${r.name}：要賣幾個？（持有 ${N}，單價 ${sellUnit(i.guildId, i.user.id, r)} ${priceTag(i.guildId, r)}）`, components: [new ActionRowBuilder().addComponents(menu)], embeds: [] }).catch(() => {});
     }
     // 選好數量 → 賣掉指定數量
     if (i.isStringSelectMenu() && i.customId.startsWith('sellqty:')) {
@@ -1105,7 +1115,7 @@ function init(client) {
       if (!r) return i.update({ content: '這個已經沒有了。', components: [], embeds: [] }).catch(() => {});
       const sell = Math.min(qty, r.count);
       db.prepare('UPDATE gather_inventory SET count = count - ? WHERE guild_id=? AND user_id=? AND item_id=?').run(sell, gid, uid, id);
-      const gained = sell * livePrice(gid, r);
+      const gained = sell * sellUnit(gid, uid, r);
       const now = addCoins(gid, uid, uname, gained);
       bumpQuests(gid, uid, { type: 'sell', amount: gained });
       const embed = new EmbedBuilder().setColor(brandColor()).setTitle('賣出成功')
@@ -1135,7 +1145,7 @@ function init(client) {
       const tx = db.transaction(() => {
         for (const r of rows) {
           db.prepare('UPDATE gather_inventory SET count = count - ? WHERE guild_id=? AND user_id=? AND item_id=?').run(r.count, gid, uid, r.id);
-          const px = livePrice(gid, r);
+          const px = sellUnit(gid, uid, r);
           gained += r.count * px;
           lines.push(`${r.emoji || ''} ${r.name} ×${r.count}　+${(r.count * px).toLocaleString('en-US')}${priceTag(gid, r)}`);
         }
@@ -1439,7 +1449,7 @@ function init(client) {
             if (n <= 0) continue;
             db.prepare('UPDATE gather_inventory SET count = count - ? WHERE guild_id=? AND user_id=? AND item_id=?')
               .run(n, gid, uid, r.id);
-            const px = livePrice(gid, r);
+            const px = sellUnit(gid, uid, r);
             gained += n * px;
             lines.push(`${r.emoji || ''} ${r.name} ×${n}　+${(n * px).toLocaleString('en-US')}${priceTag(gid, r)}`);
           }
