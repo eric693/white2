@@ -8,6 +8,7 @@ const { addToBag } = require('./gather');
 
 const gcfg = (gid) => guildConfig('gather_config', gid);
 const TRADE_TTL = 60 * 60 * 1000;   // 提案 1 小時內有效
+const TRADE_FEE = 100;              // 成交時雙方各收的交易手續費（直接銷毀）
 
 const itemByName = (gid, name) => db.prepare("SELECT * FROM gather_items WHERE guild_id=? AND enabled=1 AND name=?").get(gid, name);
 const invCount = (gid, uid, itemId) => (db.prepare('SELECT count FROM gather_inventory WHERE guild_id=? AND user_id=? AND item_id=?').get(gid, uid, itemId) || {}).count || 0;
@@ -51,7 +52,7 @@ function createProposal(gid, fromUser, to, giveName, wantName, giveCount, wantCo
   ).run(gid, fromUser.id, fromUser.username, to.id, to.username, give.id, giveCount, want.id, wantCount, channelId, Date.now() + TRADE_TTL).lastInsertRowid;
   const embed = new EmbedBuilder().setColor(brandColor()).setTitle('🔄 交易提案')
     .setDescription(`<@${fromUser.id}> 想用 **${label(give, giveCount)}**\n交換 <@${to.id}> 的 **${label(want, wantCount)}**`)
-    .setFooter({ text: `僅 ${to.username} 可接受｜1 小時內有效｜交易 #${tid}` });
+    .setFooter({ text: `僅 ${to.username} 可接受｜成交雙方各收 ${TRADE_FEE} 手續費｜1 小時內有效｜交易 #${tid}` });
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId(`trade:accept:${tid}`).setLabel('接受交易').setStyle(ButtonStyle.Success),
     new ButtonBuilder().setCustomId(`trade:decline:${tid}`).setLabel('拒絕/取消').setStyle(ButtonStyle.Secondary)
@@ -187,20 +188,31 @@ function init(client) {
             .setDescription(`${who} 的物品不足，交易取消。`);
           return i.update({ embeds: [embed], components: [] }).catch(() => {});
         }
+        // 交易手續費：成交雙方各收 TRADE_FEE（直接銷毀，不進任何人口袋）
+        const coinsOf = (uid) => (db.prepare('SELECT coins FROM econ_wallets WHERE guild_id=? AND user_id=?').get(t.guild_id, uid) || {}).coins || 0;
+        if (coinsOf(t.from_id) < TRADE_FEE || coinsOf(t.to_id) < TRADE_FEE) {
+          db.prepare('UPDATE trades SET status=? WHERE id=?').run('failed', t.id);
+          const who = coinsOf(t.from_id) < TRADE_FEE ? `<@${t.from_id}>` : `<@${t.to_id}>`;
+          const embed = new EmbedBuilder().setColor(0xed4245).setTitle('❌ 交易失敗')
+            .setDescription(`${who} 的星幣不足以支付 ${TRADE_FEE} 交易手續費，交易取消。`);
+          return i.update({ embeds: [embed], components: [] }).catch(() => {});
+        }
 
-        // 換手（原子交易）
+        // 換手（原子交易）＋雙方各扣手續費
         const tx = db.transaction(() => {
           takeFromBag(t.guild_id, t.from_id, t.give_item_id, t.give_count);
           takeFromBag(t.guild_id, t.to_id, t.want_item_id, t.want_count);
           addToBag(t.guild_id, t.to_id, t.give_item_id, t.give_count);
           addToBag(t.guild_id, t.from_id, t.want_item_id, t.want_count);
+          db.prepare("UPDATE econ_wallets SET coins=coins-?, updated_at=datetime('now','localtime') WHERE guild_id=? AND user_id=?").run(TRADE_FEE, t.guild_id, t.from_id);
+          db.prepare("UPDATE econ_wallets SET coins=coins-?, updated_at=datetime('now','localtime') WHERE guild_id=? AND user_id=?").run(TRADE_FEE, t.guild_id, t.to_id);
           db.prepare('UPDATE trades SET status=? WHERE id=?').run('done', t.id);
         });
         tx();
         // 公告成交內容
         const embed = new EmbedBuilder().setColor(0x57f287).setTitle('✅ 交易成交！')
           .setDescription(`<@${t.from_id}> 用 **${label(give, t.give_count)}**\n交換 <@${t.to_id}> 的 **${label(want, t.want_count)}**\n\n雙方背包已更新。`)
-          .setFooter({ text: `交易 #${t.id}` });
+          .setFooter({ text: `交易 #${t.id}　·　雙方各收 ${TRADE_FEE} 手續費` });
         await i.update({ content: `🔄 <@${t.from_id}> ⇄ <@${t.to_id}> 交易完成`, embeds: [embed], components: [] }).catch(() => {});
         return;
       }
