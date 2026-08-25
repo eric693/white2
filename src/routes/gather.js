@@ -1,6 +1,6 @@
 // 釣魚 / 挖礦掛機系統 API（設定、掉落物、道具、玩家資料）
 const express = require('express');
-const { db, audit, guildConfig } = require('../db');
+const { db, audit, guildConfig, COIN_MAX, COIN_DELTA_MAX } = require('../db');
 const { requireAuth, requireModule, guardModule } = require('../auth');
 const bot = require('../bot');
 const { PermissionsBitField } = require('discord.js');
@@ -245,11 +245,18 @@ router.post('/gather-players/:userId/stamina', (req, res) => {
 router.post('/gather-players/:userId/coins', (req, res) => {
   const delta = parseInt((req.body || {}).delta, 10);
   if (!Number.isFinite(delta) || delta === 0) return res.status(400).json({ error: '請填寫要增減的數量' });
+  // 單次增減上限：超過安全整數會讓餘額失去精度（加 1 塊錢會沒反應），連帶污染稅金與基金池
+  if (Math.abs(delta) > COIN_DELTA_MAX) {
+    return res.status(400).json({ error: `單次最多只能增減 ${COIN_DELTA_MAX.toLocaleString('en-US')}（你填了 ${delta.toLocaleString('en-US')}）。金額太大會超出系統可精確計算的範圍。` });
+  }
   const uid = req.params.userId;
   const w = db.prepare('SELECT * FROM econ_wallets WHERE guild_id=? AND user_id=?').get(req.guildId, uid);
   if (!w) return res.status(404).json({ error: '找不到這位玩家的錢包' });
   // 不讓餘額變成負數，否則商店的「餘額不足」判斷會出現負數餘額的怪狀況
   const next = Math.max(0, w.coins + delta);
+  if (next > COIN_MAX) {
+    return res.status(400).json({ error: `加完會超過單人餘額上限 ${COIN_MAX.toLocaleString('en-US')}（會變成 ${next.toLocaleString('en-US')}）。請改小金額。` });
+  }
   db.prepare("UPDATE econ_wallets SET coins=?, updated_at=datetime('now','localtime') WHERE guild_id=? AND user_id=?")
     .run(next, req.guildId, uid);
   audit(req.user.name, `調整 ${w.username || uid} 的貨幣 ${delta > 0 ? '+' : ''}${delta}`);

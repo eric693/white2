@@ -3,7 +3,7 @@
 // 這一套原本完全沒有後台，所有數值都埋在程式的預設清單裡，管理員要調一個家具的加成
 // 就得改程式重啟。這裡把它們全部開成 CRUD，權限 key＝home，可以單獨交給某個管理員。
 const express = require('express');
-const { db, audit, guildConfig } = require('../db');
+const { db, audit, guildConfig, COIN_MAX, COIN_DELTA_MAX } = require('../db');
 const { requireAuth, guardModule } = require('../auth');
 const { BUFF_TYPES } = require('../util/buffs');
 const { METRICS } = require('../util/achievements');
@@ -311,7 +311,7 @@ router.post('/home-players/:userId/level', (req, res) => {
   db.prepare('UPDATE home_users SET level=?, kitchen_level=?, kitchen_built=? WHERE guild_id=? AND user_id=?')
     .run(level, kitchen, kitchen > 0 ? 1 : 0, gid, req.params.userId);
   // 退款（可選）：退回玩家當初花的錢
-  const refund = int(b.refund, 0, 0);
+  const refund = Math.min(int(b.refund, 0, 0), COIN_DELTA_MAX);   // 退款也受單次上限保護
   if (refund > 0) {
     db.prepare("UPDATE econ_wallets SET coins = coins + ?, updated_at=datetime('now','localtime') WHERE guild_id=? AND user_id=?")
       .run(refund, gid, req.params.userId);

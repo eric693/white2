@@ -790,6 +790,14 @@ const UI_TEXT_KEYS = [
   'invite_contact'                                          // 邀請制：未開通伺服器看到的聯繫訊息
 ];
 
+// ---- 星幣安全上限（防止後台手滑把經濟灌爆）----
+// JS 的 Number.MAX_SAFE_INTEGER 是 9,007,199,254,740,991，超過就會失去精度。
+// 2026-08 曾發生後台手動把 4 個帳號加到 6.09e18，導致「餘額 + 1 === 餘額」，
+// 連帶把稅收與慈善基金池一起污染成天文數字。以下取遠低於危險線、但對遊戲
+// 綽綽有餘的上限（正常玩家約 5 萬、最有錢的約 6 千萬）。
+const COIN_MAX = 1000000000000;       // 單一玩家餘額上限：1 兆
+const COIN_DELTA_MAX = 10000000000;   // 後台單次增減上限：100 億
+
 // 後台請求的「目前管理的伺服器」上下文。
 // 絕大多數 audit() 呼叫點沒有把 guildId 傳進來，以前會一律記成 HOME_GUILD（.env 的
 // GUILD_ID），導致在 A 伺服器做的事被記到 B 伺服器上，稽核軌跡失真。
@@ -844,6 +852,6 @@ function activeGuildIds() {
 }
 
 module.exports = {
-  db, SECRET, ensureColumns, getSetting, setSetting, UI_TEXT_KEYS, audit, guildCtx,
+  db, SECRET, ensureColumns, getSetting, setSetting, UI_TEXT_KEYS, audit, guildCtx, COIN_MAX, COIN_DELTA_MAX,
   HOME_GUILD, guildConfig, ensureGuild, resetGuildData, activeGuildIds, GUILD_TABLES, logError
 };

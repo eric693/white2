@@ -1,6 +1,6 @@
 // 慈善基金會後台 API：抵稅比例、撥入普發、帳目與捐款明細
 const express = require('express');
-const { db, audit, guildConfig } = require('../db');
+const { db, audit, guildConfig, COIN_MAX, COIN_DELTA_MAX } = require('../db');
 const { requireAuth, guardModule } = require('../auth');
 
 const router = express.Router();
@@ -46,8 +46,14 @@ router.put('/charity', (req, res) => {
 router.post('/charity-adjust', (req, res) => {
   const delta = parseInt((req.body || {}).delta, 10) || 0;
   if (!delta) return res.status(400).json({ error: '請填要增減的金額' });
+  if (Math.abs(delta) > COIN_DELTA_MAX) {
+    return res.status(400).json({ error: `單次最多只能增減 ${COIN_DELTA_MAX.toLocaleString('en-US')}。金額太大會超出系統可精確計算的範圍。` });
+  }
   const c = guildConfig('charity_config', req.guildId);
   const next = Math.max(0, (c.pool || 0) + delta);
+  if (next > COIN_MAX) {
+    return res.status(400).json({ error: `加完會超過基金會餘額上限 ${COIN_MAX.toLocaleString('en-US')}，請改小金額。` });
+  }
   db.prepare('UPDATE charity_config SET pool=?, total_in = total_in + ? WHERE guild_id=?')
     .run(next, delta > 0 ? delta : 0, req.guildId);
   audit(req.user.name, `調整基金會餘額 ${delta > 0 ? '+' : ''}${delta}`, 'gather', '', req.guildId);
@@ -108,6 +114,16 @@ router.post('/charity-relief', (req, res) => {
   const fromPool = b.source !== 'free';
   if (fromPool && total > (c.pool || 0)) {
     return res.status(400).json({ error: `基金會餘額不足：要發 ${total.toLocaleString('en-US')}，池子裡只有 ${(c.pool || 0).toLocaleString('en-US')}。可以改用「直接增發」或降低金額。` });
+  }
+  // 「直接增發」是憑空生錢、沒有池子擋著，所以這裡自己擋：單人金額與總額都不能離譜，
+  // 否則會像 2026-08 那次一樣把餘額灌到超出安全整數、精度整個壞掉。
+  const maxOne = Math.max(...list.map(x => x.amount));
+  if (maxOne > COIN_DELTA_MAX) {
+    return res.status(400).json({ error: `單人發放金額上限是 ${COIN_DELTA_MAX.toLocaleString('en-US')}（目前最高 ${maxOne.toLocaleString('en-US')}）。金額太大會超出系統可精確計算的範圍。` });
+  }
+  const over = list.find(x => (x.before || 0) + x.amount > COIN_MAX);
+  if (over) {
+    return res.status(400).json({ error: `${over.username || over.user_id} 發完會超過單人餘額上限 ${COIN_MAX.toLocaleString('en-US')}，請降低金額。` });
   }
 
   const period = 'manual-' + new Date().toISOString().slice(0, 10);
