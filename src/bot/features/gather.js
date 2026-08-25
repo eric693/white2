@@ -1997,4 +1997,4 @@ function init(client) {
   console.log('  ↳ 釣魚挖礦模組已載入（冷卻/稀有掉落/商店道具/圖鑑/經濟）');
 }
 
-module.exports = { init, wallet, addCoins, addToBag, seedGuild, seedMaterials, staminaState, staminaBoughtToday, bumpPoints, addPointsBonus, menuResult, safeMenu, RARITY, RARITY_LABEL, sellAllBag };
+module.exports = { init, wallet, addCoins, addToBag, seedGuild, seedMaterials, staminaState, staminaBoughtToday, bumpPoints, addPointsBonus, menuResult, safeMenu, RARITY, RARITY_LABEL, sellAllBag, buyThing };

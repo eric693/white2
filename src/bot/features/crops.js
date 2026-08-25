@@ -405,4 +405,4 @@ function init(client) {
   console.log('  ↳ 種植模組已載入（農地種作物／溫室種花卉／採收）');
 }
 
-module.exports = { init, seedCrops, plantSeeds, plantableSeeds, seedsInBag, seedItemOf, reap };
+module.exports = { init, seedCrops, plantSeeds, plantableSeeds, seedsInBag, seedItemOf, reap, buySeeds };

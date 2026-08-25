@@ -129,6 +129,35 @@ function tradableStocks(gid) {
   } catch { return []; }
 }
 
+// 可買的工具（還沒擁有的）
+function buyableTools(gid, uid) {
+  try {
+    return db.prepare(
+      `SELECT t.id, t.name, t.emoji, t.price, t.kind FROM gather_tools t
+        WHERE t.guild_id=? AND t.enabled=1
+          AND t.id NOT IN (SELECT tool_id FROM gather_user_tools WHERE guild_id=? AND user_id=?)
+        ORDER BY t.kind, t.price`).all(gid, gid, uid);
+  } catch { return []; }
+}
+// 可買的種子
+function buyableSeeds(gid) {
+  try { return db.prepare('SELECT id, name, emoji, seed_price, plot_type FROM crop_seeds WHERE guild_id=? AND enabled=1 ORDER BY sort, id').all(gid); }
+  catch { return []; }
+}
+// 背包裡可種的種子（農地＋溫室都算）
+function plantableList(gid, uid) {
+  try {
+    const crops = require('../bot/features/crops');
+    return [...crops.plantableSeeds(gid, uid, 'field'), ...crops.plantableSeeds(gid, uid, 'greenhouse')]
+      .map(x => ({ id: x.seed.id, name: x.seed.name, emoji: x.seed.emoji, have: x.have, type: x.seed.plot_type }));
+  } catch { return []; }
+}
+// 神秘商店可兌換的商品
+function redeemItems(gid) {
+  try { return db.prepare('SELECT id, name, emoji, price FROM special_items WHERE guild_id=? AND enabled=1 ORDER BY sort, price').all(gid); }
+  catch { return []; }
+}
+
 // ---- 版面（手機卡片式，可安裝 PWA）----
 function render(d, token, msg, authed) {
   const c = d.cur;
@@ -208,11 +237,23 @@ function render(d, token, msg, authed) {
 
   // 花錢操作區（登入後才出現）
   const mini = (path, ph, btn) => `<form method="post" action="/play/${token}/${path}" class="mini"><input name="amount" type="text" inputmode="numeric" autocomplete="off" placeholder="${ph}"><button class="act sm">${btn}</button></form>`;
+  // 下拉選 + （可選）數量 + 送出
+  const selForm = (path, rows, optOf, btn, withQty) => {
+    if (!rows.length) return `<p class="muted">目前沒有可選的項目。</p>`;
+    const options = rows.map(optOf).join('');
+    const qty = withQty ? `<input name="qty" type="text" inputmode="numeric" autocomplete="off" placeholder="數量" value="1" style="max-width:80px">` : '';
+    return `<form method="post" action="/play/${token}/${path}" class="mini"><select name="id">${options}</select>${qty}<button class="act sm">${btn}</button></form>`;
+  };
+  const tools = buyableTools(d.gid, d.uid), seeds = buyableSeeds(d.gid), plantable = plantableList(d.gid, d.uid), redeems = redeemItems(d.gid);
+
   const actionsBody = `
     <div class="acts">${actBtn('feed', '🍤 一鍵餵魚')}${actBtn('sellbag', '🎒 一鍵賣光背包')}</div>
     <h3>❤️ 捐款慈善基金會（可折抵所得稅）</h3>${mini('donate', '捐款金額', '捐')}
-    <h3>💳 貸款／還款</h3>${mini('repay', '還款金額', '還款')}${mini('credit', '信用貸款金額（免抵押）', '借')}
-    <p class="muted">神秘商店兌換、物資貸款、買工具／種植仍請回 Discord，之後會陸續補上。</p>`;
+    <h3>💳 貸款／還款</h3>${mini('repay', '還款金額', '還款')}${mini('credit', '信用貸款金額（免抵押）', '借')}${mini('loan', '物資貸款金額（用工具/作物/魚抵押）', '借')}
+    <h3>🛒 神秘商店兌換</h3>${selForm('redeem', redeems, r => `<option value="${r.id}">${esc((r.emoji || '') + r.name)}｜${num(r.price)}</option>`, '兌換', true)}
+    <h3>🛠️ 買工具</h3>${selForm('buytool', tools, t => `<option value="${t.id}">${esc((t.emoji || '') + t.name)}｜${num(t.price)}</option>`, '買', false)}
+    <h3>🌱 買種子</h3>${selForm('buyseed', seeds, s => `<option value="${s.id}">${esc((s.emoji || '') + s.name)}｜${num(s.seed_price)}（${s.plot_type === 'greenhouse' ? '溫室' : '農地'}）</option>`, '買', true)}
+    <h3>🌾 種植（種背包裡的種子）</h3>${selForm('plant', plantable, p => `<option value="${p.id}">${esc((p.emoji || '') + p.name)}｜有 ${p.have}（${p.type === 'greenhouse' ? '溫室' : '農地'}）</option>`, '種', true)}`;
 
   // 登入狀態列：唯讀時給「登入解鎖」，登入後給操作區＋登出
   const authBar = authed
@@ -272,7 +313,7 @@ td:nth-child(n+2),th:nth-child(n+2){text-align:right}
 .trade .seg label{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:9px;border:1px solid var(--line);border-radius:12px;font-size:14px;cursor:pointer}
 .acts{display:flex;gap:10px;margin-bottom:6px}.acts form{flex:1;margin-top:0!important}
 .mini{display:flex;gap:8px;margin-bottom:6px}
-.mini input{flex:1;padding:11px;border:1px solid var(--line);border-radius:12px;font-size:15px;background:#fff;color:var(--ink)}
+.mini input,.mini select{flex:1;min-width:0;padding:11px;border:1px solid var(--line);border-radius:12px;font-size:15px;background:#fff;color:var(--ink)}
 .act.sm{width:auto;padding:11px 18px;font-size:14px}
 </style></head><body><div class="wrap">
   <div class="hero">
@@ -396,6 +437,14 @@ function doAuthedAct(req, res, fn) {
   try { msg = fn(t.gid, t.uid) || ''; } catch (e) { msg = '操作失敗，請稍後再試。'; }
   res.redirect(`/play/${req.params.token}?msg=${encodeURIComponent(msg)}`);
 }
+async function doAuthedActAsync(req, res, fn) {
+  const t = parseToken(req.params.token);
+  if (!t) return res.redirect('/play');
+  if (!authedFor(req, t)) return res.redirect(`/play/${req.params.token}/login`);
+  let msg = '';
+  try { msg = (await fn(t.gid, t.uid)) || ''; } catch (e) { msg = '操作失敗，請稍後再試。'; }
+  res.redirect(`/play/${req.params.token}?msg=${encodeURIComponent(msg)}`);
+}
 router.post('/play/:token/stock', (req, res) => doAuthedAct(req, res, (gid, uid) => {
   const stock = require('../bot/features/stock');
   const code = String((req.body && req.body.code) || '').trim();
@@ -439,6 +488,46 @@ router.post('/play/:token/credit', (req, res) => doAuthedAct(req, res, (gid, uid
   if (!(amt > 0)) return '請填要借的金額。';
   const r = require('../bot/features/loans').borrowCredit(gid, uid, uname(gid, uid), amt);
   return r.ok ? `💳 信用貸款核准！到手 ${num(amt)}，餘額 ${num(r.coins)}（記得準時 /還款）。` : r.msg;
+}));
+router.post('/play/:token/loan', (req, res) => doAuthedAct(req, res, (gid, uid) => {
+  const amt = Math.floor(Number((req.body && req.body.amount) || 0));
+  if (!(amt > 0)) return '請填要借的金額。';
+  const r = require('../bot/features/loans').borrow(gid, uid, uname(gid, uid), amt);
+  return r.ok ? `📦 物資貸款核准！到手 ${num(amt)}（已用你的資產抵押），餘額 ${num(r.coins)}。` : r.msg;
+}));
+router.post('/play/:token/buytool', (req, res) => doAuthedAct(req, res, (gid, uid) => {
+  const id = Math.floor(Number((req.body && req.body.id) || 0));
+  if (!id) return '請先選一個工具。';
+  const r = require('../bot/features/gather').buyThing(gid, uid, uname(gid, uid), 'tool', id, 1);
+  return r.error ? r.error : '🛠️ 工具買好了，去玩法就能用！';
+}));
+router.post('/play/:token/buyseed', (req, res) => doAuthedAct(req, res, (gid, uid) => {
+  const id = Math.floor(Number((req.body && req.body.id) || 0));
+  const qty = Math.max(1, Math.floor(Number((req.body && req.body.qty) || 1)));
+  if (!id) return '請先選一種種子。';
+  const r = require('../bot/features/crops').buySeeds(gid, uid, uname(gid, uid), id, qty);
+  return r.error ? r.error : `🌱 種子買好了，進背包了，可以在下面「種植」種下。`;
+}));
+router.post('/play/:token/plant', (req, res) => doAuthedAct(req, res, (gid, uid) => {
+  const id = Math.floor(Number((req.body && req.body.id) || 0));
+  const qty = Math.max(1, Math.floor(Number((req.body && req.body.qty) || 1)));
+  if (!id) return '請先選一種種子。';
+  const r = require('../bot/features/crops').plantSeeds(gid, uid, uname(gid, uid), id, qty);
+  return r.error ? r.error : `🌾 種好了！等成熟就能一鍵採收。`;
+}));
+// 神秘商店兌換：需要 bot client 與伺服器成員（限定商店資格檢查、管理員通知）→ 用 async 版
+router.post('/play/:token/redeem', (req, res) => doAuthedActAsync(req, res, async (gid, uid) => {
+  const id = Math.floor(Number((req.body && req.body.id) || 0));
+  const qty = Math.max(1, Math.floor(Number((req.body && req.body.qty) || 1)));
+  if (!id) return '請先選一個商品。';
+  const item = db.prepare('SELECT * FROM special_items WHERE guild_id=? AND enabled=1 AND id=?').get(gid, id);
+  if (!item) return '這個商品已經不在了。';
+  const client = require('../bot').client;
+  const guild = client && client.guilds ? client.guilds.cache.get(gid) : null;
+  const member = guild ? await guild.members.fetch(uid).catch(() => null) : null;
+  const un = uname(gid, uid);
+  const r = await require('../bot/features/special').doRedeem(client, gid, item, { id: uid, username: un, bot: false }, un, qty, member);
+  return r.error ? r.error : `🛒 兌換完成！（詳情看 Discord 通知或你的背包）`;
 }));
 
 router.get('/play', (req, res) => {
