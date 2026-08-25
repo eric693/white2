@@ -303,6 +303,19 @@ function buy(gid, uid, username, key, shares) {
   };
 }
 
+// 台灣時間今天 0 點的 UTC 毫秒（伺服器是 UTC，要強制 +8 算當天）
+function startOfTodayTW() {
+  const tw = new Date(Date.now() + 8 * 3600e3);
+  tw.setUTCHours(0, 0, 0, 0);
+  return tw.getTime() - 8 * 3600e3;
+}
+// 這位玩家今天（台灣時間）有沒有買過這支股 → 擋當沖用
+function boughtTodayTW(gid, uid, symbolId) {
+  return !!db.prepare(
+    "SELECT 1 FROM stock_trades WHERE guild_id=? AND user_id=? AND symbol_id=? AND side='buy' AND ts>=? LIMIT 1")
+    .get(gid, uid, symbolId, startOfTodayTW());
+}
+
 // ---- 賣 ----
 function sell(gid, uid, username, key, sharesRaw) {
   const c = cfg(gid);
@@ -317,6 +330,11 @@ function sell(gid, uid, username, key, sharesRaw) {
   if (!(shares > 0)) return { error: '股數要是正整數，或填「全部」。' };
   if (shares > h.shares) return { error: `你只有 ${num(h.shares)} 股。` };
   if (c.max_trade > 0 && shares > c.max_trade) return { error: `一次最多賣 ${c.max_trade} 股。` };
+
+  // 當沖限制：同一支股票「今天買過」就當天不能賣，隔天（台灣時間）以後才能賣
+  if (boughtTodayTW(gid, uid, s.id)) {
+    return { error: `🚫 當沖限制：你今天買過 ${s.emoji}${s.name}，當天不能賣出，台灣時間明天之後才能賣。` };
+  }
 
   const rate = checkRate(gid, uid, c);
   if (rate.error) return { error: rate.error };
