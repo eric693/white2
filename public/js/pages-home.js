@@ -733,10 +733,12 @@ App.page('home', {
         };
         body.innerHTML = `
           <div class="card">
-            <h3>🎭 每位角色可以用哪些能力</h3>
+            <h3>🎭 每位角色的專屬能力</h3>
             <div class="hint" style="margin-bottom:10px">
-              勾選的是<b>候選能力</b>（可複選）。玩家把角色請進家裡後，只能從候選裡<b>選 1 個啟用</b>，之後隨時可以換。<br>
-              一位角色一個都沒勾＝所有啟用中的能力都能選，所以<b>新增角色不必先設定就能用</b>。
+              這裡決定<b>每位角色同居時會帶什麼能力</b> —— 玩家沒得選，搬進來就直接套用你設定的能力。<br>
+              建議<b>一位角色只勾 1 個</b>；勾多個時會用排序最前面的那一個。<br>
+              一個都沒勾＝自動用能力清單最前面的那個，所以<b>新增角色不必先設定也能用</b>。<br>
+              改了之後<b>已經住進玩家家裡的角色也會跟著換</b>，不用請玩家重搬。
             </div>
             <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">
               <input id="kw" placeholder="搜尋角色名字" style="max-width:200px">

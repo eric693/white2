@@ -123,6 +123,24 @@ function skillsForRole(gid, roleId) {
   return db.prepare("SELECT * FROM partner_skills WHERE guild_id=? AND enabled=1 AND code <> '' ORDER BY sort, id").all(gid);
 }
 
+/**
+ * 這位角色「後台指定」的能力。同居能力是由管理員在後台決定的，不給玩家挑：
+ * 後台有勾就用勾的第一個（依 sort），沒勾就退回能力池的第一個，讓角色至少有能力可用。
+ */
+function designatedSkill(gid, roleId) {
+  // 後台有替這位角色勾到「有實作」的能力 → 用排序最前面的那一個
+  const picked = db.prepare(
+    `SELECT s.* FROM role_skills rs JOIN partner_skills s ON s.id = rs.skill_id
+      WHERE rs.guild_id=? AND rs.role_id=? AND s.enabled=1 AND s.code <> '' ORDER BY s.sort, s.id`).all(gid, roleId);
+  if (picked.length) return picked[0];
+  // 沒設定（或只勾到沒實作的舊能力）→ 依 role_id 固定挑一個，讓每位角色至少各有特色，
+  // 而不是全部都拿到同一個能力；管理員在後台勾了就會蓋掉這個預設。
+  const pool = db.prepare(
+    "SELECT * FROM partner_skills WHERE guild_id=? AND enabled=1 AND code <> '' ORDER BY sort, id").all(gid);
+  if (!pool.length) return null;
+  return pool[Math.abs(Number(roleId) || 0) % pool.length];
+}
+
 const skillById = (gid, id) => db.prepare('SELECT * FROM partner_skills WHERE guild_id=? AND id=?').get(gid, id);
 
 /** 玩家目前啟用中的某個能力（含好感度階級），沒有就回 null */
@@ -360,7 +378,7 @@ function notifyChannel(client, gid) {
   return null;
 }
 
-module.exports = {
+module.exports = { designatedSkill,
   init, ABILITIES, KIND_LABEL, seedSkills, valueFor, skillText,
   skillsForRole, skillById, activeSkill, passivePct, runDaily, DEFAULT_SKILLS
 };
