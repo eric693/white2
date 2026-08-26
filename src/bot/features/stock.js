@@ -355,9 +355,11 @@ function sell(gid, uid, username, key, sharesRaw) {
   const pnl = net - costPart;
 
   db.transaction(() => {
-    // 賣股的實收也算收入（total_earned），才不會讓「本期收入」漏掉股市這一大塊
+    // 收入只算「實際賺到的價差」(pnl)，不能算賣出全額：賣股拿回來的錢大部分是自己的
+    // 本金，本金當初就已經被算過一次收入了。用全額會讓同一筆錢每進出一次就被重複
+    // 計為收入（拿 100 元進出五次＝被當成賺了 500），越勤勞交易的人被課越重。
     db.prepare('UPDATE econ_wallets SET coins = coins + ?, total_earned = total_earned + ? WHERE guild_id=? AND user_id=?')
-      .run(net, Math.max(0, net), gid, uid);
+      .run(net, Math.max(0, pnl), gid, uid);
     if (shares === h.shares) {
       db.prepare('UPDATE stock_holdings SET shares=0, cost_sum=0, realized=realized+? WHERE guild_id=? AND user_id=? AND symbol_id=?')
         .run(pnl, gid, uid, s.id);
@@ -437,8 +439,9 @@ function forceSell(gid, uid, username, symbolId, shares, capToZero = true) {
   const costPart = Math.round(avg * n);
   const pnl = net - costPart;
   db.transaction(() => {
+    // 同上：強制賣出也只把實際價差計為收入，不重複計本金
     db.prepare('UPDATE econ_wallets SET coins = coins + ?, total_earned = total_earned + ? WHERE guild_id=? AND user_id=?')
-      .run(net, Math.max(0, net), gid, uid);
+      .run(net, Math.max(0, pnl), gid, uid);
     if (n >= h.shares) {
       db.prepare('UPDATE stock_holdings SET shares=0, cost_sum=0, realized=realized+? WHERE guild_id=? AND user_id=? AND symbol_id=?')
         .run(pnl, gid, uid, symbolId);

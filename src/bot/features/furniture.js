@@ -358,8 +358,52 @@ function init(client) {
           content: `🎉 ${mode === 'buy' ? '買下' : '做好'}了 ${out.bought.emoji || ''}**${out.bought.name}**！記得從選單把它擺出來才有加成。`, ...eph
         }).catch(() => {});
       }
+      // 只勾一款、而且那款還有多件可動 → 先問數量（跟種田一樣），不用同一款點很多次
+      if (i.isStringSelectMenu() && (i.customId === 'furnplace' || i.customId === 'furnstore')
+          && i.values.length === 1) {
+        const [fid0, act0] = i.values[0].split(':');
+        const on = act0 === 'on';
+        const row = db.prepare('SELECT * FROM home_furniture_owned WHERE guild_id=? AND user_id=? AND furniture_id=?')
+          .get(gid, uid, parseInt(fid0, 10));
+        const movable = row ? (on ? row.count - row.placed : row.placed) : 0;
+        if (movable > 1) {
+          const f = db.prepare('SELECT * FROM home_furniture WHERE guild_id=? AND id=?').get(gid, parseInt(fid0, 10));
+          const amts = [...new Set([1, 2, 3, 5, 10].filter(x => x < movable).concat([movable]))].sort((a, b) => a - b);
+          const menu = new StringSelectMenuBuilder()
+            .setCustomId(`furnqty:${fid0}:${on ? 'on' : 'off'}`)
+            .setPlaceholder(`要${on ? '擺出' : '收起'}幾件？`)
+            .addOptions(amts.slice(0, 25).map(n => ({
+              label: n === movable ? `全部（${movable} 件）` : `${n} 件`,
+              value: String(n)
+            })));
+          return i.update({
+            content: `${f ? (f.emoji || '') + f.name : '這件家具'}：要${on ? '擺出' : '收起'}幾件？（可動 ${movable} 件）`,
+            embeds: [], components: [new ActionRowBuilder().addComponents(menu)]
+          }).catch(() => {});
+        }
+      }
+      // 選好數量 → 一次處理指定件數
+      if (i.isStringSelectMenu() && i.customId.startsWith('furnqty:')) {
+        const [, fidRaw, actRaw] = i.customId.split(':');
+        const fid = parseInt(fidRaw, 10), on = actRaw === 'on';
+        const want = parseInt(i.values[0], 10) || 1;
+        let done = 0; let lastErr = '';
+        for (let n = 0; n < want; n++) {
+          const out = togglePlace(gid, uid, uname, fid, on);
+          if (out.error) { lastErr = out.error; break; }
+          done++;
+        }
+        await i.update(furniturePanel(gid, uid, uname)).catch(() => {});
+        const f = db.prepare('SELECT * FROM home_furniture WHERE guild_id=? AND id=?').get(gid, fid);
+        return i.followUp({
+          content: done
+            ? `✅ 已${on ? '擺出' : '收起'} ${f ? (f.emoji || '') + f.name : ''} **${done}** 件${lastErr ? `（做到一半停下：${lastErr}）` : '。'}`
+            : (lastErr || '沒有變更。'),
+          ...eph
+        }).catch(() => {});
+      }
       if (i.isStringSelectMenu() && (i.customId === 'furnplace' || i.customId === 'furnstore')) {
-        // 可一次勾選多件：逐件處理，最後回報成功幾件、有沒有卡上限
+        // 勾選多款：每款各處理 1 件，最後回報成功幾件、有沒有卡上限
         const okNames = []; let lastErr = '';
         for (const v of i.values) {
           const [fid, act] = v.split(':');
