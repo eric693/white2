@@ -309,11 +309,11 @@ function startOfTodayTW() {
   tw.setUTCHours(0, 0, 0, 0);
   return tw.getTime() - 8 * 3600e3;
 }
-// 這位玩家今天（台灣時間）有沒有買過這支股 → 擋當沖用
+// 這位玩家今天（台灣時間）買了這支股幾股 → 只有「今天買的那些」當天不能賣
 function boughtTodayTW(gid, uid, symbolId) {
-  return !!db.prepare(
-    "SELECT 1 FROM stock_trades WHERE guild_id=? AND user_id=? AND symbol_id=? AND side='buy' AND ts>=? LIMIT 1")
-    .get(gid, uid, symbolId, startOfTodayTW());
+  return db.prepare(
+    "SELECT COALESCE(SUM(shares),0) n FROM stock_trades WHERE guild_id=? AND user_id=? AND symbol_id=? AND side='buy' AND ts>=?")
+    .get(gid, uid, symbolId, startOfTodayTW()).n;
 }
 
 // ---- 賣 ----
@@ -326,15 +326,24 @@ function sell(gid, uid, username, key, sharesRaw) {
   const h = holding(gid, uid, s.id);
   if (h.shares <= 0) return { error: `你沒有 ${s.emoji}${s.name} 的持股。` };
 
-  let shares = String(sharesRaw).trim() === '全部' ? h.shares : Math.floor(Number(sharesRaw));
-  if (!(shares > 0)) return { error: '股數要是正整數，或填「全部」。' };
-  if (shares > h.shares) return { error: `你只有 ${num(h.shares)} 股。` };
-  if (c.max_trade > 0 && shares > c.max_trade) return { error: `一次最多賣 ${c.max_trade} 股。` };
+  // 當沖限制：只鎖「今天買進的那些股」，之前就持有的照樣能賣。
+  // （舊寫法是今天買過就整筆鎖死，害人連很久以前買的都不能賣，急著繳稅時會直接卡死）
+  const lockedToday = boughtTodayTW(gid, uid, s.id);
+  const sellable = Math.max(0, h.shares - lockedToday);
 
-  // 當沖限制：同一支股票「今天買過」就當天不能賣，隔天（台灣時間）以後才能賣
-  if (boughtTodayTW(gid, uid, s.id)) {
-    return { error: `🚫 當沖限制：你今天買過 ${s.emoji}${s.name}，當天不能賣出，台灣時間明天之後才能賣。` };
+  let shares = String(sharesRaw).trim() === '全部' ? sellable : Math.floor(Number(sharesRaw));
+  if (!(shares > 0)) {
+    if (sellable <= 0 && lockedToday > 0) {
+      return { error: `🚫 當沖限制：${s.emoji}${s.name} 你手上這 ${num(lockedToday)} 股都是今天買的，當天不能賣，台灣時間明天以後才能賣。` };
+    }
+    return { error: '股數要是正整數，或填「全部」。' };
   }
+  if (shares > h.shares) return { error: `你只有 ${num(h.shares)} 股。` };
+  if (shares > sellable) {
+    return { error: `🚫 當沖限制：${s.emoji}${s.name} 你今天買了 ${num(lockedToday)} 股，那些當天不能賣。`
+      + `\n這支目前最多可以賣 **${num(sellable)}** 股（之前就持有的部分）。` };
+  }
+  if (c.max_trade > 0 && shares > c.max_trade) return { error: `一次最多賣 ${c.max_trade} 股。` };
 
   const rate = checkRate(gid, uid, c);
   if (rate.error) return { error: rate.error };
@@ -877,11 +886,20 @@ function init(client) {
         if (!s) return i.update({ content: '找不到這支股。', components: [], embeds: [] }).catch(() => {});
         const held = holding(gid, uid, s.id).shares;
         if (held <= 0) return i.update({ content: '你沒有這支股的持股了。', components: [], embeds: [] }).catch(() => {});
-        const cap = Math.min(held, c.max_trade || held);
+        // 今天買進的部分當天不能賣，選單直接只給得出來的數量，免得選了才被擋
+        const lockedToday = boughtTodayTW(gid, uid, s.id);
+        const sellable = Math.max(0, held - lockedToday);
+        if (sellable <= 0) {
+          return i.update({
+            content: `🚫 ${s.emoji || ''}${s.name}：你手上這 ${num(held)} 股都是**今天買的**，當天不能賣（禁當沖），台灣時間明天以後才能賣。`,
+            components: [], embeds: []
+          }).catch(() => {});
+        }
+        const cap = Math.min(sellable, c.max_trade || sellable);
         const amts = [...new Set([1, 5, 10, 25, 50, 100].filter(x => x < cap).concat([cap]))].sort((a, b) => a - b);
         const menu = new StringSelectMenuBuilder().setCustomId('stk:sellqty:' + s.code).setPlaceholder('要賣幾股？').setMinValues(1).setMaxValues(1)
-          .addOptions(amts.slice(0, 25).map(x => ({ label: x === cap ? (cap === held ? `全部賣掉（${num(x)} 股）` : `賣 ${num(x)} 股（單次上限）`) : `賣 ${num(x)} 股`, description: (s.price < 0 ? `倒扣 ${num(Math.abs(s.price) * x)}` : `約得 ${num(Math.round(s.price * x * (1 - (c.fee_pct || 0) / 100)))}`).slice(0, 100), value: String(x) })));
-        return i.update({ content: `${s.emoji || ''}${s.name} \`${s.code}\`（持有 ${num(held)}）現價 ${num(s.price)}：要賣幾股？`
+          .addOptions(amts.slice(0, 25).map(x => ({ label: x === cap ? (cap === sellable ? `全部賣掉（${num(x)} 股）` : `賣 ${num(x)} 股（單次上限）`) : `賣 ${num(x)} 股`, description: (s.price < 0 ? `倒扣 ${num(Math.abs(s.price) * x)}` : `約得 ${num(Math.round(s.price * x * (1 - (c.fee_pct || 0) / 100)))}`).slice(0, 100), value: String(x) })));
+        return i.update({ content: `${s.emoji || ''}${s.name} \`${s.code}\`（持有 ${num(held)}${lockedToday ? `，其中 ${num(lockedToday)} 股今天剛買不能賣` : ''}）現價 ${num(s.price)}：要賣幾股？`
           + (s.price < 0 ? '\n⚠️ 現在是負股價，賣出會**從錢包倒扣**（餘額可能變負數）。' : ''), components: [new ActionRowBuilder().addComponents(menu)], embeds: [] }).catch(() => {});
       }
       if (i.isStringSelectMenu() && i.customId.startsWith('stk:sellqty:')) {
