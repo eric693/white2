@@ -323,8 +323,17 @@ function runOne(gid, p, skill) {
   }
 }
 
-/** 整個伺服器跑一次每日結算，回傳 [{user_id, role, skill, lines}] */
-function runDaily(gid) {
+// 「收成類」能力：東西成熟了就該收，一天只跑一次會讓作物（90~480 分就成熟）
+// 卡在田裡大半天，玩家會覺得自動收成根本沒作用。這類改成每小時跑。
+// 這些動作本身都有自然上限（沒成熟就收不到、沒空格就種不了、魚飽了就不餵），
+// 所以重複跑是安全的，不需要用 last_run 擋。
+const HOURLY_SKILLS = new Set([
+  'farm_harvest', 'greenhouse_harvest', 'aqua_collect', 'hatch_collect',
+  'farm_plant', 'greenhouse_plant', 'hatch_put', 'aqua_feed'
+]);
+
+/** 整個伺服器跑一次結算。mode='daily' 每日配給類；mode='hourly' 收成類。 */
+function runDaily(gid, mode = 'daily') {
   const day = today();
   const rows = db.prepare(
     `SELECT p.*, r.name AS role_name, a.level, w.username AS user_name
@@ -332,14 +341,21 @@ function runDaily(gid) {
        JOIN wheel_roles r ON r.id = p.role_id
        LEFT JOIN affinity a ON a.guild_id=p.guild_id AND a.user_id=p.user_id AND a.role_id=p.role_id
        LEFT JOIN econ_wallets w ON w.guild_id=p.guild_id AND w.user_id=p.user_id
-      WHERE p.guild_id=? AND p.skill_id > 0 AND p.last_run <> ?`).all(gid, day);
+      WHERE p.guild_id=? AND p.skill_id > 0`
+    + (mode === 'daily' ? ' AND p.last_run <> ?' : '')   // 收成類每小時都要能跑，不受今天已結算影響
+  ).all(...(mode === 'daily' ? [gid, day] : [gid]));
   const out = [];
   for (const p of rows) {
     try {
       const skill = skillById(gid, p.skill_id);
-      db.prepare('UPDATE home_partners SET last_run=? WHERE guild_id=? AND user_id=? AND role_id=?')
-        .run(day, gid, p.user_id, p.role_id);
       if (!skill || !skill.enabled) continue;
+      const isHourly = HOURLY_SKILLS.has(skill.code);
+      if (mode === 'hourly' ? !isHourly : isHourly) continue;   // 只跑這一輪該跑的
+      // 每日配給類要記 last_run 免得同一天重複領；收成類本身就自帶上限，不用擋
+      if (mode === 'daily') {
+        db.prepare('UPDATE home_partners SET last_run=? WHERE guild_id=? AND user_id=? AND role_id=?')
+          .run(day, gid, p.user_id, p.role_id);
+      }
       const lines = runOne(gid, p, skill);
       if (lines && lines.length) out.push({ user_id: p.user_id, role: p.role_name, skill: skill.name, lines });
     } catch (e) { logError(gid, `同居能力執行失敗（${p.user_id}）：`, e.message); }
@@ -370,7 +386,17 @@ function init(client) {
       } catch (e) { logError(gid, '同居能力每日結算失敗：', e.message); }
     }
   }, { timezone: 'Asia/Taipei' });
-  console.log('  ↳ 同居能力模組已載入（18 種能力，每天 8:40 結算）');
+
+  // 收成類每小時跑一次：作物 90~480 分就成熟，等到隔天早上才收等於自動收成沒作用。
+  // 不發通知（一天 24 次會洗版），東西直接進背包／錢包，玩家自己看得到。
+  cron.schedule('5 * * * *', () => {
+    for (const gid of activeGuildIds()) {
+      try { runDaily(gid, 'hourly'); }
+      catch (e) { logError(gid, '同居能力每小時收成失敗：', e.message); }
+    }
+  }, { timezone: 'Asia/Taipei' });
+
+  console.log('  ↳ 同居能力模組已載入（18 種能力：收成類每小時、配給類每天 8:40）');
 }
 
 /** 通知頻道：沿用採集系統設定的頻道，沒設就不發 */
