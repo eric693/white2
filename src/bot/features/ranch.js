@@ -132,9 +132,12 @@ function accrue(gid, uid) {
     const iv = applySpeed(intervalMs(a), speed);
     const units = Math.floor((now - s.last_produce_ms) / iv);
     if (units <= 0) continue;
-    // 產量加成：每一單位產出乘上倍率（無條件捨去，但至少 1）
-    const gained = Math.max(units, Math.floor(units * (1 + yieldPct / 100)));
-    const cap = Math.max(1, Math.floor(a.produce_per_day * (1 + yieldPct / 100))) * Math.max(1, c.max_accrue_days);
+    // 產量加成：小數的部分用機率補一個，長期期望值剛好等於加成％。
+    // （舊寫法是 floor(units × 倍率)，units 通常是 1 → floor(1.35)=1，加成等於完全沒作用）
+    const rawGain = units * (1 + yieldPct / 100);
+    const gained = Math.max(units, Math.floor(rawGain) + (Math.random() < (rawGain % 1) ? 1 : 0));
+    // 上限也要先乘天數再套加成再取整，否則 floor(2 × 1.35)=2 跟沒加成一樣
+    const cap = Math.max(1, Math.floor(a.produce_per_day * Math.max(1, c.max_accrue_days) * (1 + yieldPct / 100)));
     const pending = Math.min(cap, s.pending + gained);
     const added = pending - s.pending;
     // 未滿：時間往前推 added 個間隔（餘數保留）；已滿：計時暫停到現在，收成後才重新開始

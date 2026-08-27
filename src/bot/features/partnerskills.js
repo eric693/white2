@@ -352,17 +352,19 @@ function init(client) {
     try { seedSkills(gid); } catch (e) { logError(gid, '同居能力預設建立失敗：', e.message); }
   }
   // 每天早上 8:40 結算（牧場的「幫忙收成」是 8:30，錯開避免同時搶 DB）
-  cron.schedule('40 8 * * *', () => {
+  cron.schedule('40 8 * * *', async () => {
     for (const gid of activeGuildIds()) {
       try {
         const done = runDaily(gid);
         if (!done.length) continue;
-        const ch = notifyChannel(client, gid);
-        if (!ch) continue;
         const gc = gcfg(gid);
+        // 結算結果只私訊本人：以前是公開發在頻道又 tag 人，等於把每個人的
+        // 同居對象與收成全部攤在大家面前，還會洗版。
         for (const d of done) {
-          ch.send({ embeds: [new EmbedBuilder().setColor(0xeb459e).setTitle('💞 同居角色幫你做了事')
-            .setDescription(`<@${d.user_id}>　**${d.role}**（${d.skill}）\n${d.lines.map(x => `・${x}`).join('\n')}`)
+          const u = await client.users.fetch(d.user_id).catch(() => null);
+          if (!u) continue;
+          await u.send({ embeds: [new EmbedBuilder().setColor(0xeb459e).setTitle('💞 同居角色幫你做了事')
+            .setDescription(`**${d.role}**（${d.skill}）\n${d.lines.map(x => `・${x}`).join('\n')}`)
             .setFooter({ text: `每天早上 8:40 結算｜${gc.currency_name || '星幣'}` })] }).catch(() => {});
         }
       } catch (e) { logError(gid, '同居能力每日結算失敗：', e.message); }
