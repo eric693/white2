@@ -193,8 +193,10 @@ function harvestPlots(gid, uid, type) {
       const seed = db.prepare('SELECT * FROM crop_seeds WHERE guild_id=? AND id=?').get(gid, r.seed_id);
       db.prepare('DELETE FROM crop_plots WHERE guild_id=? AND user_id=? AND plot_type=? AND slot=?').run(gid, uid, r.plot_type, r.slot);
       if (!seed) continue;
-      addToBag(gid, uid, seed.product_item_id, seed.yield_count);
-      gained.set(seed.product_item_id, (gained.get(seed.product_item_id) || 0) + seed.yield_count);
+      // 跟玩家自己 /採收 走同一套產量加成，不能因為是同居角色代收就少拿
+      const n = require('./crops').yieldCountFor(gid, uid, seed);
+      addToBag(gid, uid, seed.product_item_id, n);
+      gained.set(seed.product_item_id, (gained.get(seed.product_item_id) || 0) + n);
     }
   })();
   return [...gained.entries()].map(([id, n]) => {

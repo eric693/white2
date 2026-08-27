@@ -165,6 +165,17 @@ function plantableSeeds(gid, uid, type) {
 }
 
 // 採收：把所有成熟的作物放進背包。回傳 {ok, lines, value} 或 {empty:true}。Discord 與網頁共用。
+// 設施的「產量 +N%」套在收成數量上。yield_count 很小（2~3），直接無條件捨去會把
+// 加成整個吃掉（floor(2×1.35)=2 跟沒加成一樣），所以小數部分用機率補一個，
+// 長期期望值剛好等於加成％。農地與溫室各自看自己的設施等級。
+function yieldCountFor(gid, uid, seed) {
+  const pct = facilityBonus(gid, uid, seed.plot_type).yield || 0;
+  const base = Math.max(1, seed.yield_count || 1);
+  if (pct <= 0) return base;
+  const raw = base * (1 + pct / 100);
+  return Math.max(base, Math.floor(raw) + (Math.random() < (raw % 1) ? 1 : 0));
+}
+
 function reap(gid, uid) {
   const now = Date.now();
   const ripe = db.prepare('SELECT * FROM crop_plots WHERE guild_id=? AND user_id=? AND ready_at<=?').all(gid, uid, now);
@@ -174,8 +185,9 @@ function reap(gid, uid) {
     for (const r of ripe) {
       const seed = seedById(gid, r.seed_id);
       if (!seed) { db.prepare('DELETE FROM crop_plots WHERE guild_id=? AND user_id=? AND plot_type=? AND slot=?').run(gid, uid, r.plot_type, r.slot); continue; }
-      addToBag(gid, uid, seed.product_item_id, seed.yield_count);
-      gained.set(seed.product_item_id, (gained.get(seed.product_item_id) || 0) + seed.yield_count);
+      const n = yieldCountFor(gid, uid, seed);
+      addToBag(gid, uid, seed.product_item_id, n);
+      gained.set(seed.product_item_id, (gained.get(seed.product_item_id) || 0) + n);
       db.prepare('DELETE FROM crop_plots WHERE guild_id=? AND user_id=? AND plot_type=? AND slot=?').run(gid, uid, r.plot_type, r.slot);
     }
   })();
@@ -405,4 +417,4 @@ function init(client) {
   console.log('  ↳ 種植模組已載入（農地種作物／溫室種花卉／採收）');
 }
 
-module.exports = { init, seedCrops, plantSeeds, plantableSeeds, seedsInBag, seedItemOf, reap, buySeeds };
+module.exports = { init, seedCrops, yieldCountFor, plantSeeds, plantableSeeds, seedsInBag, seedItemOf, reap, buySeeds };
