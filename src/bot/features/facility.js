@@ -65,11 +65,12 @@ function highTiers() {
       const price = Math.round(50000 * Math.pow(2.4, step));   // 12 萬 → 約 6,600 萬
       const slots = 8 + step * 2;                              // 10 → 26 格
       const speed = ['aquarium'].includes(type) ? 0 : Math.min(70, 25 + step * 5);
-      const yieldPct = Math.min(80, step * 7);                 // 產量 +7% ～ +63%
+      // 孵化室沒有「產量」可以加成（1 顆蛋固定孵 1 隻），標了只會讓玩家誤會，所以不給
+      const yieldPct = type === 'hatch' ? 0 : Math.min(80, step * 7);   // 產量 +7% ～ +63%
       const resist = ['ranch', 'aquarium'].includes(type) ? Math.min(60, 25 + step * 4) : 0;
       const bits = [`${slots} 格`];
       if (speed) bits.push(`產出快 ${speed}%`);
-      bits.push(`產量 +${yieldPct}%`);
+      if (yieldPct) bits.push(`產量 +${yieldPct}%`);
       if (resist) bits.push(`被偷成功率 -${resist}%`);
       out.push([type, tier, TIER_NAMES[type][tier - 1], TIER_EMOJI[type], price, slots, bits.join('、'), speed, resist, yieldPct]);
     }
