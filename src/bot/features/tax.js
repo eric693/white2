@@ -609,6 +609,11 @@ function payArrears(gid, userId, amount) {
   db.transaction(() => {
     db.prepare("UPDATE econ_wallets SET coins = coins - ?, tax_arrears = tax_arrears - ?, updated_at=datetime('now','localtime') WHERE guild_id=? AND user_id=?").run(pay, pay, gid, userId);
     require('./charity').addTax(gid, pay);   // 補的稅一樣進慈善基金會
+    // 補繳也要留紀錄，不然「累計繳稅」成就算不到這筆（期間碼加 -補繳，跟正式稅單分開）
+    db.prepare(
+      `INSERT INTO tax_records (guild_id, period, user_id, username, balance, income_tax, land_tax, breed_tax, stock_tax, spend_tax, charity_credit, total, paid, detail)
+       VALUES (?,?,?,?,?,0,0,0,0,0,0,?,?,?)`
+    ).run(gid, periodCode() + '-補繳', userId, w.username || '', w.coins, pay, pay, JSON.stringify({ arrears: 1 }));
   })();
   const nw = db.prepare('SELECT coins, tax_arrears FROM econ_wallets WHERE guild_id=? AND user_id=?').get(gid, userId);
   return { ok: true, paid: pay, left: Math.max(0, nw.tax_arrears || 0), coins: nw.coins };
@@ -650,7 +655,7 @@ function init(client) {
       }
       const a = assess(gid, i.user.id);
       if (!a) return await i.reply({ content: '找不到錢包資料（先玩一下再來看稅單吧）。', flags: MessageFlags.Ephemeral });
-      const last = db.prepare('SELECT * FROM tax_records WHERE guild_id=? AND user_id=? ORDER BY id DESC LIMIT 1').get(gid, i.user.id);
+      const last = db.prepare("SELECT * FROM tax_records WHERE guild_id=? AND user_id=? AND period NOT LIKE '%-補繳' ORDER BY id DESC LIMIT 1").get(gid, i.user.id);
       const emb = billEmbed(gid, a, null)
         .setTitle(`🧾 ${i.member?.displayName || i.user.username} 的稅單預估`)
         .setFooter({
@@ -682,7 +687,7 @@ function init(client) {
       const a = assess(gid, target.id);
       if (!a) return i.reply({ content: '找不到錢包資料（先玩一下再來看稅單吧）。', flags: MessageFlags.Ephemeral });
       const last = db.prepare(
-        'SELECT * FROM tax_records WHERE guild_id=? AND user_id=? ORDER BY id DESC LIMIT 1'
+        "SELECT * FROM tax_records WHERE guild_id=? AND user_id=? AND period NOT LIKE '%-補繳' ORDER BY id DESC LIMIT 1"
       ).get(gid, target.id);
       const emb = billEmbed(gid, a, null)
         .setTitle(`🧾 ${target.username} 的稅單預估`)

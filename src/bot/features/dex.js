@@ -309,7 +309,7 @@ function achAllPanel(gid, uid, uname, page = 0) {
     const got = owned.has(t.id);
     // metric 型：現在數字／門檻；收集型：看該分類已收集幾種
     let have = 0;
-    if (t.metric && METRICS[t.metric]) have = metricValue(gid, uid, t.metric);
+    if (t.metric) have = metricValue(gid, uid, t.metric);   // 判定式（syncTitles）也是只看 metric，這裡要一致，否則顯示的進度跟實際解鎖條件對不上
     else if (t.cat === 'wealth') have = (db.prepare('SELECT coins FROM econ_wallets WHERE guild_id=? AND user_id=?').get(gid, uid) || {}).coins || 0;
     else if (t.cat === 'home') have = (db.prepare('SELECT level FROM home_users WHERE guild_id=? AND user_id=?').get(gid, uid) || {}).level || 0;
     else if (t.cat === 'affinity') have = (db.prepare('SELECT COALESCE(MAX(level),0) n FROM affinity WHERE guild_id=? AND user_id=?').get(gid, uid) || {}).n || 0;

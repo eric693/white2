@@ -52,13 +52,13 @@ const METRICS = {
   donate_coins: { name: '累計捐款', unit: '', derived: (g, u) => q('SELECT COALESCE(SUM(amount),0) n FROM charity_donations WHERE guild_id=? AND user_id=?', g, u) },
   stock_trades: { name: '股市成交', unit: '筆', derived: (g, u) => q('SELECT COUNT(*) n FROM stock_trades WHERE guild_id=? AND user_id=?', g, u) },
   stock_profit: { name: '股市已實現獲利', unit: '', derived: (g, u) => q('SELECT COALESCE(SUM(pnl),0) n FROM stock_trades WHERE guild_id=? AND user_id=?', g, u) },
-  tax_paid:     { name: '累計繳稅', unit: '', derived: (g, u) => q('SELECT COALESCE(SUM(total),0) n FROM tax_records WHERE guild_id=? AND user_id=? AND paid=1', g, u) },
+  tax_paid:     { name: '累計繳稅', unit: '', derived: (g, u) => q('SELECT COALESCE(SUM(paid),0) n FROM tax_records WHERE guild_id=? AND user_id=?', g, u) },
   aqua_ssr:     { name: '魚缸裡的 SSR 魚', unit: '隻', derived: (g, u) => q('SELECT COUNT(*) n FROM aquarium_slots WHERE guild_id=? AND user_id=?', g, u) },
   dex_total:    { name: '圖鑑總收集', unit: '種', derived: (g, u) => q('SELECT COUNT(*) n FROM dex_seen WHERE guild_id=? AND user_id=?', g, u) }
 };
 
 // 圖鑑各分類也都能當 metric：dex_fish、dex_mine、dex_cook…
-for (const cat of ['fish', 'mine', 'crop', 'greenhouse', 'forage', 'hunt', 'cook', 'pet', 'furniture', 'role']) {
+for (const cat of ['fish', 'mine', 'crop', 'seed', 'greenhouse', 'forage', 'hunt', 'wood', 'craft', 'cook', 'pet', 'furniture', 'gift', 'role']) {
   METRICS['dex_' + cat] = {
     name: `圖鑑收集（${cat}）`, unit: '種',
     derived: (g, u) => q('SELECT COUNT(*) n FROM dex_seen WHERE guild_id=? AND user_id=? AND cat=?', g, u, cat)

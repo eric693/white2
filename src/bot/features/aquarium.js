@@ -5,6 +5,7 @@
 //   2. 每條魚要定期花星幣買飼料；沒餵會餓，餓太久就死掉（魚沒了，錢也拿不回來）。
 //   3. 未領取的星幣可以被 /偷魚，運氣好連整條魚都會被撈走。
 const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
+const { selectRows, isSelect } = require('../../util/menu');
 const { db, guildConfig, logError } = require('../../db');
 const { bump: bumpAch } = require('../../util/achievements');
 const { brandColor } = require('../../util/brand');
@@ -118,6 +119,7 @@ function buyFish(gid, uid, uname, fishId) {
     db.prepare('INSERT INTO aquarium_slots (guild_id,user_id,slot,fish_id,pending,last_produce_ms,fed_until_ms) VALUES (?,?,?,?,0,?,?)')
       .run(gid, uid, free, f.id, now, fedUntil);
   })();
+  bumpAch(gid, uid, 'fish_caught', 1);
   const used = slotsOf(gid, uid).length;
   return { embed: new EmbedBuilder().setColor(brandColor()).setTitle('🐠 入缸成功')
     .setDescription(`${f.emoji || '🐟'} **${f.name}**（SSR）住進魚缸第 ${free + 1} 格！\n` +
@@ -151,6 +153,7 @@ function buyFishMulti(gid, uid, uname, ids) {
       bought.push(f);
     }
   })();
+  bumpAch(gid, uid, 'fish_caught', bought.length);
   if (!bought.length) return { error: '沒買到魚：' + (skipped.join('、') || '狀態有變，再試一次') };
   const spent = bought.reduce((a, f) => a + f.price + f.feed_cost, 0);
   const w = wallet(gid, uid, uname);
@@ -184,6 +187,7 @@ function depositFish(gid, uid, uname, itemIds) {
       done.push(af);
     }
   })();
+  bumpAch(gid, uid, 'fish_caught', done.length);
   if (!done.length) return { error: '沒有魚存進去：' + (skipped.join('、') || '背包裡沒有可存的釣獲魚') };
   const used = slotsOf(gid, uid).length;
   return { embed: new EmbedBuilder().setColor(brandColor()).setTitle(`🎣 存了 ${done.length} 條釣獲魚`)
@@ -451,9 +455,9 @@ function init(client) {
             description: `賣掉回收 ${f ? Math.max(1, Math.floor(f.price * SELL_PCT)).toLocaleString('en-US') : 1} ${gc.currency_name}`.slice(0, 100),
             value: String(s.slot), emoji: (f && f.emoji) || '🐟' };
         }) : [];
-        const rows = sellOpts.length ? [new ActionRowBuilder().addComponents(
-          new StringSelectMenuBuilder().setCustomId('aqsell').setPlaceholder('💰 賣魚（可多選，回收一半＋缸裡星幣）')
-            .setMinValues(1).setMaxValues(Math.min(sellOpts.length, 25)).addOptions(sellOpts.slice(0, 25)))] : [];
+        // 魚缸最多 26 格，超過 25 條時舊寫法會有魚賣不掉
+        const rows = selectRows('aqsell', sellOpts, '💰 賣魚（可多選，回收一半＋缸裡星幣）',
+          { maxRows: 3, maxValues: sellOpts.length });
         // 日常兩鍵：餵魚（花星幣）與撈金（領星幣），不用再打指令
         if (own) rows.push(new ActionRowBuilder().addComponents(
           new ButtonBuilder().setCustomId('adv:feed').setLabel('餵魚').setEmoji('🍤').setStyle(ButtonStyle.Primary),
