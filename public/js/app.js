@@ -150,8 +150,52 @@ const App = {
     view.innerHTML = `
       <div class="page-title">${UI.esc(def.title)}</div>
       <div class="page-sub">${UI.esc(def.sub || '')}</div>
+      ${App.helpHtml(key, def.help)}
       <div id="page-body"></div>`;
+    App.bindHelp(view, key);
     try { def.render(document.getElementById('page-body')); }
     catch (e) { UI.err(e.message); }
+  },
+
+  // 頁面操作說明：每個模組在 def.help 寫一段「這頁在幹嘛、怎麼操作、要注意什麼」
+  // { intro, steps: ['...'], notes: ['...'], terms: [['名詞','解釋']] }
+  // 收合狀態記在 localStorage，熟了之後就不會一直擋著看資料
+  helpKey(key) { return 'help_open_' + key; },
+
+  helpOpen(key) {
+    // 第一次進到某個頁面預設展開，之後照使用者自己收放的狀態
+    try { return localStorage.getItem(App.helpKey(key)) !== '0'; } catch { return true; }
+  },
+
+  helpHtml(key, help) {
+    if (!help) return '';
+    const li = arr => (arr || []).map(t => `<li>${UI.esc(t)}</li>`).join('');
+    const open = App.helpOpen(key);
+    const steps = help.steps && help.steps.length
+      ? `<div class="help-h">操作步驟</div><ol>${li(help.steps)}</ol>` : '';
+    const notes = help.notes && help.notes.length
+      ? `<div class="help-h">注意事項</div><ul>${li(help.notes)}</ul>` : '';
+    const terms = help.terms && help.terms.length
+      ? `<div class="help-h">名詞說明</div><dl>`
+        + help.terms.map(([t, d]) => `<dt>${UI.esc(t)}</dt><dd>${UI.esc(d)}</dd>`).join('') + `</dl>` : '';
+    return `<section class="help-box${open ? ' open' : ''}" id="help-box">
+      <button type="button" class="help-toggle" id="help-toggle">
+        <span class="help-mark">?</span>操作說明<span class="help-arrow">${open ? '收合' : '展開'}</span>
+      </button>
+      <div class="help-body">
+        ${help.intro ? `<p class="help-intro">${UI.esc(help.intro)}</p>` : ''}
+        ${steps}${notes}${terms}
+      </div>
+    </section>`;
+  },
+
+  bindHelp(el, key) {
+    const box = el.querySelector('#help-box');
+    if (!box) return;
+    el.querySelector('#help-toggle').onclick = () => {
+      const open = box.classList.toggle('open');
+      box.querySelector('.help-arrow').textContent = open ? '收合' : '展開';
+      try { localStorage.setItem(App.helpKey(key), open ? '1' : '0'); } catch {}
+    };
   }
 };

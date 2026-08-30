@@ -1,5 +1,15 @@
 // ===== 生日驗證與慶生 =====
 App.page('birthday', {
+  help: {
+    "intro": "年齡驗證與生日名單，生日當天自動慶生。",
+    "steps": [
+      "設定驗證頻道與通過後要給的身分組。",
+      "設定慶生頻道與祝賀訊息樣式。"
+    ],
+    "notes": [
+      "生日只存月日，不會保留出生年份。"
+    ]
+  },
   title: '生日驗證與慶生', sub: '加入年齡驗證、生日名單與慶生設定', module: 'birthday',
   async render(el) {
     await H.loadMeta();
@@ -211,6 +221,18 @@ function rrValue(root, name) {
 
 // ===== 公告（7.1～7.12）=====
 App.page('announcements', {
+  help: {
+    "intro": "發公告到一個或多個頻道，支援排程、循環與模板。",
+    "steps": [
+      "選頻道、寫內容，可加標記與圖片。",
+      "要定時就設排程時間；要每週固定發就設循環。",
+      "發布前先用預覽確認排版。"
+    ],
+    "notes": [
+      "排程與循環是以台北時間計算。",
+      "循環公告會一直發到你停用為止，記得設結束條件。"
+    ]
+  },
   title: '公告', sub: '多頻道 / 標記 / 排程 / 循環 / 模板 / 預覽', module: 'announcements',
   async render(el) {
     await H.loadMeta();
@@ -523,6 +545,16 @@ App.page('announcements', {
 
 // ===== 投票 =====
 App.page('polls', {
+  help: {
+    "intro": "建立投票：單選或複選、匿名或公開、可限定身分組。",
+    "steps": [
+      "填問題與選項，選投票模式。",
+      "可設定截止時間與是否隱藏即時結果。"
+    ],
+    "notes": [
+      "匿名投票結束後也不會顯示誰投了什麼。"
+    ]
+  },
   title: '投票', sub: '單選/複選、匿名/公開、限定身分組、可修改、結果隱藏、開始與截止', module: 'polls',
   async render(el) {
     await H.loadMeta();
@@ -592,6 +624,17 @@ App.page('polls', {
 
 // ===== 抽獎 =====
 App.page('giveaways', {
+  help: {
+    "intro": "抽獎活動：設獎品、名額與起訖時間，時間到自動開獎。",
+    "steps": [
+      "填獎品、名額與結束時間。",
+      "需要的話設保證中獎或限定身分組。",
+      "得獎者沒回應可以用「補抽」重新抽一位。"
+    ],
+    "notes": [
+      "12 小時內中過獎的人預設不會再中，避免同一人連莊。"
+    ]
+  },
   title: '抽獎', sub: '獎品/名額/開始結束時間、保證中獎、補抽、12 小時中獎限制', module: 'giveaways',
   async render(el) {
     await H.loadMeta();
@@ -751,6 +794,16 @@ const BL_FEATURES = [
 const BL_LABEL = (f) => (BL_FEATURES.find(x => x[0] === f) || [f, f])[1];
 
 App.page('blacklist', {
+  help: {
+    "intro": "針對個別成員停用特定功能，不必整個封鎖。",
+    "steps": [
+      "加入成員，勾選要停用的功能項目。",
+      "只擋勾起來的那幾項，其餘功能照常使用。"
+    ],
+    "notes": [
+      "這裡的黑名單不影響 Discord 本身的權限，只擋機器人功能。"
+    ]
+  },
   title: '功能黑名單', sub: '可以指定只擋某一項功能，不必整個封掉', module: 'blacklist',
   async render(el) {
     const rows = await GET('/blacklist');
