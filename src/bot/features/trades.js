@@ -86,8 +86,11 @@ function init(client) {
       const qtyMenu = (customId, max, placeholder) => {
         const cap = Math.max(1, max);
         const n = Math.min(cap, 24);   // 留一格給「全部」，避免超過 Discord 選單 25 上限
-        const opts = Array.from({ length: n }, (_, k) => ({ label: `${k + 1} 個`, value: String(k + 1) }));
+        // 「全部」放最前面：以前排在 24 個數字後面，選項一多要一直往下捲才看得到，
+        // 玩家會以為根本沒有這個選項。
+        const opts = [];
         if (cap > 1) opts.push({ label: `📦 全部（${cap} 個）`, value: 'all' });
+        opts.push(...Array.from({ length: n }, (_, k) => ({ label: `${k + 1} 個`, value: String(k + 1) })));
         return new StringSelectMenuBuilder().setCustomId(customId).setPlaceholder(placeholder).addOptions(opts);
       };
       const uOf = (id) => `<@${id}>`;

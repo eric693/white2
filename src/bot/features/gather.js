@@ -1089,21 +1089,38 @@ function init(client) {
           WHERE v.guild_id=? AND v.user_id=? AND v.count > 0 ORDER BY it.price DESC`
       ).all(i.guildId, i.user.id).filter(r => !inKeepBag(usesPanel, r));   // 只列自由背包
       if (!rows.length) return i.reply({ content: '自由背包是空的（🔒 保管袋裡的東西不會被賣掉）。', flags: MessageFlags.Ephemeral });
-      const menu = new StringSelectMenuBuilder().setCustomId('sellpick')
-        .setPlaceholder('勾選要賣的（可多選，不勾的留著）').setMinValues(1).setMaxValues(Math.min(rows.length + 1, 25))
-        .addOptions([
-          { label: '🔴 全部賣光', value: '__all__', description: '一次賣掉背包所有東西' },
-          { label: '🔢 挑數量賣（選一種）', value: '__qty__', description: '選一種物品，再選要賣幾個（可留一些）' },
-          ...rows.slice(0, 23).map(r => ({
-            label: `${r.emoji || ''}${r.name}`.slice(0, 100),
-            description: `持有 ${r.count}　單價 ${sellUnit(i.guildId, i.user.id, r)}　共 ${(r.count * sellUnit(i.guildId, i.user.id, r)).toLocaleString('en-US')}`.slice(0, 100),
-            value: String(r.id)
-          }))
-        ]);
-      return i.reply({ content: '要賣哪些？勾選後送出（整種賣掉）；想留一些就選「🔢 挑數量賣」：', components: [new ActionRowBuilder().addComponents(menu)], flags: MessageFlags.Ephemeral });
+      // 「全部賣光」與「挑數量賣」改成按鈕獨立一行，把下拉的位置全部讓給物品，
+      // 否則以前只塞得下 23 種，而且是照售價由高到低排，農牧產物那種便宜的
+      // 永遠排不進來，玩家會以為「農場的東西不能賣」。
+      const actRow = new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('sellall').setLabel('🔴 全部賣光').setStyle(ButtonStyle.Danger),
+        new ButtonBuilder().setCustomId('sellqtypick').setLabel('🔢 挑數量賣').setStyle(ButtonStyle.Secondary)
+      );
+      // 剩下 4 行給物品下拉，一行 25 種 → 最多列 100 種
+      const menus = [];
+      for (let p = 0; p < rows.length && menus.length < 4; p += 25) {
+        const slice = rows.slice(p, p + 25);
+        menus.push(new ActionRowBuilder().addComponents(
+          new StringSelectMenuBuilder().setCustomId(`sellpick:${menus.length}`)
+            .setPlaceholder(rows.length > 25 ? `勾選要賣的（第 ${p + 1}-${p + slice.length} 種，可多選）` : '勾選要賣的（可多選，不勾的留著）')
+            .setMinValues(1).setMaxValues(slice.length)
+            .addOptions(slice.map(r => ({
+              label: `${r.emoji || ''}${r.name}`.slice(0, 100),
+              description: `持有 ${r.count}　單價 ${sellUnit(i.guildId, i.user.id, r)}　共 ${(r.count * sellUnit(i.guildId, i.user.id, r)).toLocaleString('en-US')}`.slice(0, 100),
+              value: String(r.id)
+            })))));
+      }
+      const shown = Math.min(rows.length, 100);
+      return i.reply({
+        content: `要賣哪些？勾選後送出（整種賣掉）；想留一些就按「🔢 挑數量賣」。\n`
+          + `目前列出 **${shown}／${rows.length}** 種`
+          + (rows.length > shown ? `（其餘的請用「🔢 挑數量賣」或 \`/賣出 物品:名稱\`）` : '')
+          + `　🔒 保管袋的東西不會出現在這裡。`,
+        components: [actRow, ...menus], flags: MessageFlags.Ephemeral
+      });
     }
     // 「挑數量賣」：選物品（多個下拉一次列全部）→ 再選數量
-    if (i.isStringSelectMenu() && i.customId === 'sellpick' && i.values.includes('__qty__')) {
+    if (i.isButton() && i.customId === 'sellqtypick') {
       const menus = sellItemRows(i.guildId, i.user.id);
       if (!menus) return i.update({ content: '背包是空的，沒東西可以賣。', components: [], embeds: [] }).catch(() => {});
       return i.update({ content: '要賣哪一種？（下拉可能有好幾個，往下找）', components: menus, embeds: [] }).catch(() => {});
@@ -1179,7 +1196,9 @@ function init(client) {
       const r = db.prepare('SELECT v.count, it.* FROM gather_inventory v JOIN gather_items it ON it.id=v.item_id WHERE v.guild_id=? AND v.user_id=? AND it.id=? AND v.count>0').get(i.guildId, i.user.id, id);
       if (!r) return i.update({ content: '這個已經沒有了。', components: [], embeds: [] }).catch(() => {});
       const N = r.count, half = Math.max(1, Math.floor(N / 2));
-      const amts = [...new Set([1, 5, 10, 25, 50, 100].filter(x => x < N).concat(half < N ? [half] : []).concat([N]))].sort((a, b) => a - b);
+      // 「全部」放最前面，其餘由小到大；以前全部排在最後，數量多時要捲很久才看得到
+      const rest = [...new Set([1, 5, 10, 25, 50, 100].filter(x => x < N).concat(half < N ? [half] : []))].sort((a, b) => a - b);
+      const amts = [N, ...rest];
       const opts = amts.slice(0, 25).map(a => ({
         label: a === N ? `全部（${N} 個）` : a === half ? `一半（${half} 個）` : `賣 ${a} 個`,
         description: `+${(a * sellUnit(i.guildId, i.user.id, r)).toLocaleString('en-US')} 星幣，剩 ${N - a}`.slice(0, 100), value: String(a)
@@ -1210,11 +1229,11 @@ function init(client) {
       }).catch(() => {});
     }
     // 賣出清單送出 → 只賣勾選的
-    if (i.isStringSelectMenu() && i.customId === 'sellpick') {
+    if ((i.isStringSelectMenu() && isSelect(i.customId, 'sellpick')) || (i.isButton() && i.customId === 'sellall')) {
       const gid = i.guildId, uid = i.user.id, uname = i.user.username, cc = cfg(gid);
       let rows;
       const usesPick = itemUses(gid);
-      if (i.values.includes('__all__')) {
+      if (i.isButton()) {   // 🔴 全部賣光
         rows = db.prepare('SELECT v.count, v.locked, it.* FROM gather_inventory v JOIN gather_items it ON it.id=v.item_id WHERE v.guild_id=? AND v.user_id=? AND v.count>0').all(gid, uid);
       } else {
         const ids = i.values.map(Number).filter(Boolean);
