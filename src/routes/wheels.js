@@ -34,11 +34,10 @@ function wheelFields(b) {
     public_result: b.public_result ? 1 : 0,
     card_enabled: b.card_enabled ? 1 : 0, card_bg: b.card_bg || '',
     card_sign: b.card_sign ? 1 : 0, card_date: b.card_date ? 1 : 0,
-    start_at: b.start_at || '', end_at: b.end_at || '',
-    // 逛街／偶遇時角色會說的話：填幾句就隨機講哪一句（都留空＝不講話，只顯示介紹）
-    ad_line: String(b.ad_line || '').slice(0, 200),
-    ad_line2: String(b.ad_line2 || '').slice(0, 200),
-    ad_line3: String(b.ad_line3 || '').slice(0, 200)
+    start_at: b.start_at || '', end_at: b.end_at || ''
+    // 註：ad_line/ad_line2/ad_line3 是「角色」的欄位（wheel_roles），不是轉盤的。
+    // 以前誤放在這裡，害 PUT /wheels/:id 去 UPDATE role_wheels 不存在的欄位，
+    // 只要按「儲存」就 500，連換張背景圖都存不起來。
   };
 }
 
@@ -61,7 +60,7 @@ router.put('/wheels/:id', (req, res) => {
     `UPDATE role_wheels SET name=@name, description=@description, image_url=@image_url, tags=@tags,
        enabled=@enabled, listed=@listed, daily_limit=@daily_limit, no_repeat=@no_repeat,
        exclude_chatted=@exclude_chatted, card_enabled=@card_enabled, card_bg=@card_bg, card_sign=@card_sign, card_date=@card_date,
-       start_at=@start_at, end_at=@end_at, ad_line=@ad_line, ad_line2=@ad_line2, ad_line3=@ad_line3,
+       start_at=@start_at, end_at=@end_at,
        public_result=@public_result
      WHERE id=@id AND guild_id=@guild_id`
   ).run({ ...wheelFields(req.body || {}), id: req.params.id, guild_id: req.guildId });

@@ -924,7 +924,12 @@ function init(client) {
         return await reply({ embeds: [embed], components: [...sellAllRow, ...sellRow, ...rows2].slice(0, 5) });
       }
     } catch (e) {
-      logError(gid, '牧場指令失敗：', `${name}（${e.message}）`);
+      // AggregateError（builders 驗證失敗）的細節在 e.errors 裡，只印 message 會變成
+      // 沒有資訊的「Received one or more errors」，這裡把子錯誤一起攤開來方便追。
+      const detail = e && Array.isArray(e.errors)
+        ? e.errors.map(x => (x && x.message) || String(x)).join(' ｜ ')
+        : '';
+      logError(gid, '牧場指令失敗：', `${name}（${e.message}${detail ? `：${detail}` : ''}）`);
       const msg = { content: '執行失敗，管理員可到後台的系統錯誤紀錄查看原因。', flags: MessageFlags.Ephemeral };
       if (i.replied || i.deferred) await i.followUp(msg).catch(() => {});
       else await i.reply(msg).catch(() => {});
