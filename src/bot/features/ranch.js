@@ -582,9 +582,23 @@ function init(client) {
           const cd = nr ? `　下一顆 <t:${Math.floor(nr / 1000)}:R>` : (row.pending > 0 ? '　已滿' : '');
           lines.push(`\`${s + 1}\`｜${a ? (a.emoji || '🐾') + a.name : '未知動物'}　待收成 ${p ? (p.emoji || '') : ''}${row.pending}${cd}`);
         }
+        // Embed 描述上限 4096 字：養到上百隻的玩家（靠 /製作 可解鎖 200 格以上）
+        // 會直接超過，導致整個 /牧場 開不起來、只丟一句「執行失敗」。
+        // 這裡逐行累加到裝得下為止，並說明還有幾格沒列出來。
+        const TAIL = '\n\n每隻各自計時，成熟一個就能 `/收成` 一個，不用等整批。\n💰 想清欄位換星幣：用下面的選單「賣掉動物」（回收購買價一半，待收成產物一起進背包）。';
+        const BUDGET = 4096 - TAIL.length - 80;
+        let desc = '', shownLines = 0;
+        for (const ln of lines) {
+          if (desc.length + ln.length + 1 > BUDGET) break;
+          desc += (desc ? '\n' : '') + ln;
+          shownLines++;
+        }
+        if (shownLines < lines.length) {
+          desc += `\n…還有 **${lines.length - shownLines}** 格沒列出來（格子太多，訊息長度有限）。`;
+        }
         const embed = new EmbedBuilder().setColor(brandColor())
           .setTitle(`🏡 ${target.username} 的牧場`)
-          .setDescription(lines.join('\n') + '\n\n每隻各自計時，成熟一個就能 `/收成` 一個，不用等整批。\n💰 想清欄位換星幣：用下面的選單「賣掉動物」（回收購買價一半，待收成產物一起進背包）。')
+          .setDescription(desc + TAIL)
           .setFooter({ text: `待收成總值約 ${pendingValue.toLocaleString('en-US')} ${gc.currency_name}｜/收成 收取、/畜牧商店 買動物` });
         // 只在看自己的牧場、且有動物時，給「賣掉」下拉（點一下就賣，不用打格子號碼）
         const own = isBtn || target.id === uid;

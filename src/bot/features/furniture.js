@@ -297,6 +297,14 @@ function furniturePanel(gid, uid, uname) {
           value: String(o.furniture_id)
         })))));
   }
+  // Discord 一則訊息最多 5 行，導覽＋分類＋擺出＋收起＋賣掉剛好用滿，沒有空間再分頁。
+  // 家具種類超過 25 種的人會有東西列不出來，至少明講，不要讓他以為東西不見了。
+  const overMax = Math.max(canPlace.length, canStore.length, canSell.length);
+  if (overMax > 25) {
+    embed.setDescription(embed.data.description
+      + `\n\n（家具種類很多，每個選單先列 25 種／你共有 ${owned.length} 種；`
+      + '處理掉一批後重開 `/家具` 就會遞補後面的。）');
+  }
   return { embeds: [embed], components: rows };
 }
 

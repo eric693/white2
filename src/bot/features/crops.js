@@ -373,7 +373,16 @@ function init(client) {
             ? `\`${s + 1}\`｜${nm}　<t:${Math.floor(row.ready_at / 1000)}:R>`
             : `\`${s + 1}\`｜✅ ${nm} 可採收`);
         }
-        embed.setDescription(lines.join('\n')).setFooter({ text: `${max} 格｜/採收 收成　/種子商店 買種子` });
+        // Embed 描述上限 4096 字：田開到 90 格以上就會超過，整個 /農地 會開不起來。
+        // 逐行累加到裝得下為止，並說明還有幾格沒列。
+        let cdesc = '', cShown = 0;
+        for (const ln of lines) {
+          if (cdesc.length + ln.length + 1 > 3900) break;
+          cdesc += (cdesc ? '\n' : '') + ln;
+          cShown++;
+        }
+        if (cShown < lines.length) cdesc += `\n…還有 **${lines.length - cShown}** 格沒列出來（格子太多，訊息長度有限）。`;
+        embed.setDescription(cdesc).setFooter({ text: `${max} 格｜/採收 收成　/種子商店 買種子` });
         // 看自己的田才給種植選單（看別人的只是觀看）
         const rows2 = [];
         if (target.id === uid) {
