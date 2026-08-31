@@ -641,7 +641,10 @@ function init(client) {
       // ---- 放生（改為「賣掉」：回收一半星幣，不再白白丟掉）----
       if (name === '放生') {
         const slot = (i.options.getInteger('格子') || 0) - 1;
-        return await reply(sellAnimal(gid, uid, uname, slot));
+        const r = sellAnimal(gid, uid, uname, slot);
+        // sellAnimal 失敗時回的是 { error }，直接丟給 reply 會變成送出空訊息
+        // （Cannot send an empty message），玩家只看到指令壞掉。
+        return await reply(r.error ? { content: r.error } : r);
       }
 
       // ---- 偷偷樂 ----
