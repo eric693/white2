@@ -6,6 +6,7 @@ const { db, guildConfig, logError } = require('../../db');
 const { bump: bumpAch } = require('../../util/achievements');
 const { brandColor } = require('../../util/brand');
 // 產物賣價會受財經新聞影響（新聞關閉時等於基準價）
+const { isSelect } = require('../../util/menu');
 const { livePrice, priceTag } = require('../../util/market');
 const { wallet, addCoins, addToBag, menuResult, safeMenu } = require('./gather');
 const { facilitySlots, facilityBonus, applySpeed, speedFor } = require('./facility');
@@ -411,8 +412,23 @@ function init(client) {
       return safeMenu(i, '購買動物', () => buyAnimalMulti(i.guildId, i.user.id, i.user.username, id, qty));
     }
     // 牧場的「賣掉動物」選單（值＝格子索引）
-    if (i.isStringSelectMenu() && i.customId === 'ranchsell') {
-      return safeMenu(i, '賣出動物', () => sellAnimal(i.guildId, i.user.id, i.user.username, parseInt(i.values[0], 10)));
+    if (i.isStringSelectMenu() && isSelect(i.customId, 'ranchsell')) {
+      return safeMenu(i, '賣出動物', () => {
+        const gid = i.guildId, uid = i.user.id, uname = i.user.username;
+        // sellAnimal 是用固定格號刪除，格子不會重新編號，順序其實無所謂；
+        // 這裡照格號排序只是讓回報訊息看起來整齊。
+        const slots = i.values.map(v => parseInt(v, 10)).filter(n => !isNaN(n)).sort((a, b) => a - b);
+        const done = []; let lastErr = '';
+        for (const sl of slots) {
+          const r = sellAnimal(gid, uid, uname, sl);
+          if (r && r.error) { lastErr = r.error; continue; }
+          if (r && r.content) done.push(r.content);
+        }
+        if (!done.length) return { error: lastErr || '沒有賣出任何動物。' };
+        if (done.length === 1) return { content: done[0] };
+        return { content: `💰 一次賣掉 **${done.length}** 隻：\n` + done.map(t => '・' + t.replace(/^💰 已賣掉 /, '')).join('\n')
+          + (lastErr ? `\n（其餘：${lastErr}）` : '') };
+      });
     }
     // 孵化室「直接賣掉孵好的動物」（牧場滿了免挪；值＝孵化室格子）
     // 一鍵賣出：孵化室卡了幾十隻的時候，一格一格勾太痛苦
@@ -577,8 +593,24 @@ function init(client) {
           const refund = a ? Math.max(1, Math.floor((a.price || 0) * SELL_PCT)) : 1;
           return { label: `第 ${s.slot + 1} 格：${a ? a.name : '動物'}`.slice(0, 100), description: `賣掉回收 ${refund} ${gc.currency_name}`.slice(0, 100), value: String(s.slot), emoji: (a && a.emoji) || '🐾' };
         }) : [];
-        const rows = sellOpts.length ? [new ActionRowBuilder().addComponents(
-          new StringSelectMenuBuilder().setCustomId('ranchsell').setPlaceholder('💰 賣掉動物（回收一半星幣）').addOptions(sellOpts.slice(0, 25)))] : [];
+        // 可以一次勾選多隻賣掉（以前只能單選，要清一整欄得一隻一隻點）。
+        // 高階牧場最多 26 格，一個下拉只塞得下 25 個，所以超過就再開一行。
+        const rows = [];
+        const SHOWN = 125;   // Discord 一則訊息最多 5 行 × 每行 25 個選項
+        for (let p = 0; p < sellOpts.length && rows.length < 5; p += 25) {
+          const slice = sellOpts.slice(p, p + 25);
+          rows.push(new ActionRowBuilder().addComponents(
+            new StringSelectMenuBuilder().setCustomId(`ranchsell:${rows.length}`)
+              .setPlaceholder(sellOpts.length > 25
+                ? `💰 賣掉動物（第 ${p + 1}-${p + slice.length} 格，可多選）`
+                : '💰 賣掉動物（可多選，回收一半星幣）')
+              .setMinValues(1).setMaxValues(slice.length)
+              .addOptions(slice)));
+        }
+        if (sellOpts.length > SHOWN) {
+          embed.setDescription(embed.data.description
+            + `\n\n（動物太多，選單先列出前 ${SHOWN} 隻／共 ${sellOpts.length} 隻；賣掉一批後重開 \`/牧場\` 就會遞補後面的。）`);
+        }
         return await reply({ embeds: [embed], components: rows });
       }
 
