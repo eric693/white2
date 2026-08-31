@@ -338,11 +338,14 @@ function sell(gid, uid, username, key, sharesRaw) {
   const pnl = net - costPart;
 
   db.transaction(() => {
-    // 股票買賣不計入所得稅的「本期收入」：一進一出只是把自己的錢換個形式，
-    // 算成收入會讓玩家每交易一次就被課一次，越勤勞交易被課越重。
-    // 賺到的錢還是會留在餘額裡，稅基取「餘額與收入的高者」時照樣課得到，不會逃稅。
-    db.prepare('UPDATE econ_wallets SET coins = coins + ? WHERE guild_id=? AND user_id=?')
-      .run(net, gid, uid);
+    // 所得稅只課「實際賺到的價差」(pnl)，不是賣出總金額：
+    //   · 買 100 賣 100（沒賺）→ 收入 +0，完全不課稅
+    //   · 買 100 賣 150（賺 50）→ 收入 +50，只課那 50
+    // 用總金額會變成同一筆本金每周轉一次就被課一次，越勤勞交易被課越重；
+    // 完全不計又會讓玩家在結算前把錢全押回股票、變成零稅。用 pnl 兩邊都解決：
+    // 賺完馬上再買股也躲不掉，因為記的是已實現獲利，不是看手上剩多少現金。
+    db.prepare('UPDATE econ_wallets SET coins = coins + ?, total_earned = total_earned + ? WHERE guild_id=? AND user_id=?')
+      .run(net, Math.max(0, pnl), gid, uid);
     if (shares === h.shares) {
       db.prepare('UPDATE stock_holdings SET shares=0, cost_sum=0, realized=realized+? WHERE guild_id=? AND user_id=? AND symbol_id=?')
         .run(pnl, gid, uid, s.id);
@@ -422,9 +425,9 @@ function forceSell(gid, uid, username, symbolId, shares, capToZero = true) {
   const costPart = Math.round(avg * n);
   const pnl = net - costPart;
   db.transaction(() => {
-    // 同上：強制賣出也不計入所得稅收入
-    db.prepare('UPDATE econ_wallets SET coins = coins + ? WHERE guild_id=? AND user_id=?')
-      .run(net, gid, uid);
+    // 同上：強制賣出也只把實際價差計為收入
+    db.prepare('UPDATE econ_wallets SET coins = coins + ?, total_earned = total_earned + ? WHERE guild_id=? AND user_id=?')
+      .run(net, Math.max(0, pnl), gid, uid);
     if (n >= h.shares) {
       db.prepare('UPDATE stock_holdings SET shares=0, cost_sum=0, realized=realized+? WHERE guild_id=? AND user_id=? AND symbol_id=?')
         .run(pnl, gid, uid, symbolId);
