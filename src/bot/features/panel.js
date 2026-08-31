@@ -182,8 +182,21 @@ function init(client) {
         return;
       }
       if (!i.isChatInputCommand() || i.commandName !== '冒險面板') return;
-      const admin = i.member && (i.member.permissions.has(PermissionsBitField.Flags.ManageGuild) || i.member.permissions.has(PermissionsBitField.Flags.Administrator));
-      if (!admin) return i.reply({ content: '只有管理員能發布面板。', flags: MessageFlags.Ephemeral });
+      // Discord 管理員一律可用；另外也接受後台「功能權限 → 冒險面板」授權的身分組，
+      // 這樣可以讓大總管之類的管理身分組發面板，而不用給他們整個伺服器的管理權限。
+      const isDiscordAdmin = i.member && (i.member.permissions.has(PermissionsBitField.Flags.ManageGuild) || i.member.permissions.has(PermissionsBitField.Flags.Administrator));
+      let allowed = isDiscordAdmin;
+      if (!allowed && i.member) {
+        try {
+          const perm = require('./gather').cmdPerm(i.guildId, '冒險面板');
+          const ids = String((perm && perm.roles) || '').split(/[\n,]/).map(x => x.trim()).filter(Boolean);
+          allowed = ids.length > 0 && i.member.roles.cache.some(r => ids.includes(r.id));
+        } catch (e) { allowed = false; }
+      }
+      if (!allowed) return i.reply({
+        content: '只有管理員能發布面板。\n（想讓其他身分組也能發：後台 → 功能權限 → 「冒險面板」加上該身分組）',
+        flags: MessageFlags.Ephemeral
+      });
       const sent = await publishPanel(i.channel).catch(() => null);
       if (!sent) return i.reply({ content: '發布失敗，請確認機器人在這個頻道有「發送訊息」權限。', flags: MessageFlags.Ephemeral });
       return i.reply({

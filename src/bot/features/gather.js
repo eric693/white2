@@ -899,7 +899,9 @@ async function menuResult(i, out) {
 const KIND_COLOR = { fish: 0x3498db, mine: 0x95a5a6, wood: 0x8b5a2b, forage: 0x2ecc71, hunt: 0xe67e22 };
 const FAC_COLOR = { field: 0xf1c40f, greenhouse: 0x1abc9c, ranch: 0xe91e63, hatch: 0x9b59b6 };
 
-const CMD_LIST = [...GATHER_CMDS, '製作', '鍛造', '配方', '錢包', '背包', '賣出', '商店', '購買', '圖鑑', '任務', '轉帳', '富豪榜', '抽籤', '地圖', '修理', '狀態'];
+// 「冒險面板」也放進來，讓管理員可以在後台把發布面板的權限授權給某個身分組
+// （例如大總管），不必為了發面板就給對方 Discord 的「管理伺服器」權限。
+const CMD_LIST = [...GATHER_CMDS, '製作', '鍛造', '配方', '錢包', '背包', '賣出', '商店', '購買', '圖鑑', '任務', '轉帳', '富豪榜', '抽籤', '地圖', '修理', '狀態', '冒險面板'];
 const CMD_DEFAULT = (cmd) => ({
   enabled: 1,
   roles: '',
@@ -2075,4 +2077,4 @@ function init(client) {
   console.log('  ↳ 釣魚挖礦模組已載入（冷卻/稀有掉落/商店道具/圖鑑/經濟）');
 }
 
-module.exports = { init, wallet, addCoins, addToBag, seedGuild, seedMaterials, staminaState, staminaBoughtToday, bumpPoints, addPointsBonus, menuResult, safeMenu, RARITY, RARITY_LABEL, sellAllBag, buyThing, doGather };
+module.exports = { init, wallet, addCoins, addToBag, seedGuild, seedMaterials, staminaState, staminaBoughtToday, bumpPoints, addPointsBonus, menuResult, safeMenu, RARITY, RARITY_LABEL, sellAllBag, buyThing, doGather, cmdPerm };
