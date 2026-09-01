@@ -210,11 +210,46 @@ process.on('uncaughtException', (err) => {
 });
 
 // Discord 連線狀態監控
-client.on('error', (e) => console.error('Discord 連線錯誤：', e.message));
-client.on('shardError', (e) => console.error('Discord shard 錯誤：', e.message));
-client.on('shardDisconnect', (ev, id) => console.error(`Discord 連線中斷（shard ${id}，代碼 ${ev && ev.code}），將自動重連`));
-client.on('shardReconnecting', (id) => console.log(`🔄 Discord 重新連線中（shard ${id}）…`));
-client.on('shardResume', (id, n) => console.log(`✅ Discord 連線已恢復（shard ${id}，補回 ${n} 個事件）`));
+//
+// 2026-09-01 事故：閘道連續回 503，discord.js 內部以每秒約 2 次的頻率重連且不退避，
+// 機器人整整卡住兩分多鐘（玩家看到「未及時回應」），log 也被洗掉上萬行。
+// 這裡加兩層防護：
+//   ① 記錄節流：同樣的連線錯誤 30 秒內只印一次，並附上期間累積次數
+//   ② 看門狗：持續連不上超過 3 分鐘就主動結束程序，讓 pm2 重啟
+//      （實測手動重啟可立即恢復，所以自動化這個動作）
+let lastConnLog = 0, connErrCount = 0;
+let lastOnlineMs = Date.now();   // 最後一次確認連線正常的時間
+
+function logConnIssue(kind, msg) {
+  connErrCount++;
+  const now = Date.now();
+  if (now - lastConnLog < 30000) return;          // 30 秒內只印一次
+  const extra = connErrCount > 1 ? `（30 秒內共 ${connErrCount} 次）` : '';
+  console.error(`${kind}：${msg}${extra}`);
+  lastConnLog = now; connErrCount = 0;
+}
+
+client.on('error', (e) => logConnIssue('Discord 連線錯誤', e.message));
+client.on('shardError', (e) => logConnIssue('Discord shard 錯誤', e.message));
+client.on('shardDisconnect', (ev, id) => logConnIssue('Discord 連線中斷', `shard ${id}，代碼 ${ev && ev.code}，將自動重連`));
+client.on('shardReconnecting', (id) => logConnIssue('Discord 重新連線中', `shard ${id}`));
+client.on('shardResume', (id, n) => {
+  lastOnlineMs = Date.now(); lastConnLog = 0; connErrCount = 0;
+  console.log(`✅ Discord 連線已恢復（shard ${id}，補回 ${n} 個事件）`);
+});
+client.on('shardReady', (id) => { lastOnlineMs = Date.now(); lastConnLog = 0; connErrCount = 0; });
+
+// 看門狗：連不上超過 3 分鐘就重啟自己（pm2 會拉起來）
+const STUCK_MS = 3 * 60 * 1000;
+setInterval(() => {
+  if (!client.ws) return;
+  // ws.status 0 = READY；其餘代表連線中／斷線中
+  if (client.ws.status === 0) { lastOnlineMs = Date.now(); return; }
+  if (Date.now() - lastOnlineMs > STUCK_MS) {
+    console.error(`⛔ Discord 已連不上超過 ${STUCK_MS / 60000} 分鐘，主動重啟讓 pm2 重新拉起。`);
+    process.exit(1);
+  }
+}, 30000).unref();
 
 function start() {
   const token = process.env.DISCORD_TOKEN;
