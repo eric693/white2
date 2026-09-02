@@ -315,6 +315,7 @@ router.post('/home-players/:userId/level', (req, res) => {
   if (refund > 0) {
     db.prepare("UPDATE econ_wallets SET coins = coins + ?, updated_at=datetime('now','localtime') WHERE guild_id=? AND user_id=?")
       .run(refund, gid, req.params.userId);
+    require('../bot/features/gather').logCoins(gid, req.params.userId, refund, '管理員退款', '家園調整');
   }
   audit(req.user.name, `調整 ${req.params.userId} 的家園 Lv.${cur.level}→${level}、廚房 Lv.${cur.kitchen_level}→${kitchen}${refund ? `，退款 ${refund}` : ''}`);
   res.json({ ok: true, level, kitchen_level: kitchen, refund });

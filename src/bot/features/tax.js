@@ -288,6 +288,7 @@ function runLiquidation(gid, period, client, dryRun) {
       if (r.total > 0) {
         db.prepare("UPDATE econ_wallets SET coins = coins + ?, updated_at = datetime('now','localtime') WHERE guild_id=? AND user_id=?")
           .run(r.total, gid, d.user_id);
+        require('./gather').logCoins(gid, d.user_id, r.total, '強制清算抵稅', '系統代賣資產');
         const ins = db.prepare('INSERT INTO tax_liquidations (guild_id,period,user_id,username,kind,detail,amount) VALUES (?,?,?,?,?,?,?)');
         for (const x of r.sold) ins.run(gid, period, d.user_id, d.username || '', x.kind, x.detail, x.amount);
       }
@@ -341,6 +342,7 @@ function payRelief(gid, period, list) {
     for (const r of list) {
       db.prepare("UPDATE econ_wallets SET coins = coins + ?, updated_at = datetime('now','localtime') WHERE guild_id=? AND user_id=?")
         .run(r.amount, gid, r.userId);
+      require('./gather').logCoins(gid, r.userId, r.amount, '普發現金', period);
       db.prepare('INSERT INTO tax_reliefs (guild_id,period,user_id,username,before_coins,amount) VALUES (?,?,?,?,?,?)')
         .run(gid, period, r.userId, r.username, r.before, r.amount);
     }
@@ -392,6 +394,7 @@ async function runGuild(client, gid, { force = false, dryRun = false } = {}) {
         const paid = c.no_debt ? Math.max(0, Math.min(b.total, b.balance)) : b.total;
         db.prepare("UPDATE econ_wallets SET coins = coins - ?, updated_at = datetime('now','localtime') WHERE guild_id=? AND user_id=?")
           .run(paid, gid, b.userId);
+        require('./gather').logCoins(gid, b.userId, -paid, '繳稅', period);
         // 沒繳完的（含上期延過來的）存成新欠稅，延到下一期繼續補收；繳清就歸 0
         if (c.no_debt) db.prepare('UPDATE econ_wallets SET tax_arrears=? WHERE guild_id=? AND user_id=?').run(Math.max(0, b.total - paid), gid, b.userId);
         db.prepare(
@@ -608,6 +611,7 @@ function payArrears(gid, userId, amount) {
   if (pay <= 0) return { ok: false, msg: '沒有可補繳的金額。' };
   db.transaction(() => {
     db.prepare("UPDATE econ_wallets SET coins = coins - ?, tax_arrears = tax_arrears - ?, updated_at=datetime('now','localtime') WHERE guild_id=? AND user_id=?").run(pay, pay, gid, userId);
+    require('./gather').logCoins(gid, userId, -pay, '補繳欠稅', '');
     require('./charity').addTax(gid, pay);   // 補的稅一樣進慈善基金會
     // 補繳也要留紀錄，不然「累計繳稅」成就算不到這筆（期間碼加 -補繳，跟正式稅單分開）
     db.prepare(

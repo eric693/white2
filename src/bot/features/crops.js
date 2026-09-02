@@ -4,7 +4,7 @@ const { db, guildConfig, logError } = require('../../db');
 const { brandColor } = require('../../util/brand');
 // 產物賣價會受財經新聞影響（新聞關閉時等於基準價）
 const { livePrice, priceTag } = require('../../util/market');
-const { wallet, addToBag, menuResult, safeMenu } = require('./gather');
+const { wallet, addToBag, logCoins, menuResult, safeMenu } = require('./gather');
 const { facilitySlots, facilityBonus, applySpeed, speedFor } = require('./facility');
 
 const ccfg = (gid) => guildConfig('crop_config', gid);
@@ -110,6 +110,7 @@ function buySeeds(gid, uid, uname, seedId, qty) {
   const it = seedItemOf(gid, seed);
   db.transaction(() => {
     db.prepare('UPDATE econ_wallets SET coins = coins - ? WHERE guild_id=? AND user_id=?').run(cost, gid, uid);
+    logCoins(gid, uid, -cost, '買種子', `${seed.name} ×${n}`);
     addToBag(gid, uid, it.id, n);
   })();
   const have = seedsInBag(gid, uid, seed);

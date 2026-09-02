@@ -135,7 +135,7 @@ function payoutContest(gid, c) {
   if (need > 0) { try { fromPool = require('./charity').fundTake(gid, need); } catch { fromPool = 0; } }
   db.transaction(() => {
     top.forEach((r, i) => {
-      if (rewards[i] > 0) addCoins(gid, r.user_id, r.username, rewards[i]);
+      if (rewards[i] > 0) addCoins(gid, r.user_id, r.username, rewards[i], '大賽獎金', `第 ${i + 1} 名`);
     });
     // 冠軍的專屬成就（可以在後台挑一個既有成就當獎盃）
     if (top[0] && c.title_id) {

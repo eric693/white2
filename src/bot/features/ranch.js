@@ -8,7 +8,7 @@ const { brandColor } = require('../../util/brand');
 // 產物賣價會受財經新聞影響（新聞關閉時等於基準價）
 const { isSelect } = require('../../util/menu');
 const { livePrice, priceTag } = require('../../util/market');
-const { wallet, addCoins, addToBag, menuResult, safeMenu } = require('./gather');
+const { wallet, addCoins, logCoins, addToBag, menuResult, safeMenu } = require('./gather');
 const { facilitySlots, facilityBonus, applySpeed, speedFor } = require('./facility');
 const { logSteal, stealChannel } = require('../../util/steal');
 const { buffPct } = require('../../util/buffs');
@@ -210,6 +210,7 @@ function buyAnimal(gid, uid, uname, animalId) {
   }
   const tx = db.transaction(() => {
     db.prepare('UPDATE econ_wallets SET coins = coins - ? WHERE guild_id=? AND user_id=?').run(animal.price, gid, uid);
+    logCoins(gid, uid, -animal.price, '買動物', animal.name);
     db.prepare('INSERT INTO ranch_slots (guild_id,user_id,slot,animal_id,pending,last_produce_ms) VALUES (?,?,?,?,0,?)')
       .run(gid, uid, free, animal.id, Date.now());
   });
@@ -258,7 +259,7 @@ function sellAnimal(gid, uid, uname, slot) {
   db.transaction(() => {
     if (pending > 0 && a && a.product_item_id) addToBag(gid, uid, a.product_item_id, pending);
     db.prepare('DELETE FROM ranch_slots WHERE guild_id=? AND user_id=? AND slot=?').run(gid, uid, slot);
-    addCoins(gid, uid, uname, refund);
+    addCoins(gid, uid, uname, refund, '賣動物', a ? a.name : '動物');
   })();
   const p = (a && pending > 0) ? productOf(a.product_item_id) : null;
   const bal = wallet(gid, uid, uname).coins;
@@ -444,7 +445,7 @@ function init(client) {
             const a = animalById(gid, r.animal_id);
             const refund = a ? Math.max(1, Math.floor((a.price || 0) * SELL_PCT)) : 1;
             db.prepare('DELETE FROM ranch_incubator WHERE guild_id=? AND user_id=? AND slot=?').run(gid, uid, r.slot);
-            addCoins(gid, uid, uname, refund);
+            addCoins(gid, uid, uname, refund, '賣動物', a ? a.name : '動物');
             gained += refund;
             const key = a ? `${a.emoji || ''}${a.name}` : '動物';
             tally.set(key, (tally.get(key) || 0) + 1);
@@ -471,7 +472,7 @@ function init(client) {
           const a = animalById(gid, r.animal_id);
           const refund = a ? Math.max(1, Math.floor((a.price || 0) * SELL_PCT)) : 1;
           db.prepare('DELETE FROM ranch_incubator WHERE guild_id=? AND user_id=? AND slot=?').run(gid, uid, s);
-          addCoins(gid, uid, uname, refund);
+          addCoins(gid, uid, uname, refund, '賣動物', a ? a.name : '動物');
           gained += refund; sold.push(`${a ? (a.emoji || '') + a.name : '動物'}　+${refund}`);
         }
       })();
@@ -700,7 +701,8 @@ function init(client) {
             const pen = Math.floor(Math.random() * Math.max(1, best.guard_penalty)) + 1;
             const gtx = db.transaction(() => {
               db.prepare('UPDATE econ_wallets SET coins = coins - ? WHERE guild_id=? AND user_id=?').run(pen, gid, uid);
-              addCoins(gid, to.id, to.username, pen);
+              logCoins(gid, uid, -pen, '偷偷樂被抓罰款', `被 ${to.username} 抓到`);
+              addCoins(gid, to.id, to.username, pen, '抓到小偷賠償', `${uname} 偷東西被你抓到`);
             });
             gtx();
             guardPenalty = pen; guardAnimal = best;

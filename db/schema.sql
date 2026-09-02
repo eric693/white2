@@ -666,6 +666,20 @@ CREATE TABLE IF NOT EXISTS econ_wallets (
   PRIMARY KEY (guild_id, user_id)
 );
 
+-- 星幣明細（玩家看不懂錢什麼時候進來 → 每一筆增減都記一列）
+-- delta＝增減值（正＝進帳、負＝支出），balance＝這筆之後的餘額，reason＝來源分類，detail＝細節說明
+CREATE TABLE IF NOT EXISTS econ_ledger (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id   TEXT NOT NULL DEFAULT '',
+  user_id    TEXT NOT NULL,
+  delta      INTEGER NOT NULL,
+  balance    INTEGER NOT NULL DEFAULT 0,
+  reason     TEXT NOT NULL DEFAULT '其他',
+  detail     TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_econ_ledger ON econ_ledger(guild_id, user_id, id DESC);
+
 -- 背包 ＋ 圖鑑（count＝目前持有，total_caught＝史上累計，賣掉也不歸零）
 CREATE TABLE IF NOT EXISTS gather_inventory (
   guild_id     TEXT NOT NULL DEFAULT '',

@@ -75,6 +75,7 @@ function donate(gid, userId, username, amount) {
   const res = db.transaction(() => {
     db.prepare("UPDATE econ_wallets SET coins = coins - ?, updated_at = datetime('now','localtime') WHERE guild_id=? AND user_id=?")
       .run(amt, gid, userId);
+    require('./gather').logCoins(gid, userId, -amt, '捐款', credit ? `折抵稅額 ${credit}` : '');
     db.prepare('INSERT INTO charity_donations (guild_id,user_id,username,amount,credit) VALUES (?,?,?,?,?)')
       .run(gid, userId, username || '', amt, credit);
     db.prepare('UPDATE charity_config SET pool = pool + ?, total_in = total_in + ? WHERE guild_id=?').run(amt, amt, gid);
@@ -102,8 +103,10 @@ function giftPlayer(gid, from, toUser, amount) {
   const { wallet } = require('./gather');
   const res = db.transaction(() => {
     db.prepare("UPDATE econ_wallets SET coins = coins - ?, updated_at = datetime('now','localtime') WHERE guild_id=? AND user_id=?").run(amt, gid, from.id);
+    require('./gather').logCoins(gid, from.id, -amt, '資助別人', `給 ${toUser.username}`);
     wallet(gid, toUser.id, toUser.username);   // 確保對方有錢包
     db.prepare("UPDATE econ_wallets SET coins = coins + ?, updated_at = datetime('now','localtime') WHERE guild_id=? AND user_id=?").run(amt, gid, toUser.id);
+    require('./gather').logCoins(gid, toUser.id, amt, '收到資助', `來自 ${from.username}`);
     return db.prepare('SELECT coins FROM econ_wallets WHERE guild_id=? AND user_id=?').get(gid, from.id).coins;
   })();
   const toCoins = db.prepare('SELECT coins FROM econ_wallets WHERE guild_id=? AND user_id=?').get(gid, toUser.id).coins;

@@ -43,14 +43,59 @@ function wallet(gid, userId, username) {
   }
   return w;
 }
-function addCoins(gid, userId, username, delta) {
+// 星幣明細：每一筆增減都留一列，玩家用 /明細 就能看到錢什麼時候進來、為什麼出去。
+// 一律在「餘額已經改完」之後呼叫，balance 直接讀當下餘額（同一個 transaction 內也讀得到）。
+// 只記實際有變動的（delta 0 不記），reason 是分類、detail 是那一筆的細節。
+const LEDGER_KEEP = 200;   // 每人只保留最近幾筆（明細只給玩家看近況，不無限長大）
+function logCoins(gid, userId, delta, reason, detail) {
+  delta = Math.round(Number(delta) || 0);
+  if (!delta) return;
+  try {
+    const bal = (db.prepare('SELECT coins FROM econ_wallets WHERE guild_id=? AND user_id=?').get(gid, userId) || {}).coins || 0;
+    db.prepare('INSERT INTO econ_ledger (guild_id,user_id,delta,balance,reason,detail) VALUES (?,?,?,?,?,?)')
+      .run(gid, userId, delta, bal, reason || '其他', detail || '');
+    // 超過保留筆數就砍掉最舊的（一次一筆一筆刪很慢，用 id 門檻一次砍）
+    db.prepare(`DELETE FROM econ_ledger WHERE guild_id=? AND user_id=? AND id <= (
+                  SELECT id FROM econ_ledger WHERE guild_id=? AND user_id=? ORDER BY id DESC LIMIT 1 OFFSET ?)`)
+      .run(gid, userId, gid, userId, LEDGER_KEEP);
+  } catch (e) { console.error('記錢包明細失敗：', e.message); }
+}
+function addCoins(gid, userId, username, delta, reason, detail) {
   wallet(gid, userId, username);
   db.prepare(
     `UPDATE econ_wallets SET coins = coins + ?, total_earned = total_earned + ?,
        updated_at = datetime('now','localtime') WHERE guild_id=? AND user_id=?`
   ).run(delta, Math.max(0, delta), gid, userId);
+  logCoins(gid, userId, delta, reason, detail);
   return wallet(gid, userId, username).coins;
 }
+// 明細面板：一頁 10 筆，按鈕翻頁。玩家最常問「我的錢怎麼變少／哪來的」，這裡一次講清楚。
+const LEDGER_PAGE = 10;
+function ledgerView(gid, target, page = 0) {
+  const c = cfg(gid);
+  const total = db.prepare('SELECT COUNT(*) n FROM econ_ledger WHERE guild_id=? AND user_id=?').get(gid, target.id).n;
+  const pages = Math.max(1, Math.ceil(total / LEDGER_PAGE));
+  page = Math.min(Math.max(0, page), pages - 1);
+  const rows = db.prepare('SELECT * FROM econ_ledger WHERE guild_id=? AND user_id=? ORDER BY id DESC LIMIT ? OFFSET ?')
+    .all(gid, target.id, LEDGER_PAGE, page * LEDGER_PAGE);
+  const w = wallet(gid, target.id, target.username);
+  const embed = new EmbedBuilder().setColor(brandColor())
+    .setTitle(`📜 ${target.username} 的星幣明細`)
+    .setDescription(rows.length
+      ? rows.map(r => {
+          const t = String(r.created_at || '').slice(5, 16);   // 只留 MM-DD HH:MM
+          const sign = r.delta > 0 ? '🟢 +' : '🔴 ';
+          return `\`${t}\`　${sign}${r.delta.toLocaleString('en-US')}　**${r.reason}**${r.detail ? `　${r.detail}` : ''}\n　　　　　　餘額 ${r.balance.toLocaleString('en-US')}`;
+        }).join('\n')
+      : '還沒有任何紀錄。去 `/釣魚` `/賣出` 賺第一筆吧！')
+    .setFooter({ text: `目前餘額 ${w.coins.toLocaleString('en-US')} ${c.currency_name || '星幣'}｜第 ${page + 1}/${pages} 頁｜只保留最近 ${LEDGER_KEEP} 筆` });
+  const row = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(`led:${target.id}:${page - 1}`).setLabel('上一頁').setStyle(ButtonStyle.Secondary).setDisabled(page <= 0),
+    new ButtonBuilder().setCustomId(`led:${target.id}:${page + 1}`).setLabel('下一頁').setStyle(ButtonStyle.Secondary).setDisabled(page >= pages - 1)
+  );
+  return { embeds: [embed], components: pages > 1 ? [row] : [] };
+}
+
 const money = (c, n) => `${c.currency_emoji || '🪙'} ${n.toLocaleString('en-US')} ${c.currency_name || '星幣'}`;
 
 // 賣出單價：市場價 × (1 + 售價加成)。加成＝sell_pct（家園/家具/寵物…）＋魚類再加 fish_price_pct ＋該物品的寵物指定加成。
@@ -712,7 +757,7 @@ function buyThing(gid, uid, uname, kind, id, qty = 1) {
     const w = wallet(gid, uid, uname);
     if (w.coins < total) return { error: `${c.currency_name}不夠：${g.name} ×${n} 要 ${total.toLocaleString('en-US')}，你只有 ${w.coins.toLocaleString('en-US')}。` };
     db.transaction(() => {
-      addCoins(gid, uid, uname, -total);
+      addCoins(gid, uid, uname, -total, '買禮物', `${g.name} ×${n}`);
       addToBag(gid, uid, g.id, n);
     })();
     return { embed: new EmbedBuilder().setColor(0xeb459e).setTitle('🎁 買好了')
@@ -732,7 +777,7 @@ function buyThing(gid, uid, uname, kind, id, qty = 1) {
     const w = wallet(gid, uid, uname);
     if (w.coins < total) return { error: `${c.currency_name}不夠：需要 ${total.toLocaleString('en-US')}，你只有 ${w.coins.toLocaleString('en-US')}。` };
     db.transaction(() => {
-      addCoins(gid, uid, uname, -total);
+      addCoins(gid, uid, uname, -total, '補體力', `體力 ×${n}`);
       addPointsBonus(gid, uid, n);
     })();
     const st = staminaState(gid, uid);
@@ -765,6 +810,7 @@ function buyThing(gid, uid, uname, kind, id, qty = 1) {
   }
   const tx = db.transaction(() => {
     db.prepare('UPDATE econ_wallets SET coins = coins - ? WHERE guild_id=? AND user_id=?').run(tool.price, gid, uid);
+    logCoins(gid, uid, -tool.price, '買道具', tool.name);
     db.prepare('INSERT OR IGNORE INTO gather_user_tools (guild_id,user_id,tool_id,uses_left) VALUES (?,?,?,?)').run(gid, uid, tool.id, tool.durability || 0);
   });
   tx();
@@ -843,6 +889,7 @@ function craftRecipe(gid, uid, uname, recipeId, times = 1) {
     }
   });
   tx();
+  if (totalCost) logCoins(gid, uid, -totalCost, label, `${r.name} ×${times}`);
   if (ok) bumpQuests(gid, uid, { type: 'craft', amount: ok });
 
   const PLOT_RES = { plot_field: { name: '農地', emoji: '🌾' }, plot_greenhouse: { name: '溫室', emoji: '🏡' }, plot_ranch: { name: '牧場格', emoji: '🐔' }, plot_hatch: { name: '孵化格', emoji: '🥚' }, plot_aquarium: { name: '魚缸格', emoji: '🐠' } };
@@ -877,6 +924,7 @@ function repairTool(gid, uid, uname, toolId) {
   const tx = db.transaction(() => {
     if (cost) db.prepare('UPDATE econ_wallets SET coins = coins - ? WHERE guild_id=? AND user_id=?').run(cost, gid, uid);
     db.prepare('UPDATE gather_user_tools SET uses_left=? WHERE guild_id=? AND user_id=? AND tool_id=?').run(tool.durability, gid, uid, tool.id);
+    if (cost) logCoins(gid, uid, -cost, '修理', tool.name);
   });
   tx();
   return { embed: new EmbedBuilder().setColor(brandColor()).setTitle('🔧 修理完成')
@@ -914,7 +962,7 @@ const FAC_COLOR = { field: 0xf1c40f, greenhouse: 0x1abc9c, ranch: 0xe91e63, hatc
 
 // 「冒險面板」也放進來，讓管理員可以在後台把發布面板的權限授權給某個身分組
 // （例如大總管），不必為了發面板就給對方 Discord 的「管理伺服器」權限。
-const CMD_LIST = [...GATHER_CMDS, '製作', '鍛造', '配方', '錢包', '背包', '賣出', '商店', '購買', '圖鑑', '任務', '轉帳', '富豪榜', '抽籤', '地圖', '修理', '狀態', '冒險面板'];
+const CMD_LIST = [...GATHER_CMDS, '製作', '鍛造', '配方', '錢包', '明細', '背包', '賣出', '商店', '購買', '圖鑑', '任務', '轉帳', '富豪榜', '抽籤', '地圖', '修理', '狀態', '冒險面板'];
 const CMD_DEFAULT = (cmd) => ({
   enabled: 1,
   roles: '',
@@ -1018,7 +1066,7 @@ function sellAllBag(gid, uid, uname) {
       db.prepare('UPDATE gather_inventory SET count = count - ? WHERE guild_id=? AND user_id=? AND item_id=?').run(r.count, gid, uid, r.id);
       total += gained; lines.push(`${r.emoji || ''}${r.name}×${r.count}`);
     }
-    if (total > 0) { addCoins(gid, uid, uname, total); bumpQuests(gid, uid, { type: 'sell', amount: total }); }
+    if (total > 0) { addCoins(gid, uid, uname, total, '賣出', `${lines.length} 種東西`); bumpQuests(gid, uid, { type: 'sell', amount: total }); }
   })();
   return { total, kinds: lines.length, lines };
 }
@@ -1231,7 +1279,7 @@ function init(client) {
       const sell = Math.min(qty, r.count);
       db.prepare('UPDATE gather_inventory SET count = count - ? WHERE guild_id=? AND user_id=? AND item_id=?').run(sell, gid, uid, id);
       const gained = sell * sellUnit(gid, uid, r);
-      const now = addCoins(gid, uid, uname, gained);
+      const now = addCoins(gid, uid, uname, gained, '賣出', `${r.name} ×${sell}`);
       bumpQuests(gid, uid, { type: 'sell', amount: gained });
       const embed = new EmbedBuilder().setColor(brandColor()).setTitle('賣出成功')
         .setDescription(`${r.emoji || ''} ${r.name} ×${sell}　+${gained.toLocaleString('en-US')}\n（還留著 ${r.count - sell} 個）`)
@@ -1266,17 +1314,27 @@ function init(client) {
         }
       });
       tx();
-      const now = addCoins(gid, uid, uname, gained);
+      const now = addCoins(gid, uid, uname, gained, '賣出', `一次全賣 ${lines.length} 種`);
       bumpQuests(gid, uid, { type: 'sell', amount: gained });
       const embed = new EmbedBuilder().setColor(brandColor()).setTitle('賣出成功')
         .setDescription(lines.slice(0, 20).join('\n') + (lines.length > 20 ? `\n…等 ${lines.length} 種` : ''))
         .setFooter({ text: `共得 ${gained.toLocaleString('en-US')}｜餘額 ${now.toLocaleString('en-US')} ${cc.currency_name}` });
       return i.update({ content: '', embeds: [embed], components: [] }).catch(() => {});
     }
+    // 明細翻頁（led:<玩家>:<頁碼>）——只有本人（或看別人明細的那個人）點得到，直接改原訊息
+    if (i.isButton() && i.customId.startsWith('led:')) {
+      const [, tid, pg] = i.customId.split(':');
+      const gid2 = i.guildId;
+      if (!gid2) return;
+      const u = await i.client.users.fetch(tid).catch(() => null);
+      const view = ledgerView(gid2, u || { id: tid, username: '玩家' }, parseInt(pg, 10) || 0);
+      return i.update(view).catch(() => {});
+    }
+
     // 冒險面板按鈕 → 對應到同名指令（只接無參數的動作）
     const GATHER_BTN = {
       'adv:fish': '釣魚', 'adv:mine': '挖礦', 'adv:wood': '伐木', 'adv:forage': '採集', 'adv:hunt': '狩獵',
-      'adv:bag': '背包', 'adv:wallet': '錢包', 'adv:sellall': '賣出', 'adv:draw': '抽籤', 'adv:map': '地圖',
+      'adv:bag': '背包', 'adv:wallet': '錢包', 'adv:ledger': '明細', 'adv:sellall': '賣出', 'adv:draw': '抽籤', 'adv:map': '地圖',
       'adv:rich': '富豪榜', 'adv:store': '商店', 'adv:recipe': '配方', 'adv:status': '狀態',
       // 製作分類的按鈕：製作／鍛造／修理各自對應同名指令的面板
       'adv:craftmake': '製作', 'adv:forge': '鍛造', 'adv:repair': '修理',
@@ -1287,7 +1345,7 @@ function init(client) {
     if (isBtn && GATHER_BTN[i.customId]) name = GATHER_BTN[i.customId];
     else if (i.isChatInputCommand()) name = i.commandName;
     else return;
-    const ALL = ['錢包', '背包', '賣出', '商店', '購買', '圖鑑', '富豪榜', '製作', '鍛造', '配方', '任務', '轉帳', '抽籤', '地圖', '修理', '狀態'];
+    const ALL = ['錢包', '明細', '背包', '賣出', '商店', '購買', '圖鑑', '富豪榜', '製作', '鍛造', '配方', '任務', '轉帳', '抽籤', '地圖', '修理', '狀態'];
     if (!GATHER_CMD[name] && !ALL.includes(name)) return;
 
     const gid = i.guildId;
@@ -1451,7 +1509,25 @@ function init(client) {
           .setTitle(`${target.username} 的錢包`)
           .setDescription(`目前持有　**${money(c, w.coins)}**\n累計賺取　${money(c, w.total_earned)}\n財富排名　#${rank}`)
           .setThumbnail(target.displayAvatarURL());
-        return await reply({ embeds: [embed] });
+        // 玩家常問「錢什麼時候進來的」→ 錢包直接附最近 5 筆，要看更多再開 /明細
+        const last = db.prepare('SELECT * FROM econ_ledger WHERE guild_id=? AND user_id=? ORDER BY id DESC LIMIT 5').all(gid, target.id);
+        if (last.length) {
+          embed.addFields({
+            name: '最近的進出',
+            value: last.map(r => `${r.delta > 0 ? '🟢 +' : '🔴 '}${r.delta.toLocaleString('en-US')}　**${r.reason}**${r.detail ? `　${r.detail}` : ''}`).join('\n')
+              + '\n\n完整紀錄用 `/明細`'
+          });
+        }
+        // 指令位子滿了（Discord 上限 100 個），明細改用按鈕進去
+        const ledBtn = new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId(`led:${target.id}:0`).setLabel('星幣明細').setEmoji('📜').setStyle(ButtonStyle.Secondary)
+        );
+        return await reply({ embeds: [embed], components: [ledBtn] });
+      }
+
+      // ---- 明細 ----
+      if (name === '明細') {
+        return await reply(ledgerView(gid, i.user, 0));
       }
 
       // ---- 背包 ----
@@ -1571,7 +1647,7 @@ function init(client) {
         });
         tx();
         if (!gained) return i.reply({ content: '沒有賣出任何東西。', flags: MessageFlags.Ephemeral });
-        const now = addCoins(gid, uid, uname, gained);
+        const now = addCoins(gid, uid, uname, gained, '賣出', `一次全賣 ${lines.length} 種`);
         bumpQuests(gid, uid, { type: 'sell', amount: gained });
         const embed = new EmbedBuilder().setColor(brandColor()).setTitle('賣出成功')
           .setDescription(lines.slice(0, 20).join('\n') + (lines.length > 20 ? `\n…等 ${lines.length} 種` : ''))
@@ -1830,7 +1906,7 @@ function init(client) {
             const msg = full.length ? `😢 懸賞名額已被搶完：${full.join('、')}\n明天請早！` : '沒有可領取的任務獎勵。';
             return i.reply({ content: msg, flags: MessageFlags.Ephemeral });
           }
-          if (coins) addCoins(gid, uid, uname, coins);
+          if (coins) addCoins(gid, uid, uname, coins, '任務獎勵', got.join('、').slice(0, 80));
           for (const rid of roles) {
             await i.member.roles.add(rid).catch(e => logError(gid, '任務獎勵身分組發放失敗：', e.message));
           }
@@ -1905,6 +1981,8 @@ function init(client) {
             .run(amount, amount, gid, to.id);
           db.prepare('INSERT INTO econ_transfers (guild_id,from_id,from_name,to_id,to_name,amount,fee) VALUES (?,?,?,?,?,?,?)')
             .run(gid, uid, uname, to.id, to.username, amount, fee);
+          logCoins(gid, uid, -total, '轉帳給人', `給 ${to.username}${fee ? `（含手續費 ${fee}）` : ''}`);
+          logCoins(gid, to.id, amount, '收到轉帳', `來自 ${uname}`);
         });
         tx();
         const embed = new EmbedBuilder().setColor(brandColor()).setTitle('💸 轉帳成功')
@@ -2033,7 +2111,7 @@ function init(client) {
         db.prepare('INSERT OR IGNORE INTO lottery_draws (guild_id,user_id,day) VALUES (?,?,?)').run(gid, uid, day);
         let desc = '';
         if (prize.type === 'coin') {
-          const now = addCoins(gid, uid, uname, prize.amount);
+          const now = addCoins(gid, uid, uname, prize.amount, '每日抽獎', prize.name);
           desc = `抽中 ${prize.emoji} **${prize.name}**：${money(c, prize.amount)}！\n餘額 ${now.toLocaleString('en-US')} ${c.currency_name}`;
         } else if (prize.type === 'luck') {
           const exp = endOfTodayMs();
@@ -2041,7 +2119,7 @@ function init(client) {
           desc = `抽中 ${prize.emoji} **${prize.name}**：今天採集稀有率 **+${prize.pct}%**！\n有效至 <t:${Math.floor(exp / 1000)}:R>`;
         } else {
           const exp = endOfTodayMs();
-          const now = addCoins(gid, uid, uname, prize.amount);
+          const now = addCoins(gid, uid, uname, prize.amount, '每日抽獎', prize.name);
           db.prepare('INSERT INTO luck_buffs (guild_id,user_id,pct,expire_at) VALUES (?,?,?,?) ON CONFLICT(guild_id,user_id) DO UPDATE SET pct=excluded.pct, expire_at=excluded.expire_at').run(gid, uid, prize.pct, exp);
           desc = `🎉 抽中 ${prize.emoji} **${prize.name}**：${money(c, prize.amount)} ＋ 今天稀有率 **+${prize.pct}%**！\n餘額 ${now.toLocaleString('en-US')} ${c.currency_name}`;
         }
@@ -2090,4 +2168,4 @@ function init(client) {
   console.log('  ↳ 釣魚挖礦模組已載入（冷卻/稀有掉落/商店道具/圖鑑/經濟）');
 }
 
-module.exports = { init, wallet, addCoins, addToBag, seedGuild, seedMaterials, staminaState, staminaBoughtToday, bumpPoints, addPointsBonus, menuResult, safeMenu, RARITY, RARITY_LABEL, sellAllBag, buyThing, doGather, cmdPerm };
+module.exports = { init, wallet, addCoins, logCoins, addToBag, seedGuild, seedMaterials, staminaState, staminaBoughtToday, bumpPoints, addPointsBonus, menuResult, safeMenu, RARITY, RARITY_LABEL, sellAllBag, buyThing, doGather, cmdPerm };

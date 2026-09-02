@@ -4,7 +4,7 @@
 const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, MessageFlags } = require('discord.js');
 const { db, guildConfig, logError } = require('../../db');
 const { brandColor } = require('../../util/brand');
-const { wallet, menuResult } = require('./gather');
+const { wallet, logCoins, menuResult } = require('./gather');
 
 const gcfg = (gid) => guildConfig('gather_config', gid);
 const csv = (s) => String(s || '').split(/[\n,]/).map(x => x.trim()).filter(Boolean);
@@ -184,6 +184,7 @@ function buy(gid, uid, uname, defId) {
   }
   const tx = db.transaction(() => {
     db.prepare('UPDATE econ_wallets SET coins = coins - ? WHERE guild_id=? AND user_id=?').run(d.price, gid, uid);
+    logCoins(gid, uid, -d.price, '設施商店', d.name || '');
     db.prepare(
       `INSERT INTO facility_owned (guild_id,user_id,type,tier,slots,speed_pct,resist_pct,yield_pct) VALUES (?,?,?,?,?,?,?,?)
        ON CONFLICT(guild_id,user_id,type) DO UPDATE SET tier=excluded.tier, slots=excluded.slots,

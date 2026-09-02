@@ -127,7 +127,7 @@ function doUpgrade(gid, uid, uname) {
   if (!chk.ok) return { error: null, chk };
   try {
     db.transaction(() => {
-      addCoins(gid, uid, uname, -chk.next.coins);
+      addCoins(gid, uid, uname, -chk.next.coins, '升級家園', chk.next.name || '');
       takeItems(gid, uid, chk.mats);
       db.prepare('UPDATE home_users SET level=? WHERE guild_id=? AND user_id=?').run(chk.next.level, gid, uid);
     })();
@@ -172,7 +172,7 @@ function upgradeWithCoins(gid, uid, uname) {
   if (coins < total) return { error: `這條路很貴：材料折現 ${money(gcfg(gid), q.cost)} ＋ 升級費 ${money(gcfg(gid), q.chk.next.coins)}，總共 ${money(gcfg(gid), total)}，你還差 ${money(gcfg(gid), total - coins)}。` };
   try {
     db.transaction(() => {
-      addCoins(gid, uid, uname, -total);
+      addCoins(gid, uid, uname, -total, '升級家園', '缺料折現');
       // 有的材料就照收，缺的部分是花錢買掉的
       const partial = q.chk.mats
         .map(m => ({ item: m.item, count: Math.min(m.count, bagCount(gid, uid, m.item)) }))
@@ -276,7 +276,7 @@ function doCheckin(gid, uid, uname) {
   if (full) coins += (c.checkin_week || 0);
 
   db.transaction(() => {
-    addCoins(gid, uid, uname, coins);
+    addCoins(gid, uid, uname, coins, '每日簽到', full ? '滿一週加碼' : '');
     db.prepare(`UPDATE home_checkin SET last_day=?, streak=?, best=MAX(best,?), total=total+1, week_mask=?
                 WHERE guild_id=? AND user_id=?`).run(today, streak, streak, mask, gid, uid);
   })();

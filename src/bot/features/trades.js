@@ -4,7 +4,7 @@ const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags
   UserSelectMenuBuilder, StringSelectMenuBuilder } = require('discord.js');
 const { db, guildConfig, logError } = require('../../db');
 const { brandColor } = require('../../util/brand');
-const { addToBag } = require('./gather');
+const { addToBag, logCoins } = require('./gather');
 
 const gcfg = (gid) => guildConfig('gather_config', gid);
 const TRADE_TTL = 60 * 60 * 1000;   // 提案 1 小時內有效
@@ -209,6 +209,8 @@ function init(client) {
           addToBag(t.guild_id, t.from_id, t.want_item_id, t.want_count);
           db.prepare("UPDATE econ_wallets SET coins=coins-?, updated_at=datetime('now','localtime') WHERE guild_id=? AND user_id=?").run(TRADE_FEE, t.guild_id, t.from_id);
           db.prepare("UPDATE econ_wallets SET coins=coins-?, updated_at=datetime('now','localtime') WHERE guild_id=? AND user_id=?").run(TRADE_FEE, t.guild_id, t.to_id);
+          logCoins(t.guild_id, t.from_id, -TRADE_FEE, '交易手續費', '玩家交換物品');
+          logCoins(t.guild_id, t.to_id, -TRADE_FEE, '交易手續費', '玩家交換物品');
           db.prepare('UPDATE trades SET status=? WHERE id=?').run('done', t.id);
         });
         tx();

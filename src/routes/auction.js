@@ -127,7 +127,7 @@ router.delete('/auctions/:id', (req, res) => {
   const { addCoins } = require('../bot/features/gather');
   db.transaction(() => {
     for (const bid of active) {
-      addCoins(gid, bid.user_id, bid.username, bid.amount);
+      addCoins(gid, bid.user_id, bid.username, bid.amount, '拍賣退款', '場次取消，退回押款');
       db.prepare('UPDATE auction_bids SET active=0 WHERE id=?').run(bid.id);
     }
     db.prepare("UPDATE auctions SET status='cancelled' WHERE id=?").run(a.id);

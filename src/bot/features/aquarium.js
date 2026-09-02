@@ -9,7 +9,7 @@ const { selectRows, isSelect } = require('../../util/menu');
 const { db, guildConfig, logError } = require('../../db');
 const { bump: bumpAch } = require('../../util/achievements');
 const { brandColor } = require('../../util/brand');
-const { wallet, addCoins, safeMenu } = require('./gather');
+const { wallet, addCoins, logCoins, safeMenu } = require('./gather');
 const { facilitySlots, facilityBonus } = require('./facility');
 const { logSteal, stealChannel } = require('../../util/steal');
 const { buffPct } = require('../../util/buffs');
@@ -116,6 +116,7 @@ function buyFish(gid, uid, uname, fishId) {
   const fedUntil = now + Math.max(1, c.feed_hours) * H;
   db.transaction(() => {
     db.prepare('UPDATE econ_wallets SET coins = coins - ? WHERE guild_id=? AND user_id=?').run(total, gid, uid);
+    logCoins(gid, uid, -total, '買魚', `${f.name} ×${n}`);
     db.prepare('INSERT INTO aquarium_slots (guild_id,user_id,slot,fish_id,pending,last_produce_ms,fed_until_ms) VALUES (?,?,?,?,0,?,?)')
       .run(gid, uid, free, f.id, now, fedUntil);
   })();
@@ -148,6 +149,7 @@ function buyFishMulti(gid, uid, uname, ids) {
       const w = wallet(gid, uid, uname);
       if (w.coins < total) { skipped.push(`${f.emoji || '🐟'}${f.name}（錢不夠）`); continue; }
       db.prepare('UPDATE econ_wallets SET coins = coins - ? WHERE guild_id=? AND user_id=?').run(total, gid, uid);
+      logCoins(gid, uid, -total, '買魚', f.name);
       db.prepare('INSERT INTO aquarium_slots (guild_id,user_id,slot,fish_id,pending,last_produce_ms,fed_until_ms) VALUES (?,?,?,?,0,?,?)')
         .run(gid, uid, free, f.id, now, fedUntil);
       bought.push(f);
@@ -209,7 +211,7 @@ function sellFish(gid, uid, uname, slot) {
   const gain = refund + (row.pending || 0);
   db.transaction(() => {
     db.prepare('DELETE FROM aquarium_slots WHERE guild_id=? AND user_id=? AND slot=?').run(gid, uid, slot);
-    addCoins(gid, uid, uname, gain);
+    addCoins(gid, uid, uname, gain, '賣魚', f ? f.name : '魚');
   })();
   return { embed: new EmbedBuilder().setColor(brandColor()).setTitle('💰 已賣魚')
     .setDescription(`${f ? (f.emoji || '🐟') + f.name : '魚'}（第 ${slot + 1} 格）賣掉，回收 ${money(gc, refund)}` +
@@ -229,7 +231,7 @@ function sellFishMulti(gid, uid, uname, slots) {
       const f = fishById(gid, row.fish_id);
       const g = (f ? Math.max(1, Math.floor((f.price || 0) * SELL_PCT)) : 1) + (row.pending || 0);
       db.prepare('DELETE FROM aquarium_slots WHERE guild_id=? AND user_id=? AND slot=?').run(gid, uid, slot);
-      addCoins(gid, uid, uname, g);
+      addCoins(gid, uid, uname, g, '賣魚', f ? f.name : '魚');
       gain += g; sold.push(`${f ? (f.emoji || '🐟') + f.name : '魚'}（第 ${slot + 1} 格）　+${money(gc, g)}`);
     }
   })();
@@ -270,7 +272,7 @@ function feedAll(gid, uid, uname) {
       fedList.push({ f, slot: s.slot, until });
     }
     if (usedFeed > 0 && feedItem) db.prepare('UPDATE gather_inventory SET count = count - ? WHERE guild_id=? AND user_id=? AND item_id=?').run(usedFeed, gid, uid, feedItem.id);
-    if (spent > 0) db.prepare('UPDATE econ_wallets SET coins = coins - ? WHERE guild_id=? AND user_id=?').run(spent, gid, uid);
+    if (spent > 0) { db.prepare('UPDATE econ_wallets SET coins = coins - ? WHERE guild_id=? AND user_id=?').run(spent, gid, uid); logCoins(gid, uid, -spent, '餵魚', `${fedList.length} 隻`); }
   })();
 
   if (!fedList.length) return { error: `沒有魚飼料、星幣也不夠（最便宜一份要 ${feedable[0].f.feed_cost}）。🍤魚飼料可以「種植飼料草」收成，或用星幣餵。魚餓太久會死掉！` };
@@ -293,7 +295,7 @@ function collect(gid, uid, uname) {
   }
   db.transaction(() => {
     db.prepare('UPDATE aquarium_slots SET pending=0 WHERE guild_id=? AND user_id=?').run(gid, uid);
-    addCoins(gid, uid, uname, total);
+    addCoins(gid, uid, uname, total, '魚缸收成', '');
   })();
   return { embed: new EmbedBuilder().setColor(brandColor()).setTitle('🪙 撈金成功')
     .setDescription(`從魚缸領走 **${money(gc, total)}**。` + (died.length ? `\n\n💀 不過 ${died.map(f => (f.emoji || '') + f.name).join('、')} 餓死了…` : ''))
@@ -496,10 +498,10 @@ function init(client) {
           // 偷失敗被抓 → 罰款（星幣可為負）。可設定賠給受害者或直接沒收。
           const fine = Math.max(0, c.steal_fail_penalty || 0);
           if (fine > 0) {
-            addCoins(gid, uid, uname, -fine);
+            addCoins(gid, uid, uname, -fine, '偷魚被抓罰款', `被 ${to.username} 抓到`);
             let note = `\n\n💸 你被 ${to.username} 逮個正著，罰了 **${money(gc, fine)}**`;
             if (c.steal_penalty_to_victim) {
-              addCoins(gid, to.id, to.username, fine);
+              addCoins(gid, to.id, to.username, fine, '抓到小偷賠償', `${uname} 偷魚被你抓到`);
               note += `，全額賠給了對方。`;
               const dm = new EmbedBuilder().setColor(0x2ecc71).setTitle('🛡️ 抓到偷魚賊！')
                 .setDescription(`**${i.member?.displayName || uname}** 想偷你的魚缸但被逮到，賠了你 **${money(gc, fine)}**！`);
@@ -553,7 +555,7 @@ function init(client) {
             db.prepare('UPDATE aquarium_slots SET pending = pending - ? WHERE guild_id=? AND user_id=? AND slot=?').run(take, gid, to.id, s.slot);
             got += take;
           }
-          if (got > 0) addCoins(gid, uid, uname, got);
+          if (got > 0) addCoins(gid, uid, uname, got, '偷魚成功', `偷了 ${to.username}`);
         })();
 
         if (!got && !stolenFish) {

@@ -171,7 +171,7 @@ function syncTitles(gid, uid, uname) {
     if (had) continue;
     db.prepare('INSERT OR IGNORE INTO title_owned (guild_id,user_id,title_id,slot) VALUES (?,?,?,-1)').run(gid, uid, t.id);
     // 任務式成就可以帶一次性獎金（收集型稱號預設 0，不會誤發）
-    if (t.reward_coins > 0) { try { require('./gather').addCoins(gid, uid, uname, t.reward_coins); } catch {} }
+    if (t.reward_coins > 0) { try { require('./gather').addCoins(gid, uid, uname, t.reward_coins, '成就獎金', t.name); } catch {} }
     gained.push(t);
   }
   return gained;

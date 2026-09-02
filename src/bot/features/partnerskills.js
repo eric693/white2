@@ -251,7 +251,7 @@ function collectHatched(gid, uid, uname) {
         .run(gid, uid, slot, a.id, '');
       lines.push(`${a.emoji || '🐾'}${a.name}（住進第 ${slot + 1} 格）`);
     }
-    if (sold > 0) addCoins(gid, uid, uname, sold);
+    if (sold > 0) addCoins(gid, uid, uname, sold, '同居能力', '幫你賣掉動物');
   })();
   if (sold > 0) lines.push(`賣出所得 ${sold.toLocaleString('en-US')} 星幣`);
   return lines;
@@ -291,7 +291,7 @@ function runOne(gid, p, skill) {
       if (total <= 0) return null;
       db.transaction(() => {
         db.prepare('UPDATE aquarium_slots SET pending=0 WHERE guild_id=? AND user_id=?').run(gid, uid);
-        addCoins(gid, uid, uname, total);
+        addCoins(gid, uid, uname, total, '同居能力', '幫你收魚缸');
       })();
       return [`魚缸領到 ${total.toLocaleString('en-US')} 星幣`];
     }
@@ -307,13 +307,13 @@ function runOne(gid, p, skill) {
     case 'thief_guard': {
       const n = rollValue(v);
       if (n <= 0) return null;
-      addCoins(gid, uid, uname, n);
+      addCoins(gid, uid, uname, n, '同居能力', '幫你擊退小偷');
       return [`擊退小偷，拿到 ${n.toLocaleString('en-US')} 星幣`];
     }
     case 'daily_coins': {
       const n = rollValue(v);
       if (n <= 0) return null;
-      addCoins(gid, uid, uname, n);
+      addCoins(gid, uid, uname, n, '同居能力', '每日帶回');
       return [`帶回 ${n.toLocaleString('en-US')} 星幣`];
     }
     case 'mine_helper': case 'wood_helper': case 'fish_helper':

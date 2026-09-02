@@ -279,6 +279,7 @@ function buy(gid, uid, username, key, shares) {
 
   db.transaction(() => {
     db.prepare('UPDATE econ_wallets SET coins = coins - ? WHERE guild_id=? AND user_id=?').run(cost + fee, gid, uid);
+    logCoins(gid, uid, -(cost + fee), '買股票', `${s.name} ×${shares}${fee ? `（含稅 ${fee}）` : ''}`);
     db.prepare(
       `INSERT INTO stock_holdings (guild_id,user_id,symbol_id,shares,cost_sum) VALUES (?,?,?,?,?)
        ON CONFLICT(guild_id,user_id,symbol_id) DO UPDATE SET shares=shares+excluded.shares, cost_sum=cost_sum+excluded.cost_sum`
@@ -346,6 +347,7 @@ function sell(gid, uid, username, key, sharesRaw) {
     // 賺完馬上再買股也躲不掉，因為記的是已實現獲利，不是看手上剩多少現金。
     db.prepare('UPDATE econ_wallets SET coins = coins + ?, total_earned = total_earned + ? WHERE guild_id=? AND user_id=?')
       .run(net, Math.max(0, pnl), gid, uid);
+    logCoins(gid, uid, net, '賣股票', `${s.name} ×${shares}（損益 ${pnl >= 0 ? '+' : ''}${pnl}）`);
     if (shares === h.shares) {
       db.prepare('UPDATE stock_holdings SET shares=0, cost_sum=0, realized=realized+? WHERE guild_id=? AND user_id=? AND symbol_id=?')
         .run(pnl, gid, uid, s.id);
@@ -428,6 +430,7 @@ function forceSell(gid, uid, username, symbolId, shares, capToZero = true) {
     // 同上：強制賣出也只把實際價差計為收入
     db.prepare('UPDATE econ_wallets SET coins = coins + ?, total_earned = total_earned + ? WHERE guild_id=? AND user_id=?')
       .run(net, Math.max(0, pnl), gid, uid);
+    logCoins(gid, uid, net, '股票強制賣出', `${s.name} ×${n}`);
     if (n >= h.shares) {
       db.prepare('UPDATE stock_holdings SET shares=0, cost_sum=0, realized=realized+? WHERE guild_id=? AND user_id=? AND symbol_id=?')
         .run(pnl, gid, uid, symbolId);
@@ -714,11 +717,11 @@ function applyNews(client, gid) {
 function payoutNews(gid, n) {
   const each = Number(n.payout_each || 0);
   if (each <= 0) return null;
-  const { addCoins } = require('./gather');
+  const { addCoins, logCoins } = require('./gather');
   const users = db.prepare('SELECT user_id, username FROM econ_wallets WHERE guild_id=?').all(gid);
   let ok = 0;
   for (const u of users) {
-    try { addCoins(gid, u.user_id, u.username || '', each); ok++; }
+    try { addCoins(gid, u.user_id, u.username || '', each, '普發現金', '快報普發'); ok++; }
     catch (e) { logError(gid, '快報普發失敗：', `${u.user_id}（${e.message}）`); }
   }
   return { each, people: ok, total: each * ok };

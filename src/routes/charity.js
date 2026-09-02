@@ -131,6 +131,7 @@ router.post('/charity-relief', (req, res) => {
     for (const r of list) {
       db.prepare("UPDATE econ_wallets SET coins = coins + ?, updated_at = datetime('now','localtime') WHERE guild_id=? AND user_id=?")
         .run(r.amount, gid, r.user_id);
+      require('../bot/features/gather').logCoins(gid, r.user_id, r.amount, '普發現金', '管理員手動普發');
       db.prepare('INSERT INTO tax_reliefs (guild_id,period,user_id,username,before_coins,amount) VALUES (?,?,?,?,?,?)')
         .run(gid, period, r.user_id, r.username, r.before, r.amount);
     }

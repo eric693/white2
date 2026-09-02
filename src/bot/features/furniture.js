@@ -182,7 +182,7 @@ function buyFurniture(gid, uid, uname, fid, mode = 'craft') {
   if (missing.length) return { error: `${mode === 'buy' ? '錢不夠' : '材料不夠'}，還差：\n🔴 ${missing.join('\n🔴 ')}` };
   try {
     db.transaction(() => {
-      addCoins(gid, uid, uname, -cost);
+      addCoins(gid, uid, uname, -cost, '買家具', f ? f.name : '');
       if (mats.length) takeItems(gid, uid, mats);
       db.prepare(`INSERT INTO home_furniture_owned (guild_id,user_id,furniture_id,count,placed)
         VALUES (?,?,?,1,0) ON CONFLICT(guild_id,user_id,furniture_id) DO UPDATE SET count = count + 1`)
@@ -232,7 +232,7 @@ function sellFurniture(gid, uid, uname, fid) {
   db.transaction(() => {
     if (row.count - 1 <= 0) db.prepare('DELETE FROM home_furniture_owned WHERE guild_id=? AND user_id=? AND furniture_id=?').run(gid, uid, fid);
     else db.prepare('UPDATE home_furniture_owned SET count = count - 1 WHERE guild_id=? AND user_id=? AND furniture_id=?').run(gid, uid, fid);
-    addCoins(gid, uid, uname, refund);
+    addCoins(gid, uid, uname, refund, '賣家具', f ? f.name : '');
   })();
   return { sold: f, refund };
 }

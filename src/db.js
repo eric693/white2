@@ -629,7 +629,7 @@ const GUILD_TABLES = [
   'xp_config', 'ticket_config', 'forum_config', 'gather_config',
   'gather_items', 'gather_tools', 'gather_inventory', 'gather_user_tools',
   'gather_cooldowns', 'econ_wallets', 'gather_recipes', 'quests', 'quest_progress',
-  'econ_transfers', 'gather_cmd_perms',
+  'econ_transfers', 'gather_cmd_perms', 'econ_ledger',
   'ranch_config', 'ranch_animals', 'ranch_slots', 'ranch_steal', 'ranch_steal_routes',
   'ranch_hatch_defs', 'ranch_incubator', 'ranch_unlocks',
   'special_config', 'special_items', 'special_redeems', 'special_shops',

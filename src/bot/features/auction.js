@@ -104,9 +104,9 @@ function placeBid(gid, uid, uname, auctionId, amount) {
     // 退給被超越的人
     if (prev && prev.user_id !== uid) {
       db.prepare('UPDATE auction_bids SET active=0 WHERE id=?').run(prev.id);
-      addCoins(gid, prev.user_id, prev.username, prev.amount);
+      addCoins(gid, prev.user_id, prev.username, prev.amount, '拍賣退款', '出價被超越，退回押款');
     }
-    addCoins(gid, uid, uname, -needPay);
+    addCoins(gid, uid, uname, -needPay, '拍賣出價', `鎖款 ${want}`);
     db.prepare('INSERT INTO auction_bids (auction_id,guild_id,user_id,username,amount) VALUES (?,?,?,?,?)')
       .run(auctionId, gid, uid, uname, want);
     // 防狙擊：結束前 antisnipe_min 分鐘內有人出價 → 延長
@@ -172,7 +172,7 @@ function settleWinner(gid, a, bid) {
       const take = Math.min(have, m.count);
       if (take > 0) takeItems(gid, bid.user_id, [{ item: m.item, count: take }]);
     }
-    if (extraCoins > 0) addCoins(gid, bid.user_id, bid.username, -extraCoins);
+    if (extraCoins > 0) addCoins(gid, bid.user_id, bid.username, -extraCoins, '拍賣得標', '補付差額');
 
     // 交付標的
     if (a.kind === 'furniture') {
@@ -215,7 +215,7 @@ function closeAuction(gid, a) {
   const settled = settleWinner(gid, a, bid);
   if (settled.failed) {
     // 付不出來 → 全額退款、流標（標的留著，管理員可以再開一次）
-    addCoins(gid, bid.user_id, bid.username, bid.amount);
+    addCoins(gid, bid.user_id, bid.username, bid.amount, '拍賣退款', '流標退回押款');
     db.prepare('UPDATE auction_bids SET active=0 WHERE id=?').run(bid.id);
     db.prepare("UPDATE auctions SET status='failed' WHERE id=?").run(a.id);
     return { failed: true, reason: settled.reason, bidder: bid };

@@ -259,6 +259,7 @@ router.post('/gather-players/:userId/coins', (req, res) => {
   }
   db.prepare("UPDATE econ_wallets SET coins=?, updated_at=datetime('now','localtime') WHERE guild_id=? AND user_id=?")
     .run(next, req.guildId, uid);
+  require('../bot/features/gather').logCoins(req.guildId, uid, next - w.coins, '管理員調整', req.user.name || '');
   audit(req.user.name, `調整 ${w.username || uid} 的貨幣 ${delta > 0 ? '+' : ''}${delta}`);
   res.json({ ok: true, coins: next });
 });

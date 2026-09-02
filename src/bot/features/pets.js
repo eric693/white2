@@ -141,7 +141,7 @@ function adoptPet(gid, uid, uname, petId) {
   }
   const personality = PERSONALITIES[Math.floor(Math.random() * PERSONALITIES.length)];
   db.transaction(() => {
-    addCoins(gid, uid, uname, -p.price);
+    addCoins(gid, uid, uname, -p.price, '買寵物', p.name);
     db.prepare('INSERT INTO pet_owned (guild_id,user_id,pet_id,nickname,level,exp,intimacy,personality,fed_ms) VALUES (?,?,?,?,1,0,20,?,?)')
       .run(gid, uid, p.id, '', personality, Date.now());
   })();
@@ -181,7 +181,7 @@ function buyFood(gid, uid, uname, qty) {
   const w = wallet(gid, uid, uname);
   if (w.coins < total) return { error: `${gc.currency_name}不夠：買 ${n} 份飼料要 ${money(gc, total)}，你只有 ${w.coins.toLocaleString('en-US')}。` };
   db.transaction(() => {
-    addCoins(gid, uid, uname, -total);
+    addCoins(gid, uid, uname, -total, '買寵物飼料', `×${n}`);
     db.prepare(`INSERT INTO gather_inventory (guild_id,user_id,item_id,count) VALUES (?,?,?,?)
       ON CONFLICT(guild_id,user_id,item_id) DO UPDATE SET count = count + ?`).run(gid, uid, it.id, n, n);
   })();

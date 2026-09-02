@@ -152,7 +152,7 @@ function buildKitchen(gid, uid, uname) {
   for (const m of mats) { const have = bagCount(gid, uid, m.item); if (have < m.count) missing.push(`${m.item} ×${m.count}（你有 ${have}）`); }
   if (missing.length) return { error: `蓋廚房的材料還不夠：\n🔴 ${missing.join('\n🔴 ')}` };
   db.transaction(() => {
-    addCoins(gid, uid, uname, -k.coins);
+    addCoins(gid, uid, uname, -k.coins, '蓋廚房', '');
     takeItems(gid, uid, mats);
     db.prepare('UPDATE home_users SET kitchen_built=1, kitchen_level=1 WHERE guild_id=? AND user_id=?').run(gid, uid);
   })();
@@ -173,7 +173,7 @@ function upgradeKitchen(gid, uid, uname) {
   for (const m of mats) { const have = bagCount(gid, uid, m.item); if (have < m.count) missing.push(`${m.item} ×${m.count}（你有 ${have}）`); }
   if (missing.length) return { error: `升級材料還不夠：\n🔴 ${missing.join('\n🔴 ')}` };
   db.transaction(() => {
-    addCoins(gid, uid, uname, -k.coins);
+    addCoins(gid, uid, uname, -k.coins, '升級廚房', `Lv${k.level}`);
     takeItems(gid, uid, mats);
     db.prepare('UPDATE home_users SET kitchen_level=? WHERE guild_id=? AND user_id=?').run(k.level, gid, uid);
   })();
@@ -220,7 +220,7 @@ function upgradeKitchenWithCoins(gid, uid, uname) {
   const coins = wallet(gid, uid, uname).coins;
   if (coins < q.total) return { error: `這條路很貴：合計 ${money(gcfg(gid), q.total)}，你還差 ${money(gcfg(gid), q.total - coins)}。` };
   db.transaction(() => {
-    addCoins(gid, uid, uname, -q.total);
+    addCoins(gid, uid, uname, -q.total, q.building ? '蓋廚房' : '升級廚房', '缺料折現');
     const partial = parseMats(q.k.materials)
       .map(m => ({ item: m.item, count: Math.min(m.count, bagCount(gid, uid, m.item)) }))
       .filter(m => m.count > 0);
@@ -299,7 +299,7 @@ function sellDish(gid, uid, uname, recipeId, quality) {
   const price = applyBuff(base, buffPct(gid, uid, 'sell_pct') + buffPct(gid, uid, 'cook_price_pct'));
   db.transaction(() => {
     db.prepare('UPDATE cook_inventory SET count = count - 1 WHERE guild_id=? AND user_id=? AND recipe_id=? AND quality=?').run(gid, uid, recipeId, quality);
-    addCoins(gid, uid, uname, price);
+    addCoins(gid, uid, uname, price, '賣料理', r.name);
   })();
   return { sold: r, price, quality };
 }

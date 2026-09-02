@@ -171,6 +171,7 @@ function borrow(gid, userId, username, amount) {
     // 借到的錢不計入 total_earned：借款不是收入，不該被所得稅當成本期賺到的錢
     db.prepare("UPDATE econ_wallets SET coins = coins + ?, updated_at = datetime('now','localtime') WHERE guild_id=? AND user_id=?")
       .run(amt, gid, userId);
+    require('./gather').logCoins(gid, userId, amt, '物資貸款撥款', '要記得還');
     return id;
   })();
 
@@ -212,6 +213,7 @@ function borrowCredit(gid, userId, username, amount) {
     ).run(gid, userId, username || '', amt, interest, amt + interest, dueMs);
     // 借到的錢不算收入，不會被多課所得稅（跟物資貸款一致）
     db.prepare("UPDATE econ_wallets SET coins = coins + ?, updated_at = datetime('now','localtime') WHERE guild_id=? AND user_id=?").run(amt, gid, userId);
+    require('./gather').logCoins(gid, userId, amt, '信用貸款撥款', '要記得還');
     return info.lastInsertRowid;
   })();
   const loan = db.prepare('SELECT * FROM loans WHERE id=?').get(loanId);
@@ -247,6 +249,7 @@ function giveBack(gid, userId, loanId) {
       // 格子被佔走：折現
       db.prepare("UPDATE econ_wallets SET coins = coins + ?, updated_at = datetime('now','localtime') WHERE guild_id=? AND user_id=?")
         .run(c.value, gid, userId);
+      require('./gather').logCoins(gid, userId, c.value, '抵押品折現', c.detail || '格子被佔走');
       cash.push(c);
     }
   }
@@ -268,6 +271,7 @@ function repay(gid, userId, amount) {
   const res = db.transaction(() => {
     db.prepare("UPDATE econ_wallets SET coins = coins - ?, updated_at = datetime('now','localtime') WHERE guild_id=? AND user_id=?")
       .run(amt, gid, userId);
+    require('./gather').logCoins(gid, userId, -amt, '還款', `貸款 #${loan.id}`);
     require('./charity').fundGet(gid, amt);   // 還的錢回基金會池（利息也回，基金會會變大）
     const left = loan.owed - amt;
     db.prepare('UPDATE loans SET owed=? WHERE id=?').run(left, loan.id);
@@ -284,6 +288,7 @@ function defaultLoan(gid, loan) {
     // 信用貸款沒有抵押品 → 直接把應還金額從錢包扣掉（餘額可負），賴不掉；扣回的錢回基金會池
     if (loan.loan_type === 'credit') {
       db.prepare("UPDATE econ_wallets SET coins = coins - ?, updated_at=datetime('now','localtime') WHERE guild_id=? AND user_id=?").run(loan.owed, gid, loan.user_id);
+      require('./gather').logCoins(gid, loan.user_id, -loan.owed, '貸款逾期強制扣款', `貸款 #${loan.id}`);
       require('./charity').fundGet(gid, loan.owed);
     }
     db.prepare("UPDATE loans SET status='defaulted', closed_at=datetime('now','localtime') WHERE id=?").run(loan.id);

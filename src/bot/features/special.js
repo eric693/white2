@@ -4,7 +4,7 @@ const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, MessageFlags } 
 const { db, guildConfig, logError } = require('../../db');
 const { brandColor } = require('../../util/brand');
 const { absUrl } = require('../../util/url');
-const { wallet } = require('./gather');
+const { wallet, logCoins } = require('./gather');
 const { localToday, localWeekStart, parts } = require('../../util/time');
 
 const scfg = (gid) => guildConfig('special_config', gid);
@@ -178,6 +178,7 @@ async function doRedeem(client, gid, item, user, uname, qtyRaw = 1, member = nul
   let redeemId;
   const tx = db.transaction(() => {
     db.prepare('UPDATE econ_wallets SET coins = coins - ? WHERE guild_id=? AND user_id=?').run(total, gid, user.id);
+    logCoins(gid, user.id, -total, '神秘商店兌換', `${item.name} ×${qty}`);
     if (item.stock > 0) db.prepare('UPDATE special_items SET stock = stock - ? WHERE id=?').run(qty, item.id);
     // price 記「這次實際的平均單價」，總價才等於 price×qty，後台與消費稅都對得上
     redeemId = db.prepare('INSERT INTO special_redeems (guild_id,user_id,username,item_id,item_name,price,qty,paid) VALUES (?,?,?,?,?,?,?,?)')
