@@ -121,10 +121,10 @@ const builders = [
   new SlashCommandBuilder().setName('狩獵').setDescription('外出狩獵取得獵物（有冷卻時間）'),
   new SlashCommandBuilder().setName('製作').setDescription('用背包裡的材料製作物品')
     .addStringOption(o => o.setName('配方').setDescription('配方名稱（用 /配方 查看）').setRequired(true))
-    .addIntegerOption(o => o.setName('次數').setDescription('要做幾次（最多 10）').setMinValue(1).setMaxValue(10)),
+    .addIntegerOption(o => o.setName('次數').setDescription('要做幾次（最多 99）').setMinValue(1).setMaxValue(99)),
   new SlashCommandBuilder().setName('鍛造').setDescription('用材料鍛造裝備或道具')
     .addStringOption(o => o.setName('配方').setDescription('配方名稱（用 /配方 查看）').setRequired(true))
-    .addIntegerOption(o => o.setName('次數').setDescription('要做幾次（最多 10）').setMinValue(1).setMaxValue(10)),
+    .addIntegerOption(o => o.setName('次數').setDescription('要做幾次（最多 99）').setMinValue(1).setMaxValue(99)),
   new SlashCommandBuilder().setName('配方').setDescription('查看製作／鍛造的配方一覽')
     .addStringOption(o => o.setName('種類').setDescription('要看哪一類')
       .addChoices({ name: '製作', value: 'craft' }, { name: '鍛造', value: 'forge' })),

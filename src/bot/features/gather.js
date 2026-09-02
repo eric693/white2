@@ -774,13 +774,25 @@ function buyThing(gid, uid, uname, kind, id, qty = 1) {
     .setFooter({ text: `餘額 ${(w.coins - tool.price).toLocaleString('en-US')} ${c.currency_name}` }) };
 }
 
+// 一次最多做幾次（Discord 選項上限與實際執行都吃這個值）
+const MAX_CRAFT_TIMES = 99;
+
 // 執行一次（或多次）配方。/製作 /鍛造 指令與 /配方 的下拉選單共用同一套流程。
 function craftRecipe(gid, uid, uname, recipeId, times = 1) {
   const c = cfg(gid);
   const r = db.prepare('SELECT * FROM gather_recipes WHERE guild_id=? AND enabled=1 AND id=?').get(gid, recipeId);
   if (!r) return { error: '這個配方已經不存在了。' };
   const label = r.kind === 'forge' ? '鍛造' : '製作';
-  times = Math.min(10, Math.max(1, times));
+  times = Math.min(MAX_CRAFT_TIMES, Math.max(1, times));
+  // 工具是「同款只會有一件」（gather_user_tools 以 tool_id 為鍵），做第二件不會多拿到東西，
+  // 材料卻照扣 —— 已經有的直接擋下，沒有的也只做 1 次。
+  let toolCapped = false;
+  if (r.result_type === 'tool') {
+    const owned = db.prepare('SELECT 1 FROM gather_user_tools WHERE guild_id=? AND user_id=? AND tool_id=?').get(gid, uid, r.result_id);
+    const tn = db.prepare('SELECT name, emoji FROM gather_tools WHERE id=?').get(r.result_id);
+    if (owned) return { error: `你已經有 ${tn ? (tn.emoji || '') + tn.name : '這件道具'} 了，同款道具只會有一件。壞了請用 \`/修理\`。` };
+    if (times > 1) { toolCapped = true; times = 1; }
+  }
   const mats = readMaterials(r);
   if (!mats.length) return { error: '這個配方還沒設定材料，請管理員補上。' };
 
@@ -845,6 +857,7 @@ function craftRecipe(gid, uid, uname, recipeId, times = 1) {
       `**${r.name}** ×${times}\n成功 ${ok} 次` + (fail ? `，失敗 ${fail} 次` : '') +
       (ok && res ? `\n獲得 ${res.emoji || ''} **${res.name}** ×${(r.result_count || 1) * ok}` : '') +
       (ok && PLOT_HINT[r.result_type] ? `\n${PLOT_HINT[r.result_type]} +${(r.result_count || 1) * ok} 格，去 \`${PLOT_USE[r.result_type]}\` 使用` : '') +
+      (toolCapped ? '\nℹ️ 道具同款只會有一件，這次只做了 1 次（材料也只扣 1 份）' : '') +
       (fail && !r.fail_keep ? '\n⚠️ 失敗的材料已消耗' : '') +
       (totalCost ? `\n花費 ${money(c, totalCost)}` : '')) };
 }
@@ -1714,7 +1727,7 @@ function init(client) {
         if (isBtn) { name = '配方'; }
         else {
         const what = (i.options.getString('配方') || '').trim();
-        const times = Math.min(10, Math.max(1, i.options.getInteger('次數') || 1));
+        const times = Math.min(MAX_CRAFT_TIMES, Math.max(1, i.options.getInteger('次數') || 1));
         const rec = db.prepare('SELECT * FROM gather_recipes WHERE guild_id=? AND kind=? AND enabled=1 AND name=?').get(gid, rkind, what);
         if (!rec) return i.reply({ content: `找不到${name}配方「${what}」，用 \`/配方\` 看看有哪些。`, flags: MessageFlags.Ephemeral });
         const out = craftRecipe(gid, uid, uname, rec.id, times);
