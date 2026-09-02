@@ -697,7 +697,16 @@ App.page('home', {
                   <div class="form-row" style="align-items:center;gap:8px;margin:0">
                     <div style="flex:1">${UI.esc((it.emoji || '') + it.name)}<span class="hint">　基礎 +${it.gift_aff}</span></div>
                     <select data-item="${UI.esc(it.name)}" style="max-width:170px">
-                      ${d.levels.map(l => `<option value="${l.weight}" ${(m.get(it.name) || 100) === l.weight ? 'selected' : ''}>${l.label}</option>`).join('')}
+                      ${(() => {
+                        // 目前的權重可能不是這四個標準值（工藝禮物的預設是 260／300）。
+                        // 以前沒把它列進選項 → 下拉選不到、瀏覽器自動落到第一個「最喜歡 200」，
+                        // 一按儲存就把 260 悄悄壓成 200（玩家會覺得好感度莫名變少）。
+                        const cur = m.get(it.name) || 100;
+                        const levels = d.levels.some(l => l.weight === cur)
+                          ? d.levels
+                          : [{ weight: cur, label: `⭐ 目前設定（×${(cur / 100).toFixed(cur % 100 ? 1 : 0)}）` }, ...d.levels];
+                        return levels.map(l => `<option value="${l.weight}" ${cur === l.weight ? 'selected' : ''}>${l.label}</option>`).join('');
+                      })()}
                     </select>
                   </div>`).join('')}
               </div>`,
