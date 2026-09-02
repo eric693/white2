@@ -510,7 +510,7 @@ function init(client) {
             addCoins(gid, uid, uname, -fine, '偷魚被抓罰款', `被 ${to.username} 抓到`);
             let note = `\n\n💸 你被 ${to.username} 逮個正著，罰了 **${money(gc, fine)}**`;
             if (c.steal_penalty_to_victim) {
-              addCoins(gid, to.id, to.username, fine, '抓到小偷賠償', `${uname} 偷魚被你抓到`);
+              addCoins(gid, to.id, to.username, fine, '抓到小偷賠償', '有人偷魚被你抓到');
               note += `，全額賠給了對方。`;
               const dm = new EmbedBuilder().setColor(0x2ecc71).setTitle('🛡️ 抓到偷魚賊！')
                 .setDescription(`**${i.member?.displayName || uname}** 想偷你的魚缸但被逮到，賠了你 **${money(gc, fine)}**！`);

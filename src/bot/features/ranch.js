@@ -706,7 +706,7 @@ function init(client) {
             const gtx = db.transaction(() => {
               db.prepare('UPDATE econ_wallets SET coins = coins - ? WHERE guild_id=? AND user_id=?').run(pen, gid, uid);
               logCoins(gid, uid, -pen, '偷偷樂被抓罰款', `被 ${to.username} 抓到`);
-              addCoins(gid, to.id, to.username, pen, '抓到小偷賠償', `${uname} 偷東西被你抓到`);
+              addCoins(gid, to.id, to.username, pen, '抓到小偷賠償', '有人來偷東西被你抓到');
             });
             gtx();
             guardPenalty = pen; guardAnimal = best;
