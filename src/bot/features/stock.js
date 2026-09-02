@@ -10,6 +10,8 @@ const {
   StringSelectMenuBuilder, ButtonBuilder, ButtonStyle
 } = require('discord.js');
 const { selectRows, isSelect } = require('../../util/menu');
+// 錢包明細：買賣股票要記帳（延後 require，避免和 gather.js 互相 require 卡住）
+const logCoins = (...a) => require('./gather').logCoins(...a);
 const cron = require('node-cron');
 const { db, guildConfig, logError } = require('../../db');
 const { brandColor } = require('../../util/brand');
@@ -717,7 +719,7 @@ function applyNews(client, gid) {
 function payoutNews(gid, n) {
   const each = Number(n.payout_each || 0);
   if (each <= 0) return null;
-  const { addCoins, logCoins } = require('./gather');
+  const { addCoins } = require('./gather');
   const users = db.prepare('SELECT user_id, username FROM econ_wallets WHERE guild_id=?').all(gid);
   let ok = 0;
   for (const u of users) {
