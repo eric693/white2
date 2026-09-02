@@ -587,7 +587,9 @@ function init(client) {
         // 會直接超過，導致整個 /牧場 開不起來、只丟一句「執行失敗」。
         // 這裡逐行累加到裝得下為止，並說明還有幾格沒列出來。
         const TAIL = '\n\n每隻各自計時，成熟一個就能 `/收成` 一個，不用等整批。\n💰 想清欄位換星幣：用下面的選單「賣掉動物」（回收購買價一半，待收成產物一起進背包）。';
-        const BUDGET = 4096 - TAIL.length - 80;
+        // 後面還會補「還有 N 格沒列」與「選單只列前 125 隻」兩段註記，
+        // 之前沒把它們算進預算，格子多的玩家就會剛好破 4096 → /牧場 整個開不起來。
+        const BUDGET = 4096 - TAIL.length - 220;
         let desc = '', shownLines = 0;
         for (const ln of lines) {
           if (desc.length + ln.length + 1 > BUDGET) break;
@@ -626,6 +628,8 @@ function init(client) {
           embed.setDescription(embed.data.description
             + `\n\n（動物太多，選單先列出前 ${SHOWN} 隻／共 ${sellOpts.length} 隻；賣掉一批後重開 \`/牧場\` 就會遞補後面的。）`);
         }
+        // 保險：不管前面怎麼算，送出去前一定壓在 Discord 的 4096 字以內
+        if ((embed.data.description || '').length > 4096) embed.setDescription(embed.data.description.slice(0, 4093) + '…');
         return await reply({ embeds: [embed], components: rows });
       }
 

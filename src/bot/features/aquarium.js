@@ -116,7 +116,7 @@ function buyFish(gid, uid, uname, fishId) {
   const fedUntil = now + Math.max(1, c.feed_hours) * H;
   db.transaction(() => {
     db.prepare('UPDATE econ_wallets SET coins = coins - ? WHERE guild_id=? AND user_id=?').run(total, gid, uid);
-    logCoins(gid, uid, -total, '買魚', `${f.name} ×${n}`);
+    logCoins(gid, uid, -total, '買魚', f.name);
     db.prepare('INSERT INTO aquarium_slots (guild_id,user_id,slot,fish_id,pending,last_produce_ms,fed_until_ms) VALUES (?,?,?,?,0,?,?)')
       .run(gid, uid, free, f.id, now, fedUntil);
   })();
@@ -444,8 +444,17 @@ function init(client) {
           if (fed <= now) hungry++;
           lines.push(`\`${s + 1}\`｜${f ? (f.emoji || '🐟') + f.name : '魚'}　🪙 ${row.pending.toLocaleString('en-US')}　${state}`);
         }
+        // 魚缸格數也能靠 /製作 一直加，行數多了會破 Embed 的 4096 字上限（整個 /魚缸 開不起來）
+        const AQ_BUDGET = 3600;
+        let aqDesc = '', aqShown = 0;
+        for (const ln of lines) {
+          if (aqDesc.length + ln.length + 1 > AQ_BUDGET) break;
+          aqDesc += (aqDesc ? '\n' : '') + ln;
+          aqShown++;
+        }
+        if (aqShown < lines.length) aqDesc += `\n…還有 **${lines.length - aqShown}** 格沒列出來（格子太多，訊息長度有限）。`;
         const embed = new EmbedBuilder().setColor(0x3498db).setTitle(`🐠 ${target.username} 的魚缸`)
-          .setDescription(lines.join('\n') +
+          .setDescription(aqDesc +
             (died.length ? `\n\n💀 **${died.map(f => (f.emoji || '') + f.name).join('、')}** 餓死了…（缸裡的星幣也一起沒了）` : '') +
             (hungry ? `\n\n⚠️ 有 ${hungry} 條魚餓著，快 \`/餵魚\`！` : '') +
             '\n\n`/餵魚` 買飼料　`/撈金` 領星幣　`/賣魚` 換現金')
