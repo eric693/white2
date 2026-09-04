@@ -409,7 +409,7 @@ router.get('/play/:token/login', (req, res) => {
   const t = parseToken(req.params.token);
   if (!t) return res.redirect('/play');
   const p = new URLSearchParams({
-    client_id: process.env.DISCORD_CLIENT_ID || '', redirect_uri: redirectUri(req),
+    client_id: require('../bot').roleClientId('butler'), redirect_uri: redirectUri(req),
     response_type: 'code', scope: 'identify', state: req.params.token, prompt: 'consent'
   });
   res.redirect('https://discord.com/oauth2/authorize?' + p.toString());
@@ -424,7 +424,8 @@ router.get('/play/auth/callback', async (req, res) => {
   if (!code) return back('已取消登入。');
   try {
     const form = new URLSearchParams({
-      client_id: process.env.DISCORD_CLIENT_ID || '', client_secret: process.env.DISCORD_CLIENT_SECRET || '',
+      client_id: require('../bot').roleClientId('butler'),
+      client_secret: require('../bot').roleClientSecret('butler'),
       grant_type: 'authorization_code', code: String(code), redirect_uri: redirectUri(req)
     });
     const tokRes = await fetch('https://discord.com/api/oauth2/token', {

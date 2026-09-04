@@ -5,6 +5,13 @@ const bot = require('../bot');
 const { db, audit, getSetting, setSetting, ensureGuild, resetGuildData } = require('../db');
 
 const router = express.Router();
+
+// 邀請連結：Client ID 優先讀後台設定（機器人帳號頁），沒設才回頭用 .env
+const PERMS = '1099783466050';
+function inviteUrl(role) {
+  const id = require('../bot').roleClientId(role);
+  return id ? `https://discord.com/oauth2/authorize?client_id=${id}&scope=bot%20applications.commands&permissions=${PERMS}` : '';
+}
 router.use(requireAuth());
 
 // 機器人所在伺服器清單（供後台切換）
@@ -29,7 +36,9 @@ router.get('/guild-admin', (req, res) => {
   res.json({
     guilds: rows.map(r => ({ ...r, online: live.has(r.guild_id), members: (live.get(r.guild_id) || {}).members || 0 })),
     open_mode: getSetting('allow_any_guild', '0') === '1',
-    invite: `https://discord.com/oauth2/authorize?client_id=${process.env.DISCORD_CLIENT_ID}&scope=bot%20applications.commands&permissions=1099783466050`
+    // 兩隻機器人各有自己的邀請連結（Client ID 不同）
+    invite: inviteUrl('butler'),
+    invites: { secretary: inviteUrl('secretary'), butler: inviteUrl('butler') }
   });
 });
 

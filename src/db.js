@@ -782,6 +782,27 @@ function setSetting(key, value) {
   setSettingStmt.run(key, String(value ?? ''));
 }
 
+// ---- 兩隻機器人的帳號設定（後台「機器人帳號」頁）----
+// 憑證放 DB 而不是只放 .env：改一次要 SSH 上機器改檔案太不方便，
+// 而且兩隻機器人＋兩組 OAuth 憑證，用環境變數會變成一長串很容易貼錯。
+// .env 仍然有效，當作「DB 沒設定時的退路」（見 bot/index.js 的 roleToken）。
+//
+// ⚠️ token / client_secret 是機密：API 一律只回遮罩後的字串，不回原文。
+const BOT_ROLES = ['secretary', 'butler'];
+const BOT_SECRET_KEYS = BOT_ROLES.flatMap(r => [`bot_token_${r}`, `bot_client_secret_${r}`]);
+const BOT_PUBLIC_KEYS = BOT_ROLES.flatMap(r => [
+  `bot_client_id_${r}`,
+  // 兩隻機器人要能各自取名字、換頭像、設不同的上線狀態
+  `bot_name_${r}`, `bot_avatar_${r}`, `bot_status_${r}`, `bot_activity_type_${r}`, `bot_activity_text_${r}`
+]);
+
+// 遮罩：只露出末 4 碼，讓管理員能確認「有沒有填、是不是同一把」
+function maskSecret(v) {
+  const s2 = String(v || '');
+  if (!s2) return '';
+  return '•'.repeat(Math.max(4, Math.min(24, s2.length - 4))) + s2.slice(-4);
+}
+
 // 可由後台「自訂外觀」頁編輯的設定（14.1～14.3）
 const UI_TEXT_KEYS = [
   'bot_name', 'bot_avatar', 'brand_title', 'brand_sub',
@@ -852,6 +873,7 @@ function activeGuildIds() {
 }
 
 module.exports = {
-  db, SECRET, ensureColumns, getSetting, setSetting, UI_TEXT_KEYS, audit, guildCtx, COIN_MAX, COIN_DELTA_MAX,
+  db, SECRET, ensureColumns, getSetting, setSetting, UI_TEXT_KEYS, audit,
+  BOT_ROLES, BOT_SECRET_KEYS, BOT_PUBLIC_KEYS, maskSecret, guildCtx, COIN_MAX, COIN_DELTA_MAX,
   HOME_GUILD, guildConfig, ensureGuild, resetGuildData, activeGuildIds, GUILD_TABLES, logError
 };

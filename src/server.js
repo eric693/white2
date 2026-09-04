@@ -4,7 +4,8 @@ process.env.TZ = process.env.TZ || 'Asia/Taipei';
 const express = require('express');
 const path = require('path');
 const bcrypt = require('bcryptjs');
-const { db, getSetting, setSetting, UI_TEXT_KEYS, audit } = require('./db');
+const { db, getSetting, setSetting, UI_TEXT_KEYS, audit,
+  BOT_ROLES, BOT_SECRET_KEYS, BOT_PUBLIC_KEYS, maskSecret } = require('./db');
 const {
   signToken, setAuthCookie, clearAuthCookie, requireAuth, requireModule,
   MODULES, MODULE_KEYS, parsePermissions,
@@ -60,6 +61,66 @@ app.put('/api/appearance', requireAuth(), requireModule('appearance'), async (re
   audit(req.user.name, '更新外觀設定');
   try { await bot.applyAppearance(); } catch {}
   res.json({ ok: true });
+});
+
+// ---- 兩隻機器人的帳號設定（Token / OAuth 憑證 / 各自的名稱頭像）----
+// 憑證放這裡而不是只放 .env：改一次不必 SSH 上機器改檔案。
+// ⚠️ token 與 client_secret 只回遮罩後的字串，原文永遠不離開伺服器。
+app.get('/api/bot-accounts', requireAuth(), requireModule('appearance'), (req, res) => {
+  const out = {};
+  for (const role of BOT_ROLES) {
+    const token = getSetting(`bot_token_${role}`);
+    const secret = getSetting(`bot_client_secret_${role}`);
+    const envToken = process.env[role === 'secretary' ? 'DISCORD_TOKEN_SECRETARY' : 'DISCORD_TOKEN_BUTLER']
+      || process.env.DISCORD_TOKEN || '';
+    out[role] = {
+      // 有沒有設定、設的是哪一把（末 4 碼），但不給原文
+      token_set: !!token, token_masked: maskSecret(token),
+      token_from_env: !token && !!envToken,
+      client_id: getSetting(`bot_client_id_${role}`) || '',
+      client_secret_set: !!secret, client_secret_masked: maskSecret(secret),
+      name: getSetting(`bot_name_${role}`),
+      avatar: getSetting(`bot_avatar_${role}`),
+      status: getSetting(`bot_status_${role}`) || 'online',
+      activity_type: getSetting(`bot_activity_type_${role}`) || 'Playing',
+      activity_text: getSetting(`bot_activity_text_${role}`),
+      invite: getSetting(`bot_client_id_${role}`)
+        ? `https://discord.com/oauth2/authorize?client_id=${getSetting(`bot_client_id_${role}`)}&scope=bot%20applications.commands&permissions=1099783466050`
+        : ''
+    };
+  }
+  // 這個行程現在扮演誰（改 token 之後要重啟哪一個，看這裡）
+  out.current_role = require('./bot/roles').botRole();
+  res.json(out);
+});
+
+app.put('/api/bot-accounts', requireAuth(), requireModule('appearance'), async (req, res) => {
+  const b = req.body || {};
+  const changed = [];
+  for (const role of BOT_ROLES) {
+    const r = b[role];
+    if (!r) continue;
+    // 機密欄位：只有真的送了新值才覆蓋。前端顯示的是遮罩字串，
+    // 直接存回去會把真正的 token 蓋成一串圓點，所以空字串一律視為「不改」。
+    for (const [field, key] of [['token', `bot_token_${role}`], ['client_secret', `bot_client_secret_${role}`]]) {
+      const v = String(r[field] ?? '').trim();
+      if (!v) continue;
+      if (v.startsWith('•')) continue;                 // 使用者沒動那一欄，送回來的是遮罩
+      setSetting(key, v); changed.push(`${role}.${field}`);
+    }
+    if (r.clear_token) { setSetting(`bot_token_${role}`, ''); changed.push(`${role}.token(清除)`); }
+    // 公開欄位：空字串是合法的（代表清掉這個設定）
+    for (const [field, key] of [
+      ['client_id', `bot_client_id_${role}`], ['name', `bot_name_${role}`], ['avatar', `bot_avatar_${role}`],
+      ['status', `bot_status_${role}`], ['activity_type', `bot_activity_type_${role}`], ['activity_text', `bot_activity_text_${role}`]
+    ]) {
+      if (field in r) setSetting(key, r[field] ?? '');
+    }
+  }
+  audit(req.user.name, `更新機器人帳號設定${changed.length ? `（${changed.join('、')}）` : ''}`);
+  // 名稱／頭像／狀態可以當場套用；token 要重啟行程才會生效
+  try { await bot.applyAppearance(); } catch {}
+  res.json({ ok: true, changed });
 });
 
 // ---- 全域設定（管理員通知頻道等，多系統共用）----

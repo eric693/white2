@@ -175,16 +175,21 @@ client.on('guildDelete', (g) => {
 // 14.1 機器人名稱、頭像、狀態與活動
 async function applyAppearance() {
   if (!client.user) return;
-  const name = getSetting('bot_name');
+  // 兩隻機器人要能各自取名字、換頭像、設不同狀態，所以先讀角色專屬的設定；
+  // 沒設定才退回舊的共用那組（單機器人時代留下來的值不會突然消失）。
+  const role = botRole();
+  const roleSetting = (key) => getSetting(`${key}_${role}`) || getSetting(key);
+
+  const name = roleSetting('bot_name');
   if (name && client.user.username !== name) {
     try { await client.user.setUsername(name); } catch { console.warn('設定機器人名稱失敗（Discord 每小時限 2 次）'); }
   }
-  const avatar = getSetting('bot_avatar');
+  const avatar = roleSetting('bot_avatar');
   if (avatar) { try { await client.user.setAvatar(resolveAvatar(avatar)); } catch (e) { console.warn('設定頭像失敗（Discord 有頻率限制，稍後會自動重試）：', e.message); } }
 
-  const status = getSetting('bot_status', 'online');       // online | idle | dnd | invisible
-  const text = getSetting('bot_activity_text');
-  const typeName = getSetting('bot_activity_type', 'Playing');
+  const status = roleSetting('bot_status') || 'online';       // online | idle | dnd | invisible
+  const text = roleSetting('bot_activity_text');
+  const typeName = roleSetting('bot_activity_type') || 'Playing';
   const TYPES = { Playing: 0, Streaming: 1, Listening: 2, Watching: 3, Competing: 5 };
   try {
     client.user.setPresence({
@@ -323,12 +328,23 @@ setInterval(() => {
   }
 }, 30000).unref();
 
-// 各角色自己的 token；沒設就退回舊的 DISCORD_TOKEN（單機器人模式相容）
+// 各角色自己的 token。優先序：後台設定 → 角色專屬環境變數 → 舊的 DISCORD_TOKEN。
+// 後台優先是刻意的：改 token 不必再 SSH 上機器改 .env。
 function roleToken() {
   const role = botRole();
-  if (role === 'secretary') return process.env.DISCORD_TOKEN_SECRETARY || process.env.DISCORD_TOKEN;
-  if (role === 'butler') return process.env.DISCORD_TOKEN_BUTLER || process.env.DISCORD_TOKEN;
-  return process.env.DISCORD_TOKEN;
+  if (role === 'both') return getSetting('bot_token_butler') || process.env.DISCORD_TOKEN;
+  const fromDb = getSetting(`bot_token_${role}`);
+  if (fromDb) return fromDb;
+  const envKey = role === 'secretary' ? 'DISCORD_TOKEN_SECRETARY' : 'DISCORD_TOKEN_BUTLER';
+  return process.env[envKey] || process.env.DISCORD_TOKEN;
+}
+
+// OAuth 用的 Client ID / Secret 也照同一條優先序（/play 登入、後台邀請連結會用）
+function roleClientId(role = botRole()) {
+  return getSetting(`bot_client_id_${role === 'both' ? 'butler' : role}`) || process.env.DISCORD_CLIENT_ID || '';
+}
+function roleClientSecret(role = botRole()) {
+  return getSetting(`bot_client_secret_${role === 'both' ? 'butler' : role}`) || process.env.DISCORD_CLIENT_SECRET || '';
 }
 
 function start() {
@@ -371,4 +387,4 @@ async function deleteAppEmoji(emojiId) {
   await client.application.emojis.delete(emojiId).catch(() => {});
 }
 
-module.exports = { client, start, isReady, mainGuild, refreshGuildCommands, guildList, applyAppearance, fetchChannel, uploadAppEmoji, deleteAppEmoji };
+module.exports = { client, start, isReady, mainGuild, refreshGuildCommands, roleClientId, roleClientSecret, guildList, applyAppearance, fetchChannel, uploadAppEmoji, deleteAppEmoji };
