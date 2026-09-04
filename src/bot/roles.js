@@ -69,7 +69,7 @@ const COMMAND_FEATURE = {
   '釣魚': 'gather', '挖礦': 'gather', '伐木': 'gather', '採集': 'gather', '狩獵': 'gather',
   '製作': 'gather', '鍛造': 'gather', '配方': 'gather', '任務': 'gather', '地圖': 'gather',
   '修理': 'gather', '商店': 'gather', '購買': 'gather',
-  '圖鑑': 'dex', '成就': 'dex',
+  '倉庫': 'gather', '圖鑑': 'dex', '成就': 'dex',
   '交易': 'trades', '轉帳': 'trades',
   '牧場': 'ranch', '畜牧商店': 'ranch', '飼養': 'ranch', '收成': 'ranch', '放生': 'ranch',
   '偷': 'ranch', '孵化': 'ranch', '孵化室': 'ranch',

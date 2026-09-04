@@ -109,6 +109,8 @@ const builders = [
     .addUserOption(o => o.setName('玩家').setDescription('（僅管理員）查看指定玩家')),
   new SlashCommandBuilder().setName('背包').setDescription('查看自己的背包（個人隱私，他人不可查）')
     .addUserOption(o => o.setName('玩家').setDescription('（僅管理員）查看指定玩家')),
+  new SlashCommandBuilder().setName('倉庫').setDescription('查看倉庫（保存物資，賣出碰不到；個人隱私，他人不可查）')
+    .addUserOption(o => o.setName('玩家').setDescription('（僅管理員）查看指定玩家')),
   new SlashCommandBuilder().setName('賣出').setDescription('把背包裡的東西賣掉換取貨幣')
     .addStringOption(o => o.setName('物品').setDescription('物品名稱、稀有度（N/R/SR/SSR）或「全部」，不填＝全部'))
     .addIntegerOption(o => o.setName('數量').setDescription('每種要賣幾個（不填＝全賣）').setMinValue(1)),
@@ -258,7 +260,7 @@ const builders = [
 // ---- 遊戲指令：說明統一加上「【遊戲】」前綴 ----
 // 冒險經濟那一整套都算遊戲；音樂、抽獎、警告、客服單這些管理／互動功能不加。
 const GAME_COMMANDS = new Set([
-  '釣魚', '挖礦', '伐木', '採集', '狩獵', '錢包', '明細', '背包', '賣出', '商店', '購買', '圖鑑', '富豪榜',
+  '釣魚', '挖礦', '伐木', '採集', '狩獵', '錢包', '明細', '背包', '倉庫', '賣出', '商店', '購買', '圖鑑', '富豪榜',
   '轉帳', '製作', '鍛造', '配方', '任務', '抽籤', '狀態', '修理', '地圖', '交易',
   '牧場', '畜牧商店', '飼養', '收成', '放生', '偷', '孵化', '孵化室',
   '魚缸', '水族商店', '養魚', '餵魚', '撈金', '賣魚', '偷魚',

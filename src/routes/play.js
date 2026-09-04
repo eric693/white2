@@ -544,7 +544,7 @@ router.post('/play/:token/feed', (req, res) => doAuthedAct(req, res, (gid, uid) 
 }));
 router.post('/play/:token/sellbag', (req, res) => doAuthedAct(req, res, (gid, uid) => {
   const r = require('../bot/features/gather').sellAllBag(gid, uid, uname(gid, uid));
-  if (r.empty) return '背包沒有可賣的東西（工具／保管袋不會賣掉）。';
+  if (r.empty) return '背包沒有可賣的東西（工具賣不掉；📦 倉庫裡的東西不會被賣掉）。';
   return `🎒 賣光背包：${r.kinds} 種，共 +${num(r.total)} 星幣。`;
 }));
 router.post('/play/:token/donate', (req, res) => doAuthedAct(req, res, (gid, uid) => {
