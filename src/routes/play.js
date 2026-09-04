@@ -233,7 +233,7 @@ function render(d, token, msg, authed) {
         <input name="shares" type="text" inputmode="numeric" autocomplete="off" placeholder="股數（賣出可填「全部」）">
         <button class="act">送出交易</button>
       </form>
-      <p class="muted">交易會扣交易稅；買進受每人持股上限限制。</p>`
+      <p class="muted">交易會扣手續費；買進受每人持股上限限制。</p>`
     : `<p class="muted">目前沒有掛牌的股票。</p>`;
 
   // 主動玩法（登入後才出現；會消耗體力/冷卻，所以要本人登入）

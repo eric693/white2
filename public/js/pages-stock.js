@@ -6,11 +6,11 @@ App.page('stock', {
     "intro": "掛牌股票與交易規則。股價的漲跌由「財經新聞」那一頁推動，這裡管的是股票本身與交易參數。",
     "steps": [
       "「股票」分頁新增掛牌公司，設代號、名稱、起始價與波動幅度。",
-      "「設定」調交易稅％、每人持股上限、單次買賣上限與交易冷卻。",
+      "「設定」調手續費％、每人持股上限、單次買賣上限與交易冷卻。",
       "「成交紀錄」可以查誰在什麼時間買賣了什麼。"
     ],
     "notes": [
-      "交易稅買進與賣出各收一次，收到的稅直接銷毀（星幣回收），不會進任何人口袋。",
+      "手續費買進與賣出各收一次（預設各 1.5%），收到的錢直接銷毀（星幣回收），不進任何人口袋。股票不另外收持有稅或證券稅，也開放當沖（當天買當天可賣）。",
     "所得稅只課股票的實際價差：買賣沒賺就不課，有賺才把賺到的部分計入本期收入。不是用賣出總金額計算，所以玩家周轉不會被重複課稅；賺完馬上再買股也躲不掉，因為記的是已實現獲利。",
       "可以當沖：當天買進的股票當天就能賣出，沒有限制。",
       "持股上限是「所有股票加總」，不是每支各算。超過會先警告，逾期由系統代為減碼。",
@@ -18,7 +18,7 @@ App.page('stock', {
     ],
     "terms": [
       [
-        "交易稅",
+        "手續費",
         "買賣當下就收，跟稅金頁的所得稅是兩回事。"
       ],
       [
@@ -59,7 +59,7 @@ App.page('stock', {
         <h3 style="margin-top:18px">股市參數</h3>
         <div class="form-row">
           <div class="field"><label>結算間隔（分鐘）</label><input name="tick_minutes" type="number" min="1" value="${c.tick_minutes ?? 60}"></div>
-          <div class="field"><label>交易稅 %（買賣各收，直接銷毀，可填小數如 1.5）</label><input name="fee_pct" type="number" min="0" max="50" step="0.1" value="${c.fee_pct ?? 2}"></div>
+          <div class="field"><label>手續費 %（買進與賣出各收一次，直接銷毀，可填小數）</label><input name="fee_pct" type="number" min="0" max="50" step="0.1" value="${c.fee_pct ?? 1.5}"></div>
           <div class="field"><label>單次漲跌停 %</label><input name="limit_pct" type="number" min="1" max="100" value="${c.limit_pct ?? 20}"></div>
         </div>
         <div class="form-row">

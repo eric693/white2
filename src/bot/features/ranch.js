@@ -3,6 +3,15 @@
 // 動物用金幣在 /畜牧商店 購買，最多養 max_slots 隻（預設 6）。
 const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
 const { db, guildConfig, logError } = require('../../db');
+
+// 偷竊失敗罰金：2026-09 起全遊戲統一為固定金額（原本是「看守動物的 guard_penalty
+// 隨機抽一個數字」，同一次失敗罰 1 塊或罰 5000 全看運氣，玩家完全無法預期）。
+// 金額由 ranch_config.steal_fine 決定，後台可調；魚缸那邊讀同一個值，兩邊一致。
+require('../../db').ensureColumns('ranch_config', { steal_fine: 'INTEGER NOT NULL DEFAULT 1000' });
+const stealFine = (gid) => {
+  const v = (require('../../db').guildConfig('ranch_config', gid) || {}).steal_fine;
+  return Math.max(0, v == null ? 1000 : v);
+};
 const { bump: bumpAch } = require('../../util/achievements');
 const { brandColor } = require('../../util/brand');
 // 產物賣價會受財經新聞影響（新聞關閉時等於基準價）
@@ -517,7 +526,7 @@ function init(client) {
         const w = wallet(gid, uid, uname);
         const line = (a) => {
           if (a.guard_pct > 0) {
-            return `${a.emoji || '🐾'} **${a.name}**　${money(gc, a.price)}\n　　🛡️ 看門：被偷時 ${a.guard_pct}% 機率反擊，小偷最多掉 ${a.guard_penalty} 星幣${a.description ? `　${a.description}` : ''}`;
+            return `${a.emoji || '🐾'} **${a.name}**　${money(gc, a.price)}\n　　🛡️ 看門：被偷時 ${a.guard_pct}% 機率反擊，小偷被罰 ${stealFine(gid).toLocaleString('en-US')} 星幣賠給你${a.description ? `　${a.description}` : ''}`;
           }
           const p = productOf(a.product_item_id);
           const iv = applySpeed(intervalMs(a), speedFor(gid, uid, 'ranch')) / 60000;
@@ -702,7 +711,8 @@ function init(client) {
           if (Math.random() * 100 < best.guard_pct) {
             const before = wallet(gid, uid, uname).coins;
             // 罰款照抽全額、不再被小偷的餘額上限卡住——沒錢也照罰，會欠成負數（防止玩家故意花光錢來偷）
-            const pen = Math.floor(Math.random() * Math.max(1, best.guard_penalty)) + 1;
+            // 金額固定（後台 steal_fine，預設 1000），不再依看守動物隨機
+            const pen = stealFine(gid);
             const gtx = db.transaction(() => {
               db.prepare('UPDATE econ_wallets SET coins = coins - ? WHERE guild_id=? AND user_id=?').run(pen, gid, uid);
               logCoins(gid, uid, -pen, '偷偷樂被抓罰款', `被 ${to.username} 抓到`);

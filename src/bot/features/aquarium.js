@@ -505,7 +505,10 @@ function init(client) {
         if (Math.random() * 100 >= successPct) {
           bumpAch(gid, to.id, 'defend_success', 1);   // 被偷者守住了（魚缸等級＋守衛寵物）
           // 偷失敗被抓 → 罰款（星幣可為負）。可設定賠給受害者或直接沒收。
-          const fine = Math.max(0, c.steal_fail_penalty || 0);
+          // 罰金與牧場偷竊統一：讀 ranch_config.steal_fine（預設 1000，後台可調）。
+          // 兩套偷竊各有一個罰金設定的話，管理員改了一邊、另一邊沒改，
+          // 玩家就會覺得「偷魚跟偷牧場罰的錢不一樣」——所以只留一個來源。
+          const fine = Math.max(0, (require('../../db').guildConfig('ranch_config', gid) || {}).steal_fine ?? 1000);
           if (fine > 0) {
             addCoins(gid, uid, uname, -fine, '偷魚被抓罰款', `被 ${to.username} 抓到`);
             let note = `\n\n💸 你被 ${to.username} 逮個正著，罰了 **${money(gc, fine)}**`;

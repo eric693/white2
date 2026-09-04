@@ -37,6 +37,8 @@ App.page('ranch', {
         <div class="form-row">
           <div class="field"><label>每人每日可偷次數</label><input name="steal_daily_limit" type="number" min="0" value="${c.steal_daily_limit ?? 3}"></div>
           <div class="field"><label>偷取成功機率 %</label><input name="steal_success_pct" type="number" min="0" max="100" value="${c.steal_success_pct ?? 50}"></div>
+          <div class="field"><label>偷竊失敗罰金（星幣）</label><input name="steal_fine" type="number" min="0" value="${c.steal_fine ?? 1000}">
+            <div class="hint">偷牧場與偷魚缸<strong>共用</strong>這個數字（預設 1,000）。可扣成負數，賴不掉。</div></div>
           <div class="field"><label>成功時偷走對方未收成的 %<br><span class="hint">只有「按比例」模式會用到</span></label><input name="steal_take_pct" type="number" min="0" max="100" value="${c.steal_take_pct ?? 50}"></div>
         </div>
         <div class="field"><label>偷取模式</label>

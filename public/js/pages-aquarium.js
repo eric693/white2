@@ -52,8 +52,9 @@ App.page('aquarium', {
             <div class="hint">魚很貴，建議壓在 5% 以內。</div></div>
         </div>
         <div class="form-row">
-          <div class="field"><label>偷失敗罰款（星幣，0＝不罰）</label><input name="steal_fail_penalty" type="number" min="0" value="${c.steal_fail_penalty ?? 0}">
-            <div class="hint">偷魚<strong>失敗被抓</strong>時，扣偷竊者這麼多星幣（星幣可扣成負數，賴不掉）。</div></div>
+          <div class="field"><label>偷失敗罰款</label>
+            <div class="hint">罰金已統一由「牧場設定 → 偷竊失敗罰金」管理（預設 1,000 星幣），偷魚與偷牧場共用同一個數字，這裡不再另外設定。</div>
+            <div class="hint">偷魚<strong>失敗被抓</strong>時扣偷竊者這麼多星幣（可扣成負數，賴不掉）。</div></div>
           <div class="field"><label>罰款去向</label>${H.toggle('steal_penalty_to_victim', c.steal_penalty_to_victim ?? 1, '罰款全額賠給受害者（關閉＝直接沒收充公）')}</div>
         </div>
         <button class="btn" id="savecfg">儲存設定</button>

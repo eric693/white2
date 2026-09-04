@@ -52,9 +52,9 @@ function createProposal(gid, fromUser, to, giveName, wantName, giveCount, wantCo
   ).run(gid, fromUser.id, fromUser.username, to.id, to.username, give.id, giveCount, want.id, wantCount, channelId, Date.now() + TRADE_TTL).lastInsertRowid;
   const embed = new EmbedBuilder().setColor(brandColor()).setTitle('🔄 交易提案')
     .setDescription(`<@${fromUser.id}> 想用 **${label(give, giveCount)}**\n交換 <@${to.id}> 的 **${label(want, wantCount)}**`)
-    .setFooter({ text: `僅 ${to.username} 可接受｜成交雙方各收 ${TRADE_FEE} 手續費｜1 小時內有效｜交易 #${tid}` });
+    .setFooter({ text: `僅 ${to.username} 可接受（會再確認一次）｜成交雙方各收 ${TRADE_FEE} 手續費｜1 小時內有效｜交易 #${tid}` });
   const row = new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(`trade:accept:${tid}`).setLabel('接受交易').setStyle(ButtonStyle.Success),
+    new ButtonBuilder().setCustomId(`trade:confirm:${tid}`).setLabel('接受交易').setStyle(ButtonStyle.Success),
     new ButtonBuilder().setCustomId(`trade:decline:${tid}`).setLabel('拒絕/取消').setStyle(ButtonStyle.Secondary)
   );
   return { payload: { content: `<@${to.id}>`, embeds: [embed], components: [row] }, tid };
@@ -151,6 +151,51 @@ function init(client) {
         return i.update({ content: '✅ 交易提案已送出，等對方接受！', components: [] }).catch(() => {});
       }
 
+
+      // 提案訊息是頻道裡公開的那則，確認卡卻是只有本人看得到的暫時訊息。
+      // 成交／拒絕之後兩則都要收尾：暫時訊息換成簡短結果，公開那則換成正式結果
+      // 並拿掉按鈕，否則提案訊息會一直停在「接受交易」可以再按一次。
+      const closeTrade = async (inter, t, payload) => {
+        await inter.update(payload).catch(() => {});
+        if (!t.message_id || !t.channel_id) return;
+        if (inter.message && inter.message.id === t.message_id) return;   // 本來按的就是公開那則
+        try {
+          const ch = await inter.client.channels.fetch(t.channel_id);
+          const msg = await ch.messages.fetch(t.message_id);
+          await msg.edit({ ...payload, content: payload.content ?? '' });
+        } catch { /* 訊息被刪掉就算了，交易本身已經結束 */ }
+      };
+
+      // ---- 二次確認 ----
+      // 按「接受交易」不會直接成交，先跳一張只有本人看得到的確認卡，把交易對象、
+      // 付出、取得、數量與手續費全部攤開，再按一次才真的換手。
+      // 沒有這一步的話，接受鈕就緊鄰提案訊息，手滑點下去東西就沒了。
+      if (i.isButton() && i.customId.startsWith('trade:confirm:')) {
+        const t = db.prepare('SELECT * FROM trades WHERE id=?').get(parseInt(i.customId.split(':')[2], 10));
+        if (!t) return i.reply({ content: '這筆交易已不存在。', flags: MessageFlags.Ephemeral });
+        if (t.status !== 'pending') return i.reply({ content: '這筆交易已經處理過了。', flags: MessageFlags.Ephemeral });
+        if (i.user.id !== t.to_id) return i.reply({ content: '只有交易對象可以接受這筆交易。', flags: MessageFlags.Ephemeral });
+        const give = db.prepare('SELECT * FROM gather_items WHERE id=?').get(t.give_item_id);
+        const want = db.prepare('SELECT * FROM gather_items WHERE id=?').get(t.want_item_id);
+        if (!give || !want) return i.reply({ content: '交易物品已不存在。', flags: MessageFlags.Ephemeral });
+        const embed = new EmbedBuilder().setColor(0xfee75c).setTitle('⚠️ 最終確認')
+          .setDescription('按下「確認成交」後就**不能反悔**，請先核對一次：')
+          .addFields(
+            { name: '交易對象', value: `<@${t.from_id}>（${t.from_name || '玩家'}）` },
+            { name: '你付出', value: `**${label(want, t.want_count)}**`, inline: true },
+            { name: '你取得', value: `**${label(give, t.give_count)}**`, inline: true },
+            { name: '手續費', value: `你與對方**各付 ${TRADE_FEE.toLocaleString('en-US')} 星幣**（直接銷毀，不進任何人口袋）` }
+          )
+          .setFooter({ text: `交易 #${t.id}` });
+        return i.reply({
+          embeds: [embed],
+          components: [new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId(`trade:accept:${t.id}`).setLabel('✅ 確認成交').setStyle(ButtonStyle.Success),
+            new ButtonBuilder().setCustomId(`trade:decline:${t.id}`).setLabel('取消').setStyle(ButtonStyle.Secondary))],
+          flags: MessageFlags.Ephemeral
+        }).catch(() => {});
+      }
+
       // ---- 按鈕：接受 / 拒絕 ----
       if (i.isButton() && i.customId.startsWith('trade:')) {
         const [, act, idStr] = i.customId.split(':');
@@ -169,18 +214,18 @@ function init(client) {
           db.prepare('UPDATE trades SET status=? WHERE id=?').run(isSelf ? 'cancelled' : 'declined', t.id);
           const embed = new EmbedBuilder().setColor(0x99aab5).setTitle(isSelf ? '🚫 交易已取消' : '❌ 交易被拒絕')
             .setDescription(`<@${t.from_id}> 的 ${give ? label(give, t.give_count) : '物品'} ⇄ ${want ? label(want, t.want_count) : '物品'}（給 <@${t.to_id}>）`);
-          await i.update({ embeds: [embed], components: [] }).catch(() => {});
+          await closeTrade(i, t, { embeds: [embed], components: [] });
           return;
         }
 
         // 接受：逾期或任一方物品不足就失敗
         if (t.expire_at && t.expire_at < Date.now()) {
           db.prepare('UPDATE trades SET status=? WHERE id=?').run('failed', t.id);
-          return i.update({ embeds: [new EmbedBuilder().setColor(0xed4245).setTitle('⌛ 交易已逾期')], components: [] }).catch(() => {});
+          return closeTrade(i, t, { embeds: [new EmbedBuilder().setColor(0xed4245).setTitle('⌛ 交易已逾期')], components: [] });
         }
         if (!give || !want) {
           db.prepare('UPDATE trades SET status=? WHERE id=?').run('failed', t.id);
-          return i.update({ content: '交易物品已不存在。', embeds: [], components: [] }).catch(() => {});
+          return closeTrade(i, t, { content: '交易物品已不存在。', embeds: [], components: [] });
         }
         const fromHas = invCount(t.guild_id, t.from_id, t.give_item_id);
         const toHas = invCount(t.guild_id, t.to_id, t.want_item_id);
@@ -189,7 +234,7 @@ function init(client) {
           const who = fromHas < t.give_count ? `<@${t.from_id}>` : `<@${t.to_id}>`;
           const embed = new EmbedBuilder().setColor(0xed4245).setTitle('❌ 交易失敗')
             .setDescription(`${who} 的物品不足，交易取消。`);
-          return i.update({ embeds: [embed], components: [] }).catch(() => {});
+          return closeTrade(i, t, { embeds: [embed], components: [] });
         }
         // 交易手續費：成交雙方各收 TRADE_FEE（直接銷毀，不進任何人口袋）
         const coinsOf = (uid) => (db.prepare('SELECT coins FROM econ_wallets WHERE guild_id=? AND user_id=?').get(t.guild_id, uid) || {}).coins || 0;
@@ -198,7 +243,7 @@ function init(client) {
           const who = coinsOf(t.from_id) < TRADE_FEE ? `<@${t.from_id}>` : `<@${t.to_id}>`;
           const embed = new EmbedBuilder().setColor(0xed4245).setTitle('❌ 交易失敗')
             .setDescription(`${who} 的星幣不足以支付 ${TRADE_FEE} 交易手續費，交易取消。`);
-          return i.update({ embeds: [embed], components: [] }).catch(() => {});
+          return closeTrade(i, t, { embeds: [embed], components: [] });
         }
 
         // 換手（原子交易）＋雙方各扣手續費
@@ -218,7 +263,7 @@ function init(client) {
         const embed = new EmbedBuilder().setColor(0x57f287).setTitle('✅ 交易成交！')
           .setDescription(`<@${t.from_id}> 用 **${label(give, t.give_count)}**\n交換 <@${t.to_id}> 的 **${label(want, t.want_count)}**\n\n雙方背包已更新。`)
           .setFooter({ text: `交易 #${t.id}　·　雙方各收 ${TRADE_FEE} 手續費` });
-        await i.update({ content: `🔄 <@${t.from_id}> ⇄ <@${t.to_id}> 交易完成`, embeds: [embed], components: [] }).catch(() => {});
+        await closeTrade(i, t, { content: `🔄 <@${t.from_id}> ⇄ <@${t.to_id}> 交易完成`, embeds: [embed], components: [] });
         return;
       }
 

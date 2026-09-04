@@ -161,7 +161,7 @@ App.page('tax', {
 
         <hr style="border:none;border-top:1px solid var(--border);margin:16px 0">
         <h3>⚖️ 欠稅強制清算</h3>
-        <div class="hint" style="margin-bottom:10px">餘額是負數的人，系統自動變賣資產抵債，<b>只賣到剛好還清為止</b>。<b>預設只賣股票</b>——農場／魚缸被系統收掉玩家會直接不想玩。股票照現價扣交易稅（現價是負數的不賣）、背包照 <code>/賣出</code> 的即時價、動物與魚回收半價。免稅名單的人不會被清算。<br>另外課稅本身已<b>不會</b>把人課成負數（見下方「課完稅不讓餘額變負數」），所以這裡通常只會處理負價股造成的負債。</div>
+        <div class="hint" style="margin-bottom:10px">餘額是負數的人，系統自動變賣資產抵債，<b>只賣到剛好還清為止</b>。<b>預設只賣股票</b>——農場／魚缸被系統收掉玩家會直接不想玩。股票照現價扣手續費（現價是負數的不賣）、背包照 <code>/賣出</code> 的即時價、動物與魚回收半價。免稅名單的人不會被清算。<br>另外課稅本身已<b>不會</b>把人課成負數（見下方「課完稅不讓餘額變負數」），所以這裡通常只會處理負價股造成的負債。</div>
         <div class="field">${H.toggle('liquidate_enabled', c.liquidate_enabled, '啟用強制清算')}</div>
         <div class="field"><label>變賣順序</label>
           <select name="liquidate_order">
