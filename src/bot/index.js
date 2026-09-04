@@ -317,8 +317,15 @@ client.on('shardResume', (id, n) => {
 client.on('shardReady', (id) => { lastOnlineMs = Date.now(); lastConnLog = 0; connErrCount = 0; });
 
 // 看門狗：連不上超過 3 分鐘就重啟自己（pm2 會拉起來）
+//
+// ⚠️ 只有「真的嘗試過登入」之後才看門。沒設 Token 時 start() 會直接跳過登入，
+// 這時 ws.status 永遠不是 READY —— 沒有這個判斷的話，行程會每 3 分鐘自殺一次，
+// pm2 再把它拉起來，變成無限重啟迴圈。拆成兩隻機器人之後特別容易踩到：
+// 先把管家的行程開起來、Token 還沒填好，就會一直重啟。
 const STUCK_MS = 3 * 60 * 1000;
+let loginAttempted = false;
 setInterval(() => {
+  if (!loginAttempted) return;
   if (!client.ws) return;
   // ws.status 0 = READY；其餘代表連線中／斷線中
   if (client.ws.status === 0) { lastOnlineMs = Date.now(); return; }
@@ -353,6 +360,7 @@ function start() {
     console.warn(`⚠️  尚未設定 ${roleLabel()} 的 Token，機器人未啟動（後台網站仍可使用）。請填好 .env 後重啟。`);
     return;
   }
+  loginAttempted = true;
   client.login(token).catch(err => console.error('❌ 機器人登入失敗：', err.message));
 }
 

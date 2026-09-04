@@ -611,6 +611,12 @@ function stroll(gid, uid, uname) {
   if (cost > st.left) {
     return { error: `體力不夠了（今天剩 ${st.left}/${st.max} 點，逛一次要 ${cost} 點）。\n體力每天午夜回滿，急著用可以去 \`/特殊商店\` 買體力。` };
   }
+  // 事件表用到時才確保建好：開機時 init 會先建一次，但機器人之後被邀進
+  // 新伺服器、或這台伺服器是在改版前就加入的，都不會經過那次 init——
+  // 沒補這一行的話那些伺服器的玩家逛街只會拿到「還沒有任何逛街事件」。
+  // 內部有 settings 旗標擋著，重複呼叫不會重建。
+  seedStroll(gid);
+
   // 先決定這次「有沒有遇到人」。逛街不一定遇得到伴侶，這是規格 15 的核心。
   const rolePct = Math.max(0, Math.min(100, c.stroll_role_pct ?? 25));
   const meetRole = Math.random() * 100 < rolePct;

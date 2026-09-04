@@ -649,12 +649,13 @@ router.get('/item-categories', (req, res) => {
   const rows = categories(req.guildId);
   // 順便回每一類目前有幾個物品／配方，管理員才知道動到什麼
   const items = db.prepare('SELECT id, kind, category FROM gather_items WHERE guild_id=?').all(req.guildId);
-  const recipes = db.prepare('SELECT id, category FROM gather_recipes WHERE guild_id=?').all(req.guildId);
-  const { catOf } = require('../bot/features/gather');
+  const recipes = db.prepare('SELECT id, category, result_type, result_id FROM gather_recipes WHERE guild_id=?').all(req.guildId);
+  const { catOf, recipeCatOf } = require('../bot/features/gather');
   res.json(rows.map(c => ({
     ...c,
     items: items.filter(x => catOf(x) === c.key).length,
-    recipes: recipes.filter(x => (x.category || '') === c.key).length
+    // 配方多半沒手動指定分類，要照「做出來的東西」推斷才會跟製作頁一致
+    recipes: recipes.filter(x => recipeCatOf(req.guildId, x) === c.key).length
   })));
 });
 

@@ -813,6 +813,22 @@ const KIND_TO_CAT = {
 };
 const catOf = (row) => (row && row.category) || KIND_TO_CAT[row && row.kind] || 'other';
 
+// 配方的分類：自己有指定就用自己的，否則看「做出來的東西」屬於哪一類。
+// 跟製作頁用的是同一套判斷 —— 後台顯示的數量必須跟玩家實際看到的一致，
+// 不然管理員會以為某一類是空的。
+const PLOT_CAT = {
+  plot_field: 'farm', plot_greenhouse: 'farm',
+  plot_ranch: 'ranch', plot_hatch: 'ranch', plot_aquarium: 'fish'
+};
+function recipeCatOf(gid, r) {
+  if (!r) return 'other';
+  if (r.category) return r.category;
+  if (r.result_type === 'tool') return 'tool';
+  if (PLOT_CAT[r.result_type]) return PLOT_CAT[r.result_type];
+  const it = db.prepare('SELECT kind, category FROM gather_items WHERE id=?').get(r.result_id);
+  return catOf(it);
+}
+
 // ---- 指令權限與顯示範圍 ----
 // 三條規則的預設值：採集結果公開讓大家看得到戰績；其餘只給本人；富豪榜僅管理員。
 const GATHER_CMDS = ['釣魚', '挖礦', '伐木', '採集', '狩獵'];
@@ -2416,4 +2432,4 @@ function init(client) {
   console.log('  ↳ 釣魚挖礦模組已載入（冷卻/稀有掉落/商店道具/圖鑑/經濟）');
 }
 
-module.exports = { init, wallet, addCoins, logCoins, addToBag, seedGuild, seedMaterials, staminaState, staminaBoughtToday, bumpPoints, addPointsBonus, menuResult, safeMenu, RARITY, RARITY_LABEL, sellAllBag, buyThing, doGather, cmdPerm, categories, seedCategories, catOf, DEFAULT_CATEGORIES, toStorage, toBag, storageRows, bagCount, storeCount };
+module.exports = { init, wallet, addCoins, logCoins, addToBag, seedGuild, seedMaterials, staminaState, staminaBoughtToday, bumpPoints, addPointsBonus, menuResult, safeMenu, RARITY, RARITY_LABEL, sellAllBag, buyThing, doGather, cmdPerm, categories, seedCategories, catOf, recipeCatOf, DEFAULT_CATEGORIES, toStorage, toBag, storageRows, bagCount, storeCount };

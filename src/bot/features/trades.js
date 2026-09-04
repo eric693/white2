@@ -8,7 +8,7 @@ const { addToBag, logCoins } = require('./gather');
 
 const gcfg = (gid) => guildConfig('gather_config', gid);
 const TRADE_TTL = 60 * 60 * 1000;   // 提案 1 小時內有效
-const TRADE_FEE = 100;              // 成交時雙方各收的交易手續費（直接銷毀）
+const TRADE_FEE = 200;              // 成交時雙方各收的交易手續費（直接銷毀）
 
 const itemByName = (gid, name) => db.prepare("SELECT * FROM gather_items WHERE guild_id=? AND enabled=1 AND name=?").get(gid, name);
 const invCount = (gid, uid, itemId) => (db.prepare('SELECT count FROM gather_inventory WHERE guild_id=? AND user_id=? AND item_id=?').get(gid, uid, itemId) || {}).count || 0;
