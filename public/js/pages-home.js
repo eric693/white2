@@ -27,7 +27,7 @@ App.page('home', {
     const TABS = [
       ['config', '⚙️ 總設定'], ['levels', '🏠 小屋階級'], ['furniture', '🛋️ 家具'],
       ['kitchen', '🍳 廚房與料理'], ['pets', '🐾 寵物'], ['ach', '🏅 成就'],
-      ['affinity', '💕 好感度'], ['giftpref', '🎁 角色喜好'], ['partner', '💞 同居能力'], ['roleskill', '🎭 角色能力'], ['stroll', '🛍️ 逛街角色'], ['partnerroles', '🏠 可同居角色'], ['players', '👥 玩家現況']
+      ['affinity', '💕 好感度'], ['giftpref', '🎁 角色喜好'], ['partner', '💞 同居能力'], ['roleskill', '🎭 角色能力'], ['stroll', '🛍️ 逛街角色'], ['strollev', '🎲 逛街事件'], ['partnerroles', '🏠 可同居角色'], ['players', '👥 玩家現況']
     ];
     let tab = sessionStorage.getItem('w2_home_tab') || 'config';
     if (!TABS.some(t => t[0] === tab)) tab = 'config';
@@ -166,6 +166,8 @@ App.page('home', {
             <div class="form-row">
               <div class="field"><label>逛一次消耗幾點體力</label><input name="stroll_cost" type="number" min="1" value="${c.stroll_cost ?? 1}"></div>
               <div class="field"><label>遇到就加的好感點數</label><input name="stroll_points" type="number" min="0" value="${c.stroll_points ?? 3}"></div>
+              <div class="field"><label>遇到角色的機率 %</label><input name="stroll_role_pct" type="number" min="0" max="100" value="${c.stroll_role_pct ?? 25}">
+                <div class="hint">其餘機率會抽「逛街事件」（撿到垃圾／零錢／白逛一圈…）。<b>逛街不一定有收穫，也不一定遇得到人</b>，設 100% 就會退回舊的「每次必定遇到角色」。</div></div>
             </div>
             <div class="hint" style="margin-bottom:8px">
               體力＝「釣魚挖礦」頁的<b>每日採集點數</b>那一池（目前設定就是玩家每天的總行動額度），
@@ -836,6 +838,81 @@ App.page('home', {
           UI.ok('已排除'); draw();
         };
         bindRoleToggles(body);
+        return;
+      }
+
+      if (tab === 'strollev') {
+        const { rows, items } = await GET('/stroll-events');
+        const total = rows.filter(r => r.enabled).reduce((a, r) => a + r.weight, 0) || 1;
+        const itemOpts = (sel) => `<option value="0">— 不給物品 —</option>`
+          + items.map(it => `<option value="${it.id}" ${it.id === sel ? 'selected' : ''}>${UI.esc((it.emoji || '') + it.name)}（${it.price}）</option>`).join('');
+        const row = (r) => `<tr data-ev="${r.id}">
+          <td><input name="emoji" value="${UI.esc(r.emoji || '')}" style="width:56px"></td>
+          <td><input name="name" value="${UI.esc(r.name)}" style="min-width:120px"></td>
+          <td><input name="text" value="${UI.esc(r.text || '')}" style="min-width:240px"></td>
+          <td><select name="item_id">${itemOpts(r.item_id)}</select>
+              <input name="qty" type="number" min="1" value="${r.qty || 1}" style="width:60px"></td>
+          <td><input name="coins" type="number" value="${r.coins || 0}" style="width:90px"></td>
+          <td><input name="weight" type="number" min="0" value="${r.weight}" style="width:70px">
+              <div class="hint">${((r.enabled ? r.weight : 0) / total * 100).toFixed(1)}%</div></td>
+          <td><label class="switch"><input name="enabled" type="checkbox" ${r.enabled ? 'checked' : ''}></label></td>
+          <td><button class="btn small" data-save="${r.id}">儲存</button>
+              <button class="btn small danger" data-del="${r.id}">刪除</button></td>
+        </tr>`;
+        body.innerHTML = `
+          <div class="card">
+            <h3>🎲 逛街隨機事件</h3>
+            <div class="hint" style="margin-bottom:10px">
+              沒有遇到角色的時候，就從這張表抽一個結果。機率＝該事件權重 ÷ 全部啟用事件的權重總和。<br>
+              星幣可以填<b>負數</b>（例如「被路邊攤坑了」）。撿到的物品會直接進背包；那個物品能不能賣、
+              回收價多少，到「釣魚挖礦 → 物品」頁改就好。<br>
+              遇到角色的機率在「⚙️ 設定」分頁調整。
+            </div>
+            <div class="table-wrap"><table class="list">
+              <thead><tr><th>圖示</th><th>名稱</th><th>玩家看到的文字</th><th>撿到物品／數量</th><th>星幣</th><th>權重</th><th>啟用</th><th></th></tr></thead>
+              <tbody id="evlist">${rows.map(row).join('') || '<tr><td colspan="8" class="hint">還沒有事件</td></tr>'}</tbody>
+            </table></div>
+            <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+              <div class="field" style="margin:0;max-width:70px"><label>圖示</label><input id="nemoji" value="🛍️"></div>
+              <div class="field" style="margin:0;max-width:160px"><label>名稱</label><input id="nname" placeholder="例如 撿到雨傘"></div>
+              <div class="field" style="margin:0;flex:1;min-width:200px"><label>文字</label><input id="ntext" placeholder="玩家會看到的那句話"></div>
+              <div class="field" style="margin:0;max-width:100px"><label>星幣</label><input id="ncoins" type="number" value="0"></div>
+              <div class="field" style="margin:0;max-width:90px"><label>權重</label><input id="nweight" type="number" min="0" value="10"></div>
+              <button class="btn" id="addev">新增事件</button>
+            </div>
+          </div>`;
+        const readRow = (tr) => ({
+          emoji: tr.querySelector('[name=emoji]').value,
+          name: tr.querySelector('[name=name]').value,
+          text: tr.querySelector('[name=text]').value,
+          item_id: Number(tr.querySelector('[name=item_id]').value) || 0,
+          qty: Number(tr.querySelector('[name=qty]').value) || 1,
+          coins: Number(tr.querySelector('[name=coins]').value) || 0,
+          weight: Number(tr.querySelector('[name=weight]').value) || 0,
+          enabled: tr.querySelector('[name=enabled]').checked
+        });
+        body.querySelectorAll('[data-save]').forEach(b => b.onclick = async () => {
+          try { await PUT(`/stroll-events/${b.dataset.save}`, readRow(b.closest('tr'))); UI.ok('已儲存'); draw(); }
+          catch (e) { UI.err(e.message); }
+        });
+        body.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
+          if (!confirm('確定刪除這個事件？')) return;
+          try { await DEL(`/stroll-events/${b.dataset.del}`); UI.ok('已刪除'); draw(); }
+          catch (e) { UI.err(e.message); }
+        });
+        body.querySelector('#addev').onclick = async () => {
+          const name = body.querySelector('#nname').value.trim();
+          if (!name) return UI.err('請填事件名稱');
+          try {
+            await POST('/stroll-events', {
+              emoji: body.querySelector('#nemoji').value, name,
+              text: body.querySelector('#ntext').value,
+              coins: Number(body.querySelector('#ncoins').value) || 0,
+              weight: Number(body.querySelector('#nweight').value) || 10
+            });
+            UI.ok('已新增'); draw();
+          } catch (e) { UI.err(e.message); }
+        };
         return;
       }
 

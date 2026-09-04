@@ -493,6 +493,96 @@ const adLine = (r) => {
   return lines[Math.floor(Math.random() * lines.length)];
 };
 
+// ================== 逛街的隨機結果 ==================
+// 規格 15：逛街不一定有收穫，也不一定遇到伴侶。
+//
+// 舊版是「出門＝必定遇到一位角色」，所以逛街變成無腦刷好感度的按鈕。
+// 現在先擲一次「這次會不會遇到角色」（機率後台可調，預設大幅降低），
+// 沒遇到就從隨機事件表抽一個結果——撿到垃圾、撿到零錢、空手而回、
+// 喝一大口西北風、遇到奇怪 NPC…有些給東西，有些純粹是好笑。
+//
+// 事件表存在 DB，管理端可以自由增刪改權重與獎勵，不寫死在程式裡。
+require('../../db').ensureColumns('home_config', {
+  stroll_role_pct: 'INTEGER NOT NULL DEFAULT 25'   // 遇到角色的機率 %
+});
+
+db.exec(`CREATE TABLE IF NOT EXISTS stroll_events (
+  id       INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id TEXT NOT NULL,
+  name     TEXT NOT NULL DEFAULT '',
+  emoji    TEXT NOT NULL DEFAULT '',
+  text     TEXT NOT NULL DEFAULT '',           -- 給玩家看的那句話
+  item_id  INTEGER NOT NULL DEFAULT 0,         -- 撿到的物品（0＝沒有）
+  qty      INTEGER NOT NULL DEFAULT 1,
+  coins    INTEGER NOT NULL DEFAULT 0,         -- 撿到／損失的星幣（可負）
+  weight   INTEGER NOT NULL DEFAULT 10,
+  enabled  INTEGER NOT NULL DEFAULT 1,
+  sort     INTEGER NOT NULL DEFAULT 0
+)`);
+
+// 逛街會撿到的「趣味物品」。價格壓很低，賣掉也只是清倉——
+// 它們存在 gather_items 裡（kind='junk'），所以是否可販售、回收價多少
+// 都能在後台的物品清單直接改，不必動程式。
+const JUNK_ITEMS = [
+  ['紙箱', '📦', 8], ['破靴子', '👢', 5], ['空罐頭', '🥫', 3],
+  ['破雨傘', '☂️', 6], ['生鏽鐵釘', '🔩', 2], ['皺掉的傳單', '📄', 1],
+  ['奇怪的石頭', '🪨', 12], ['缺角銅板', '🪙', 15]
+];
+
+const DEFAULT_STROLL_EVENTS = [
+  // [名稱, emoji, 文字, 撿到的垃圾名稱（空＝無）, 星幣, 權重]
+  ['空手而回', '🚶', '走了一大圈，什麼事也沒發生。', '', 0, 220],
+  ['白逛一圈', '🌀', '逛到腿痠，連個人影都沒看到。', '', 0, 160],
+  ['喝一大口西北風', '💨', '風很大，你喝了一大口西北風，飽了。', '', 0, 120],
+  ['撿到紙箱', '📦', '路邊有個還算完整的紙箱，你把它扛回家了。', '紙箱', 0, 90],
+  ['撿到破靴子', '👢', '一隻破靴子。另一隻呢？沒人知道。', '破靴子', 0, 70],
+  ['撿到空罐頭', '🥫', '空罐頭一個。至少可以拿去賣一點點。', '空罐頭', 0, 70],
+  ['撿到破雨傘', '☂️', '傘骨斷了兩根，勉強還能遮一點雨。', '破雨傘', 0, 55],
+  ['撿到生鏽鐵釘', '🔩', '生鏽的鐵釘。小心別踩到。', '生鏽鐵釘', 0, 55],
+  ['撿到傳單', '📄', '有人塞給你一張皺掉的傳單，內容看不懂。', '皺掉的傳單', 0, 45],
+  ['撿到奇怪的石頭', '🪨', '一顆形狀很怪的石頭，你莫名覺得它有點價值。', '奇怪的石頭', 0, 40],
+  ['撿到零錢', '🪙', '地上有幾枚銅板，你光明正大地撿走了。', '', 120, 60],
+  ['撿到皮夾', '👛', '撿到一個皮夾，裡面還有錢——你決定先保管著。', '', 800, 12],
+  ['奇怪的 NPC', '🧙', '一個奇怪的 NPC 攔住你講了十分鐘的話，你什麼也沒聽懂。', '', 0, 45],
+  ['奇怪的 NPC 請客', '🍡', '奇怪的 NPC 硬塞給你一串丸子，還倒貼你零錢。', '', 300, 18],
+  ['被路邊攤坑了', '🍢', '嘴饞買了串燒，結果又貴又難吃。', '', -200, 30]
+];
+
+// 建立預設事件與趣味物品（每台伺服器只灌一次；之後全交給後台管理）
+function seedStroll(gid) {
+  const { getSetting, setSetting } = require('../../db');
+  const flag = `stroll_events_seeded_${gid}`;
+  if (getSetting(flag, '0') === '1') return;
+  try {
+    const findItem = db.prepare("SELECT id FROM gather_items WHERE guild_id=? AND name=? AND kind='junk'");
+    const insItem = db.prepare(
+      "INSERT INTO gather_items (guild_id, kind, name, emoji, rarity, price, weight, enabled) VALUES (?,'junk',?,?,'N',?,0,1)");
+    const itemId = {};
+    for (const [name, emoji, price] of JUNK_ITEMS) {
+      const hit = findItem.get(gid, name);
+      itemId[name] = hit ? hit.id : insItem.run(gid, name, emoji, price).lastInsertRowid;
+    }
+    const insEv = db.prepare(
+      'INSERT INTO stroll_events (guild_id,name,emoji,text,item_id,qty,coins,weight,sort) VALUES (?,?,?,?,?,1,?,?,?)');
+    DEFAULT_STROLL_EVENTS.forEach(([name, emoji, text, item, coins, weight], idx) =>
+      insEv.run(gid, name, emoji, text, item ? (itemId[item] || 0) : 0, coins, weight, idx));
+    setSetting(flag, '1');
+  } catch (e) { logError(gid, '逛街事件預設建立失敗：', e.message); }
+}
+
+function strollEvents(gid) {
+  return db.prepare('SELECT * FROM stroll_events WHERE guild_id=? AND enabled=1 AND weight>0 ORDER BY sort, id').all(gid);
+}
+
+function pickEvent(gid) {
+  const list = strollEvents(gid);
+  if (!list.length) return null;
+  const total = list.reduce((a, e) => a + e.weight, 0);
+  let r = Math.random() * total;
+  for (const e of list) { r -= e.weight; if (r <= 0) return e; }
+  return list[list.length - 1];
+}
+
 /** 出門逛街一次 */
 function stroll(gid, uid, uname) {
   const c = hcfg(gid);
@@ -503,8 +593,37 @@ function stroll(gid, uid, uname) {
   if (cost > st.left) {
     return { error: `體力不夠了（今天剩 ${st.left}/${st.max} 點，逛一次要 ${cost} 點）。\n體力每天午夜回滿，急著用可以去 \`/特殊商店\` 買體力。` };
   }
+  // 先決定這次「有沒有遇到人」。逛街不一定遇得到伴侶，這是規格 15 的核心。
+  const rolePct = Math.max(0, Math.min(100, c.stroll_role_pct ?? 25));
+  const meetRole = Math.random() * 100 < rolePct;
+
+  if (!meetRole) {
+    const ev = pickEvent(gid);
+    if (!ev) return { error: '這個伺服器還沒有任何逛街事件，請管理員到後台新增。' };
+    let item = null;
+    db.transaction(() => {
+      bumpPoints(gid, uid, cost);
+      if (ev.item_id) {
+        item = db.prepare('SELECT * FROM gather_items WHERE id=?').get(ev.item_id);
+        if (item) require('./gather').addToBag(gid, uid, ev.item_id, Math.max(1, ev.qty));
+      }
+      // 撿到零錢／被坑錢都走 addCoins，明細看得到；金額可正可負
+      if (ev.coins) require('./gather').addCoins(gid, uid, uname, ev.coins, '逛街', ev.name);
+    })();
+    bumpAch(gid, uid, 'stroll_count', 1);
+    const after2 = staminaState(gid, uid);
+    return { event: ev, item, qty: Math.max(1, ev.qty), left: after2.left, max: after2.max };
+  }
+
   const role = pickRole(gid, uid);
-  if (!role) return { error: '這個伺服器還沒有任何角色。' };
+  if (!role) {
+    // 抽到「遇到角色」但一位可逛街的角色都沒有 → 退回事件，別讓玩家白白浪費體力
+    const ev = pickEvent(gid);
+    if (!ev) return { error: '這個伺服器還沒有任何角色，也沒有逛街事件。' };
+    db.transaction(() => { bumpPoints(gid, uid, cost); })();
+    const after3 = staminaState(gid, uid);
+    return { event: ev, item: null, qty: 1, left: after3.left, max: after3.max };
+  }
 
   const gain = Math.max(0, c.stroll_points || 3);
   const bonus = Math.floor(gain * (buffPct(gid, uid, 'gift_pct') + buffPct(gid, uid, 'affinity_pct')) / 100);
@@ -523,6 +642,18 @@ function stroll(gid, uid, uname) {
 }
 
 function strollEmbed(gid, uid, out) {
+  // 沒遇到人的那些結果
+  if (out.event) {
+    const ev = out.event;
+    const bits = [];
+    if (out.item) bits.push(`🎒 ${out.item.emoji || ''}**${out.item.name}** ×${out.qty} 收進背包`);
+    if (ev.coins > 0) bits.push(`🪙 **+${ev.coins.toLocaleString('en-US')}** 星幣`);
+    if (ev.coins < 0) bits.push(`💸 **${ev.coins.toLocaleString('en-US')}** 星幣`);
+    return new EmbedBuilder().setColor(0x99aab5)
+      .setTitle(`${ev.emoji || '🛍️'} ${ev.name}`)
+      .setDescription(ev.text + (bits.length ? `\n\n${bits.join('　')}` : '\n\n這趟什麼也沒撈到。'))
+      .setFooter({ text: `體力剩 ${out.left}/${out.max}｜逛街不一定有收穫，也不一定遇得到人` });
+  }
   const a = db.prepare('SELECT points, level FROM affinity WHERE guild_id=? AND user_id=? AND role_id=?').get(gid, uid, out.role.id) || { points: 0, level: 0 };
   // 台詞與介紹常常是同一句（匯入時就是同一份文字），重複貼兩次很醜 —— 一樣就只顯示台詞
   // 只顯示台詞就好 —— 介紹欄跟台詞常常是同一句，貼兩次很囉唆
@@ -543,9 +674,10 @@ function strollPanel(gid, uid, uname) {
   const total = db.prepare('SELECT COUNT(*) n FROM wheel_roles WHERE guild_id=? AND enabled=1 AND stroll_ok=1').get(gid).n;
   const seen = db.prepare('SELECT COUNT(*) n FROM affinity WHERE guild_id=? AND user_id=? AND points>0').get(gid, uid).n;
   const e = new EmbedBuilder().setColor(0xeb459e).setTitle('🛍️ 逛街')
-    .setDescription(`出門走走，**隨機**遇到街上的角色 —— 遇到誰不能挑，這就是逛街的意義。\n`
-      + `每次消耗 **${Math.max(1, hcfg(gid).stroll_cost || 1)}** 點體力，遇到就自動加好感度。\n`
-      + `體力跟釣魚挖礦**共用同一池**，用完就等明天（或去 \`/特殊商店\` 買）。`)
+    .setDescription(`出門走走，**不一定有收穫，也不一定遇得到人**。\n`
+      + `大約 **${Math.max(0, Math.min(100, hcfg(gid).stroll_role_pct ?? 25))}%** 的機率會遇到街上的角色（遇到誰不能挑）；\n`
+      + '其餘時候可能撿到紙箱、破靴子、零錢，或者純粹白逛一圈、喝一大口西北風。\n'
+      + `每次消耗 **${Math.max(1, hcfg(gid).stroll_cost || 1)}** 點體力，體力跟釣魚挖礦**共用同一池**。`)
     .addFields(
       { name: '今日體力', value: `${st.left} / ${st.max}${st.bonus ? `（含買來的 ${st.bonus}）` : ''}`, inline: true },
       { name: '你認識的角色', value: `${seen} / ${total} 位`, inline: true })
@@ -703,6 +835,10 @@ function roleCard(gid, uid, role, extra) {
 }
 
 function init(client) {
+  // 逛街事件與趣味物品先建起來，管理員一進後台就有東西可以調
+  for (const [gid] of client.guilds.cache) {
+    try { seedStroll(gid); } catch (e) { logError(gid, '逛街事件初始化失敗：', e.message); }
+  }
   for (const [gid] of client.guilds.cache) { try { seedGiftPrefs(gid); } catch {} }
   for (const [gid] of client.guilds.cache) {
     try { seedHome(gid); seedAffinity(gid); } catch (e) { logError(gid, '好感度初始化失敗：', e.message); }
@@ -920,4 +1056,4 @@ function init(client) {
   console.log('  ↳ 好感度模組已載入（接轉盤角色／名字搜尋邀請）');
 }
 
-module.exports = { init, giftWhoPanel, seedAffinity, seedGiftPrefs, lovePanel, strollPanel, stroll, strollEmbed, partnerPanel, partnersOf, moveIn, moveOut, partnerSkillText, partnerSkillPool, DEFAULT_PARTNER_SKILLS, giftMenu, giftItem, searchRoles };
+module.exports = { init, seedStroll, giftWhoPanel, seedAffinity, seedGiftPrefs, lovePanel, strollPanel, stroll, strollEmbed, partnerPanel, partnersOf, moveIn, moveOut, partnerSkillText, partnerSkillPool, DEFAULT_PARTNER_SKILLS, giftMenu, giftItem, searchRoles };

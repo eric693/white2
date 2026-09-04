@@ -65,7 +65,7 @@ router.put('/home-config', (req, res) => {
        checkin_max=@checkin_max, checkin_week=@checkin_week, checkin_home_pct=@checkin_home_pct,
        buy_mats_enabled=@buy_mats_enabled, buy_mats_mult=@buy_mats_mult,
        stroll_enabled=@stroll_enabled, stroll_stamina=@stroll_stamina, stroll_cost=@stroll_cost,
-       stroll_points=@stroll_points,
+       stroll_points=@stroll_points, stroll_role_pct=@stroll_role_pct,
        partner_enabled=@partner_enabled, partner_slots=@partner_slots, partner_level=@partner_level,
        partner_lv2=@partner_lv2, partner_lv3=@partner_lv3,
        pet_food_enabled=@pet_food_enabled, pet_food_price=@pet_food_price, pet_food_cost=@pet_food_cost
@@ -89,6 +89,7 @@ router.put('/home-config', (req, res) => {
     stroll_stamina: int(b.stroll_stamina, 10, 1),
     stroll_cost: int(b.stroll_cost, 1, 1),
     stroll_points: int(b.stroll_points, 3, 0),
+    stroll_role_pct: Math.max(0, Math.min(100, int(b.stroll_role_pct, 25, 0))),
     partner_enabled: b.partner_enabled ? 1 : 0,
     partner_slots: int(b.partner_slots, 1, 1),
     partner_level: int(b.partner_level, 6, 0),
@@ -272,6 +273,56 @@ router.post('/role-skills', (req, res) => {
   })();
   audit(req.user.name, `設定角色可用能力：${roleIds.length} 位角色 × ${skillIds.length} 種能力`);
   res.json({ ok: true, roles: roleIds.length, skills: skillIds.length });
+});
+
+// ---------- 逛街隨機事件 ----------
+// 逛街不一定有收穫：沒遇到角色時就從這張表抽一個結果。
+// 權重、獎勵、撿到的物品全部在這裡調，程式不寫死。
+router.get('/stroll-events', (req, res) => {
+  const rows = db.prepare(
+    `SELECT e.*, it.name AS item_name, it.emoji AS item_emoji, it.price AS item_price
+       FROM stroll_events e LEFT JOIN gather_items it ON it.id = e.item_id
+      WHERE e.guild_id=? ORDER BY e.sort, e.id`).all(req.guildId);
+  const items = db.prepare(
+    "SELECT id, name, emoji, price, kind FROM gather_items WHERE guild_id=? AND enabled=1 ORDER BY kind, name").all(req.guildId);
+  res.json({ rows, items });
+});
+
+const strollFields = (b) => ({
+  name: String(b.name || '').slice(0, 60),
+  emoji: String(b.emoji || '').slice(0, 8),
+  text: String(b.text || '').slice(0, 300),
+  item_id: int(b.item_id, 0, 0),
+  qty: Math.max(1, int(b.qty, 1, 1)),
+  coins: int(b.coins, 0, -1000000),      // 可以是負的（被路邊攤坑了）
+  weight: Math.max(0, int(b.weight, 10, 0)),
+  enabled: b.enabled === false ? 0 : 1,
+  sort: int(b.sort, 0, 0)
+});
+
+router.post('/stroll-events', (req, res) => {
+  const f = strollFields(req.body || {});
+  if (!f.name) return res.status(400).json({ error: '請填事件名稱' });
+  const keys = Object.keys(f);
+  const r = db.prepare(`INSERT INTO stroll_events (guild_id, ${keys.join(',')}) VALUES (?, ${keys.map(() => '?').join(',')})`)
+    .run(req.guildId, ...keys.map(k => f[k]));
+  audit(req.user.name, `新增逛街事件：${f.name}`);
+  res.json({ id: r.lastInsertRowid });
+});
+
+router.put('/stroll-events/:id', (req, res) => {
+  const f = strollFields(req.body || {});
+  const keys = Object.keys(f);
+  db.prepare(`UPDATE stroll_events SET ${keys.map(k => `${k}=?`).join(',')} WHERE id=? AND guild_id=?`)
+    .run(...keys.map(k => f[k]), int(req.params.id, 0, 0), req.guildId);
+  audit(req.user.name, `修改逛街事件 #${req.params.id}`);
+  res.json({ ok: true });
+});
+
+router.delete('/stroll-events/:id', (req, res) => {
+  db.prepare('DELETE FROM stroll_events WHERE id=? AND guild_id=?').run(int(req.params.id, 0, 0), req.guildId);
+  audit(req.user.name, `刪除逛街事件 #${req.params.id}`);
+  res.json({ ok: true });
 });
 
 // ---------- 可同居角色名單 ----------
