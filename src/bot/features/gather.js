@@ -754,6 +754,65 @@ function doGather(gid, uid, uname, kind) {
   };
 }
 
+// ================== 物品／配方分類（規格 18）==================
+// 以前所有物品與配方都擠在同一個清單裡，配方一超過 25 個就要翻頁找，
+// 背包也是一長串。現在改成先選大分類再看內容。
+//
+// 分類存在 DB，管理端可以自由新增／改名／調順序／停用——這是規格明說的
+// 需求，因為之後一定會加新玩法（節慶、活動限定…），寫死在程式裡每次都要改碼。
+//
+// 物品本身的 kind（fish/mine/wood…）不動：那是「掉落池」用的，跟「介面怎麼分類」
+// 是兩回事。分類另外存一個 category 欄位，沒設定的就照 kind 自動推斷。
+db.exec(`CREATE TABLE IF NOT EXISTS item_categories (
+  id       INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id TEXT NOT NULL,
+  key      TEXT NOT NULL,
+  name     TEXT NOT NULL,
+  emoji    TEXT NOT NULL DEFAULT '',
+  sort     INTEGER NOT NULL DEFAULT 0,
+  enabled  INTEGER NOT NULL DEFAULT 1
+)`);
+require('../../db').ensureColumns('gather_items', { category: "TEXT NOT NULL DEFAULT ''" });
+require('../../db').ensureColumns('gather_recipes', { category: "TEXT NOT NULL DEFAULT ''" });
+
+// [key, 顯示名稱, emoji]
+const DEFAULT_CATEGORIES = [
+  ['tool', '工具', '🔨'],        // 斧頭／十字鎬／釣具
+  ['farm', '農場', '🌾'],        // 種子／作物／農場用品
+  ['ranch', '牧場', '🐄'],       // 飼料／動物／牧場用品
+  ['forage', '採集', '🧺'],      // 採集物／材料
+  ['mine', '挖礦', '⛏️'],        // 礦物／礦石
+  ['fish', '釣魚', '🎣'],        // 魚類／魚餌
+  ['cook', '料理', '🍳'],        // 食材／料理／料理用品
+  ['craft', '製作', '🧵'],       // 基礎材料／加工材料／製作品
+  ['furniture', '家具', '🛋️'],   // 房屋／家園家具
+  ['gift', '禮物', '🎁'],        // 角色禮物
+  ['special', '特殊', '✨'],     // 活動／限定
+  ['other', '其他', '📦']
+];
+
+function seedCategories(gid) {
+  const has = db.prepare('SELECT COUNT(*) n FROM item_categories WHERE guild_id=?').get(gid).n;
+  if (has) return;
+  const ins = db.prepare('INSERT INTO item_categories (guild_id,key,name,emoji,sort) VALUES (?,?,?,?,?)');
+  DEFAULT_CATEGORIES.forEach(([key, name, emoji], idx) => ins.run(gid, key, name, emoji, idx));
+}
+
+function categories(gid) {
+  seedCategories(gid);
+  return db.prepare('SELECT * FROM item_categories WHERE guild_id=? AND enabled=1 ORDER BY sort, id').all(gid);
+}
+
+// 沒有手動指定分類時，照物品的 kind 推斷一個合理的預設。
+// 這樣既有的幾百件物品不必一件一件標，管理端只要調不滿意的那些。
+const KIND_TO_CAT = {
+  fish: 'fish', mine: 'mine', wood: 'forage', forage: 'forage', hunt: 'forage',
+  farm: 'ranch', seed: 'farm', crop: 'farm', gift: 'gift', craft: 'craft',
+  food: 'cook', cook: 'cook', furniture: 'furniture', tool: 'tool',
+  junk: 'other', special: 'special'
+};
+const catOf = (row) => (row && row.category) || KIND_TO_CAT[row && row.kind] || 'other';
+
 // ---- 指令權限與顯示範圍 ----
 // 三條規則的預設值：採集結果公開讓大家看得到戰績；其餘只給本人；富豪榜僅管理員。
 const GATHER_CMDS = ['釣魚', '挖礦', '伐木', '採集', '狩獵'];
@@ -1150,7 +1209,7 @@ function init(client) {
   // 開機時先把每台伺服器的預設物品/道具建起來，管理員一進後台就看得到東西可以調，
   // 不用等到有人第一次打指令才生成。
   for (const [gid] of client.guilds.cache) {
-    try { seedGuild(gid); seedCmdPerms(gid); migrateKeepBagToStorage(gid); }
+    try { seedGuild(gid); seedCmdPerms(gid); seedCategories(gid); migrateKeepBagToStorage(gid); }
     catch (e) { logError(gid, '釣魚挖礦初始化失敗：', e.message); }
   }
 
@@ -1435,7 +1494,21 @@ function init(client) {
     let name;
     if (isBtn && GATHER_BTN[i.customId]) name = GATHER_BTN[i.customId];
     else if (i.isChatInputCommand()) name = i.commandName;
-    else return;
+    // 製作分類：選單挑一類 → 只列那一類；「← 換一個分類」則回到分類入口。
+    // 兩者都直接沿用 /配方 那段邏輯，靠 _catKey / _forceKind 傳參數，
+    // 不另外複製一份畫面產生器。
+    else if (i.isStringSelectMenu() && i.customId.startsWith('craftcat:')) {
+      const kinds = i.customId.slice('craftcat:'.length).split('+').filter(Boolean);
+      name = '配方';
+      i._catKey = i.values[0];
+      if (kinds.length === 1) i._forceKind = kinds[0];
+      i._kinds = kinds;
+    } else if (isBtn && i.customId.startsWith('craftcat:back:')) {
+      const kinds = i.customId.slice('craftcat:back:'.length).split('+').filter(Boolean);
+      name = '配方';
+      if (kinds.length === 1) i._forceKind = kinds[0];
+      i._kinds = kinds;
+    } else return;
     const ALL = ['錢包', '明細', '背包', '倉庫', '賣出', '商店', '購買', '圖鑑', '富豪榜', '製作', '鍛造', '配方', '任務', '轉帳', '地圖', '修理', '狀態'];
     if (!GATHER_CMD[name] && !ALL.includes(name)) return;
 
@@ -1660,9 +1733,14 @@ function init(client) {
             embed.addFields({ name: `${title}${chunks.length > 1 ? ` (${idx + 1})` : ''}`, value: chunks[idx] });
           }
         };
-        const kindsOf = (list) => Object.keys(KIND_NAME).filter(k => list.some(r => r.kind === k));
-        for (const k of kindsOf(rows)) addBlock(`${KIND_EMOJI[k]} ${KIND_NAME[k]}`, rows.filter(r => r.kind === k), true);
-        addBlock('🎁 禮物・其他', rows.filter(r => !KIND_NAME[r.kind]), true);
+        // 分類跟製作頁用同一套（規格 18：背包／倉庫／商店的分類邏輯要一致）
+        const cats = categories(gid);
+        for (const cat of cats) {
+          const list = rows.filter(r => catOf(r) === cat.key);
+          if (list.length) addBlock(`${cat.emoji || ''} ${cat.name}`, list, true);
+        }
+        const known = new Set(cats.map(x => x.key));
+        addBlock('📦 未分類', rows.filter(r => !known.has(catOf(r))), true);
         // 做好的料理放在廚房（cook_inventory），這裡一併列出來，才不會讓人以為菜卡在廚房拿不出來
         try {
           const { qLabel } = require('./kitchen');
@@ -1721,10 +1799,13 @@ function init(client) {
             embed.addFields({ name: `${title}${chunks.length > 1 ? ` (${idx + 1})` : ''}`, value: chunks[idx] });
           }
         };
-        for (const k of Object.keys(KIND_NAME).filter(k => stored.some(r => r.kind === k))) {
-          addBlock(`${KIND_EMOJI[k]} ${KIND_NAME[k]}`, stored.filter(r => r.kind === k));
+        const scats = categories(gid);
+        for (const cat of scats) {
+          const list = stored.filter(r => catOf(r) === cat.key);
+          if (list.length) addBlock(`${cat.emoji || ''} ${cat.name}`, list);
         }
-        addBlock('🎁 其他', stored.filter(r => !KIND_NAME[r.kind]));
+        const sknown = new Set(scats.map(x => x.key));
+        addBlock('📦 未分類', stored.filter(r => !sknown.has(catOf(r))));
         if (cut) embed.setFooter({ text: '東西太多，這裡顯示不完' });
         const btns = target.id === uid
           ? [new ActionRowBuilder().addComponents(
@@ -1956,61 +2037,103 @@ function init(client) {
 
       // ---- 配方一覽 ----
       if (name === '配方') {
-        // 按鈕進來時直接把製作與鍛造都列出；斜線指令可指定種類
-        const kinds = i._forceKind ? [i._forceKind]
-          : (isBtn ? ['craft', 'forge'] : [i.options.getString('種類') || 'craft']);
-        const KCOLOR = { craft: 0x5865f2, forge: 0xe67e22 };
-        const KTITLE = { craft: '🛠️ 製作配方', forge: '🔨 鍛造配方' };
-        const PLOT_RES = { plot_field: { name: '農地（開一格）', emoji: '🌾' }, plot_greenhouse: { name: '溫室（開一格）', emoji: '🏡' }, plot_ranch: { name: '牧場（開一格）', emoji: '🐔' }, plot_hatch: { name: '孵化室（開一格）', emoji: '🥚' }, plot_aquarium: { name: '魚缸格（開一格）', emoji: '🐠' } };
-        const embeds = [];
-        const opts = [];
+        // 規格 18：先選大分類，再看該分類的配方——以前是一次把幾十個配方
+        // 全部倒出來，超過 25 個就開新頁，玩家要翻好幾頁才找得到要做的東西。
+        const kinds = (i._kinds && i._kinds.length) ? i._kinds
+          : i._forceKind ? [i._forceKind]
+            : (isBtn || !i.isChatInputCommand?.()) ? ['craft', 'forge']
+              : [i.options.getString('種類') || 'craft'];
+        const picked = i._catKey || '';
+        const cats = categories(gid);
+
+        const all = [];
         for (const rkind of kinds) {
-          const list = db.prepare('SELECT * FROM gather_recipes WHERE guild_id=? AND kind=? AND enabled=1 ORDER BY id').all(gid, rkind);
-          if (!list.length) continue;
-          // 一個 embed 最多 25 個欄位、一個下拉最多 25 項 —— 配方早就超過，
-          // 以前直接 slice(0,25)，排在後面的（像魚缸）就整個消失。改成滿了就開新的一頁。
-          let embed = null;
-          let fields = 0;
-          const newEmbed = (n) => new EmbedBuilder().setColor(KCOLOR[rkind] || brandColor())
-            .setTitle(`${KTITLE[rkind] || '配方'}${n > 1 ? `（第 ${n} 頁）` : ''}`)
-            .setDescription('點下方選單直接做一次（也可以打 `/製作 配方名稱 次數`）。');
-          let page = 0;
-          for (const r of list) {
-            if (!embed || fields >= 25) { embed = newEmbed(++page); embeds.push(embed); fields = 0; }
-            fields++;
-            const mats = readMaterials(r);
-            // 順便算材料夠不夠，玩家不用自己對背包
-            let enough = mats.length > 0;
-            const matTxt = mats.map(m => {
-              const it = db.prepare('SELECT name, emoji FROM gather_items WHERE id=?').get(m.item_id);
-              const have = (db.prepare('SELECT count FROM gather_inventory WHERE guild_id=? AND user_id=? AND item_id=?').get(gid, uid, m.item_id) || {}).count || 0;
-              const lack = have < m.count;
-              if (lack) enough = false;
-              // 缺的材料標紅（🔴），足夠的標綠（🟢），玩家一眼看出還缺什麼
-              return `${lack ? '🔴' : '🟢'}${it ? (it.emoji || '') + it.name : '#' + m.item_id} ${have}/${m.count}`;
-            }).join('　');
-            const res = r.result_type === 'tool'
-              ? db.prepare('SELECT name, emoji FROM gather_tools WHERE id=?').get(r.result_id)
-              : (PLOT_RES[r.result_type] || db.prepare('SELECT name, emoji FROM gather_items WHERE id=?').get(r.result_id));
-            embed.addFields({
-              name: `${enough ? '✅' : '❌'} ${r.emoji || ''} ${r.name}`,
-              value: `${matTxt || '（未設材料）'}${r.cost ? ` ＋ ${money(c, r.cost)}` : ''}\n→ ${res ? (res.emoji || '') + res.name : '？'} ×${r.result_count || 1}　成功率 ${r.success_rate}%`
-            });
-            if (mats.length) opts.push({
-              label: `${rkind === 'forge' ? '鍛造' : '製作'}：${r.name}`.slice(0, 100),
-              description: `${enough ? '材料足夠' : '材料不足'}｜→ ${res ? res.name : '？'} ×${r.result_count || 1}　成功率 ${r.success_rate}%`.slice(0, 100),
-              value: String(r.id), emoji: r.emoji || (rkind === 'forge' ? '🔨' : '🛠️')
-            });
+          for (const r of db.prepare('SELECT * FROM gather_recipes WHERE guild_id=? AND kind=? AND enabled=1 ORDER BY id').all(gid, rkind)) {
+            all.push({ ...r, rkind });
           }
         }
-        if (!embeds.length) return i.reply({ content: '目前還沒有任何配方。', flags: MessageFlags.Ephemeral });
+        if (!all.length) return i.reply({ content: '目前還沒有任何配方。', flags: MessageFlags.Ephemeral });
+
+        // 配方的分類：自己有設就用自己的，否則看「做出來的東西」屬於哪一類
+        const PLOT_RES = { plot_field: { name: '農地（開一格）', emoji: '🌾', cat: 'farm' }, plot_greenhouse: { name: '溫室（開一格）', emoji: '🏡', cat: 'farm' }, plot_ranch: { name: '牧場（開一格）', emoji: '🐔', cat: 'ranch' }, plot_hatch: { name: '孵化室（開一格）', emoji: '🥚', cat: 'ranch' }, plot_aquarium: { name: '魚缸格（開一格）', emoji: '🐠', cat: 'fish' } };
+        const resultOf = (r) => r.result_type === 'tool'
+          ? { ...(db.prepare('SELECT name, emoji FROM gather_tools WHERE id=?').get(r.result_id) || {}), cat: 'tool' }
+          : (PLOT_RES[r.result_type] || db.prepare('SELECT * FROM gather_items WHERE id=?').get(r.result_id) || {});
+        const recipeCat = (r) => {
+          if (r.category) return r.category;
+          const res = resultOf(r);
+          return res.cat || catOf(res);
+        };
+        for (const r of all) r._cat = recipeCat(r);
+
+        // 沒選分類 → 只給分類入口，不一次塞入全部物品
+        if (!picked) {
+          const counts = new Map();
+          for (const r of all) counts.set(r._cat, (counts.get(r._cat) || 0) + 1);
+          const usable = cats.filter(x => counts.get(x.key));
+          if (!usable.length) return i.reply({ content: '目前還沒有任何配方。', flags: MessageFlags.Ephemeral });
+          const embed = new EmbedBuilder().setColor(brandColor())
+            .setTitle(kinds.includes('forge') && kinds.length === 1 ? '🔨 鍛造' : '🛠️ 製作')
+            .setDescription('先選一個分類，再看裡面的配方。\n'
+              + usable.map(x => `${x.emoji || ''} **${x.name}**　${counts.get(x.key)} 個配方`).join('\n'))
+            .setFooter({ text: '也可以直接打 `/製作 配方名稱 次數` 跳過選單' });
+          const menuRows = [];
+          for (let n = 0; n < usable.length && menuRows.length < 5; n += 25) {
+            menuRows.push(new ActionRowBuilder().addComponents(
+              new StringSelectMenuBuilder().setCustomId(`craftcat:${kinds.join('+')}`)
+                .setPlaceholder('選一個分類')
+                .addOptions(usable.slice(n, n + 25).map(x => ({
+                  label: x.name.slice(0, 100), emoji: x.emoji || undefined,
+                  description: `${counts.get(x.key)} 個配方`, value: x.key
+                })))));
+          }
+          return await reply({ embeds: [embed], components: menuRows });
+        }
+
+        // 選好分類 → 只列這一類
+        const list = all.filter(r => r._cat === picked);
+        const cat = cats.find(x => x.key === picked) || { name: picked, emoji: '' };
+        if (!list.length) return i.reply({ content: `「${cat.name}」分類目前沒有配方。`, flags: MessageFlags.Ephemeral });
+
+        const KCOLOR = { craft: 0x5865f2, forge: 0xe67e22 };
+        const embeds = [];
+        const opts = [];
+        let embed = null, fields = 0, page = 0;
+        const newEmbed = (n) => new EmbedBuilder().setColor(KCOLOR[list[0].rkind] || brandColor())
+          .setTitle(`${cat.emoji || ''} ${cat.name} 配方${n > 1 ? `（第 ${n} 頁）` : ''}`)
+          .setDescription('點下方選單直接做一次（也可以打 `/製作 配方名稱 次數`）。');
+        for (const r of list) {
+          if (!embed || fields >= 25) { embed = newEmbed(++page); embeds.push(embed); fields = 0; }
+          fields++;
+          const mats = readMaterials(r);
+          let enough = mats.length > 0;
+          const matTxt = mats.map(m => {
+            const it = db.prepare('SELECT name, emoji FROM gather_items WHERE id=?').get(m.item_id);
+            const have = (db.prepare('SELECT count FROM gather_inventory WHERE guild_id=? AND user_id=? AND item_id=?').get(gid, uid, m.item_id) || {}).count || 0;
+            const lack = have < m.count;
+            if (lack) enough = false;
+            // 缺的材料標紅（🔴），足夠的標綠（🟢），玩家一眼看出還缺什麼
+            return `${lack ? '🔴' : '🟢'}${it ? (it.emoji || '') + it.name : '#' + m.item_id} ${have}/${m.count}`;
+          }).join('　');
+          const res = resultOf(r);
+          embed.addFields({
+            name: `${enough ? '✅' : '❌'} ${r.emoji || ''} ${r.name}`,
+            value: `${matTxt || '（未設材料）'}${r.cost ? ` ＋ ${money(c, r.cost)}` : ''}\n→ ${res.name ? (res.emoji || '') + res.name : '？'} ×${r.result_count || 1}　成功率 ${r.success_rate}%`
+          });
+          if (mats.length) opts.push({
+            label: `${r.rkind === 'forge' ? '鍛造' : '製作'}：${r.name}`.slice(0, 100),
+            description: `${enough ? '材料足夠' : '材料不足'}｜→ ${res.name || '？'} ×${r.result_count || 1}　成功率 ${r.success_rate}%`.slice(0, 100),
+            value: String(r.id), emoji: r.emoji || (r.rkind === 'forge' ? '🔨' : '🛠️')
+          });
+        }
         // 材料齊的排前面，玩家一打開就看得到現在做得出來的東西
         opts.sort((a, b) => (a.description.startsWith('材料足夠') ? 0 : 1) - (b.description.startsWith('材料足夠') ? 0 : 1));
-        const rows = [];
+        const rows = [new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId(`craftcat:back:${kinds.join('+')}`).setLabel('← 換一個分類').setStyle(ButtonStyle.Secondary))];
         for (let n = 0; n < opts.length && rows.length < 5; n += 25) {
           rows.push(new ActionRowBuilder().addComponents(
             new StringSelectMenuBuilder().setCustomId(`craftpick:${rows.length}`)
-              .setPlaceholder(rows.length === 0 ? '選擇要做的配方（做 1 次）' : `更多配方（${n + 1} 之後）`)
+              .setPlaceholder(rows.length === 1 ? '選擇要做的配方（做 1 次）' : `更多配方（${n + 1} 之後）`)
               .addOptions(opts.slice(n, n + 25))));
         }
         return await reply({ embeds: embeds.slice(0, 10), components: rows });
@@ -2293,4 +2416,4 @@ function init(client) {
   console.log('  ↳ 釣魚挖礦模組已載入（冷卻/稀有掉落/商店道具/圖鑑/經濟）');
 }
 
-module.exports = { init, wallet, addCoins, logCoins, addToBag, seedGuild, seedMaterials, staminaState, staminaBoughtToday, bumpPoints, addPointsBonus, menuResult, safeMenu, RARITY, RARITY_LABEL, sellAllBag, buyThing, doGather, cmdPerm, toStorage, toBag, storageRows, bagCount, storeCount };
+module.exports = { init, wallet, addCoins, logCoins, addToBag, seedGuild, seedMaterials, staminaState, staminaBoughtToday, bumpPoints, addPointsBonus, menuResult, safeMenu, RARITY, RARITY_LABEL, sellAllBag, buyThing, doGather, cmdPerm, categories, seedCategories, catOf, DEFAULT_CATEGORIES, toStorage, toBag, storageRows, bagCount, storeCount };

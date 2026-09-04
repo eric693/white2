@@ -63,7 +63,9 @@ function itemFields(b) {
   return {
     kind: kindOf(b.kind), name: b.name || '', emoji: b.emoji || '', image_url: b.image_url || '',
     rarity: rarityOf(b.rarity), weight: int(b.weight, 100, 0), price: int(b.price, 10, 0),
-    description: b.description || '', enabled: b.enabled ? 1 : 0
+    description: b.description || '', enabled: b.enabled ? 1 : 0,
+    // 介面分類：空字串＝照 kind 自動推斷（見 gather.js 的 catOf）
+    category: String(b.category || '').trim().slice(0, 24)
   };
 }
 
@@ -71,8 +73,8 @@ router.post('/gather-items', (req, res) => {
   const f = itemFields(req.body || {});
   if (!f.name) return res.status(400).json({ error: '請填寫物品名稱' });
   const info = db.prepare(
-    `INSERT INTO gather_items (guild_id,kind,name,emoji,image_url,rarity,weight,price,description,enabled)
-     VALUES (@guild_id,@kind,@name,@emoji,@image_url,@rarity,@weight,@price,@description,@enabled)`
+    `INSERT INTO gather_items (guild_id,kind,name,emoji,image_url,rarity,weight,price,description,enabled,category)
+     VALUES (@guild_id,@kind,@name,@emoji,@image_url,@rarity,@weight,@price,@description,@enabled,@category)`
   ).run({ ...f, guild_id: req.guildId });
   audit(req.user.name, `新增掉落物：${f.name}`);
   res.json({ id: info.lastInsertRowid });
@@ -83,7 +85,7 @@ router.put('/gather-items/:id', (req, res) => {
   if (!f.name) return res.status(400).json({ error: '請填寫物品名稱' });
   db.prepare(
     `UPDATE gather_items SET kind=@kind, name=@name, emoji=@emoji, image_url=@image_url, rarity=@rarity,
-       weight=@weight, price=@price, description=@description, enabled=@enabled
+       weight=@weight, price=@price, description=@description, enabled=@enabled, category=@category
      WHERE id=@id AND guild_id=@guild_id`
   ).run({ ...f, id: req.params.id, guild_id: req.guildId });
   audit(req.user.name, `修改掉落物 #${req.params.id}`);
@@ -428,7 +430,9 @@ function recipeFields(b) {
     materials: mats || '[]', cost: int(b.cost, 0),
     success_rate: Math.min(100, int(b.success_rate, 100)),
     fail_keep: b.fail_keep ? 1 : 0,
-    description: b.description || '', enabled: b.enabled ? 1 : 0
+    description: b.description || '', enabled: b.enabled ? 1 : 0,
+    // 製作頁分類：空字串＝照「做出來的東西」自動歸類
+    category: String(b.category || '').trim().slice(0, 24)
   };
 }
 router.get('/gather-recipes', (req, res) => {
@@ -440,8 +444,8 @@ router.post('/gather-recipes', (req, res) => {
   // 農地/溫室不需要產出目標物品
   if (f.result_type === 'item' || f.result_type === 'tool') { if (!f.result_id) return res.status(400).json({ error: '請選擇產出物品' }); }
   const info = db.prepare(
-    `INSERT INTO gather_recipes (guild_id,kind,name,emoji,result_type,result_id,result_count,materials,cost,success_rate,fail_keep,description,enabled)
-     VALUES (@guild_id,@kind,@name,@emoji,@result_type,@result_id,@result_count,@materials,@cost,@success_rate,@fail_keep,@description,@enabled)`
+    `INSERT INTO gather_recipes (guild_id,kind,name,emoji,result_type,result_id,result_count,materials,cost,success_rate,fail_keep,description,enabled,category)
+     VALUES (@guild_id,@kind,@name,@emoji,@result_type,@result_id,@result_count,@materials,@cost,@success_rate,@fail_keep,@description,@enabled,@category)`
   ).run({ ...f, guild_id: req.guildId });
   audit(req.user.name, `新增配方：${f.name}`);
   res.json({ id: info.lastInsertRowid });
@@ -452,7 +456,8 @@ router.put('/gather-recipes/:id', (req, res) => {
   db.prepare(
     `UPDATE gather_recipes SET kind=@kind, name=@name, emoji=@emoji, result_type=@result_type, result_id=@result_id,
        result_count=@result_count, materials=@materials, cost=@cost, success_rate=@success_rate,
-       fail_keep=@fail_keep, description=@description, enabled=@enabled WHERE id=@id AND guild_id=@guild_id`
+       fail_keep=@fail_keep, description=@description, enabled=@enabled, category=@category
+     WHERE id=@id AND guild_id=@guild_id`
   ).run({ ...f, id: req.params.id, guild_id: req.guildId });
   audit(req.user.name, `修改配方 #${req.params.id}`);
   res.json({ ok: true });
@@ -634,6 +639,86 @@ router.delete('/gather-maps/:id', (req, res) => {
   db.prepare('DELETE FROM gather_user_map WHERE guild_id=? AND map_id=?').run(req.guildId, req.params.id);
   audit(req.user.name, `刪除地圖 #${req.params.id}`);
   res.json({ ok: true });
+});
+
+// ---- 物品／配方分類（規格 18）----
+// 製作頁、背包、倉庫、商店共用這一套分類。管理端可新增／改名／調順序／停用，
+// 之後加新玩法（節慶、活動限定…）不必改程式。
+router.get('/item-categories', (req, res) => {
+  const { categories } = require('../bot/features/gather');
+  const rows = categories(req.guildId);
+  // 順便回每一類目前有幾個物品／配方，管理員才知道動到什麼
+  const items = db.prepare('SELECT id, kind, category FROM gather_items WHERE guild_id=?').all(req.guildId);
+  const recipes = db.prepare('SELECT id, category FROM gather_recipes WHERE guild_id=?').all(req.guildId);
+  const { catOf } = require('../bot/features/gather');
+  res.json(rows.map(c => ({
+    ...c,
+    items: items.filter(x => catOf(x) === c.key).length,
+    recipes: recipes.filter(x => (x.category || '') === c.key).length
+  })));
+});
+
+const catFields = (b) => ({
+  key: String(b.key || '').trim().replace(/[^a-zA-Z0-9_]/g, '').slice(0, 24),
+  name: String(b.name || '').trim().slice(0, 20),
+  emoji: String(b.emoji || '').slice(0, 8),
+  sort: int(b.sort, 0, 0),
+  enabled: b.enabled === false ? 0 : 1
+});
+
+router.post('/item-categories', (req, res) => {
+  const f = catFields(req.body || {});
+  if (!f.key || !f.name) return res.status(400).json({ error: '請填分類代號（英數）與名稱' });
+  const dup = db.prepare('SELECT 1 FROM item_categories WHERE guild_id=? AND key=?').get(req.guildId, f.key);
+  if (dup) return res.status(400).json({ error: '這個分類代號已經有了' });
+  const r = db.prepare('INSERT INTO item_categories (guild_id,key,name,emoji,sort,enabled) VALUES (?,?,?,?,?,?)')
+    .run(req.guildId, f.key, f.name, f.emoji, f.sort, f.enabled);
+  audit(req.user.name, `新增物品分類：${f.name}`);
+  res.json({ id: r.lastInsertRowid });
+});
+
+router.put('/item-categories/:id', (req, res) => {
+  const f = catFields(req.body || {});
+  const cur = db.prepare('SELECT * FROM item_categories WHERE id=? AND guild_id=?').get(req.params.id, req.guildId);
+  if (!cur) return res.status(404).json({ error: '找不到這個分類' });
+  // 代號改掉時，原本標成舊代號的物品與配方要一起搬過去，否則它們會全部掉進「未分類」
+  db.transaction(() => {
+    db.prepare('UPDATE item_categories SET key=?, name=?, emoji=?, sort=?, enabled=? WHERE id=? AND guild_id=?')
+      .run(f.key || cur.key, f.name || cur.name, f.emoji, f.sort, f.enabled, req.params.id, req.guildId);
+    if (f.key && f.key !== cur.key) {
+      db.prepare('UPDATE gather_items SET category=? WHERE guild_id=? AND category=?').run(f.key, req.guildId, cur.key);
+      db.prepare('UPDATE gather_recipes SET category=? WHERE guild_id=? AND category=?').run(f.key, req.guildId, cur.key);
+    }
+  })();
+  audit(req.user.name, `修改物品分類 #${req.params.id}`);
+  res.json({ ok: true });
+});
+
+router.delete('/item-categories/:id', (req, res) => {
+  const cur = db.prepare('SELECT * FROM item_categories WHERE id=? AND guild_id=?').get(req.params.id, req.guildId);
+  if (!cur) return res.status(404).json({ error: '找不到這個分類' });
+  // 刪分類不刪東西：屬於它的物品／配方清成「未指定」，之後會照 kind 自動推斷
+  db.transaction(() => {
+    db.prepare("UPDATE gather_items SET category='' WHERE guild_id=? AND category=?").run(req.guildId, cur.key);
+    db.prepare("UPDATE gather_recipes SET category='' WHERE guild_id=? AND category=?").run(req.guildId, cur.key);
+    db.prepare('DELETE FROM item_categories WHERE id=? AND guild_id=?').run(req.params.id, req.guildId);
+  })();
+  audit(req.user.name, `刪除物品分類：${cur.name}`);
+  res.json({ ok: true });
+});
+
+// 把某個物品／配方指定到某一類（留空＝自動推斷）
+router.post('/item-category-assign', (req, res) => {
+  const b = req.body || {};
+  const table = b.target === 'recipe' ? 'gather_recipes' : 'gather_items';
+  const ids = (Array.isArray(b.ids) ? b.ids : []).map(x => int(x, 0, 0)).filter(Boolean);
+  if (!ids.length) return res.status(400).json({ error: '請選要指定的項目' });
+  const key = String(b.category || '').trim();
+  const upd = db.prepare(`UPDATE ${table} SET category=? WHERE guild_id=? AND id=?`);
+  let n = 0;
+  db.transaction(() => { for (const id of ids) n += upd.run(key, req.guildId, id).changes; })();
+  audit(req.user.name, `指定 ${n} 個${b.target === 'recipe' ? '配方' : '物品'}的分類為「${key || '自動'}」`);
+  res.json({ ok: true, changed: n });
 });
 
 // ---- 每日抽籤獎池 ----

@@ -32,6 +32,8 @@ App.page('gather', {
       GET('/gather-recipes'), GET('/quests'), GET('/econ-transfers'), GET('/gather-maps'),
       GET('/lottery-prizes'), GET('/facilities')
     ]);
+    // 介面分類（背包／倉庫／製作頁共用），物品與配方的編輯表單都要用到
+    const CATS = await GET('/item-categories');
     const perms = await GET('/gather-cmd-perms');
     const access = await GET('/gather-channel-access');
 
@@ -233,6 +235,26 @@ App.page('gather', {
           </tbody></table></div>
       </div>
 
+      <div class="card" id="catcard">
+        <h3>🗂️ 物品／配方分類</h3>
+        <div class="hint" style="margin-bottom:8px">
+          製作頁、背包、倉庫、商店共用這一套分類：<b>製作先選大分類，再顯示對應內容</b>，不會一次把幾十個配方倒出來。<br>
+          沒有手動指定分類的物品，會照它的種類（釣魚／挖礦／伐木…）<b>自動推斷</b>，不必一件一件標。<br>
+          分類可以自由新增、改名、調順序或停用；刪除分類<b>不會刪掉物品</b>，只是把它們退回自動推斷。
+        </div>
+        <div class="table-wrap"><table class="list">
+          <thead><tr><th>圖示</th><th>名稱</th><th>代號</th><th>排序</th><th>物品</th><th>配方</th><th>啟用</th><th></th></tr></thead>
+          <tbody id="catlist"><tr><td colspan="8" class="hint">載入中…</td></tr></tbody>
+        </table></div>
+        <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end">
+          <div class="field" style="margin:0;max-width:70px"><label>圖示</label><input id="ncemoji" value="✨"></div>
+          <div class="field" style="margin:0;max-width:150px"><label>名稱</label><input id="ncname" placeholder="例如 節慶"></div>
+          <div class="field" style="margin:0;max-width:150px"><label>代號（英數）</label><input id="nckey" placeholder="festival"></div>
+          <div class="field" style="margin:0;max-width:90px"><label>排序</label><input id="ncsort" type="number" value="99"></div>
+          <button class="btn" id="addcat">新增分類</button>
+        </div>
+      </div>
+
       <div class="card">
         <h3>🎲 抽籤獎池（已下架）</h3>
         <div class="hint" style="margin-bottom:8px"><b>⚠️ 每日抽籤已於 2026-09 下架</b>，玩家端沒有任何入口（改用 <code>/簽到</code>）。
@@ -372,6 +394,12 @@ App.page('gather', {
       </div>
       <div class="field"><label>說明（可空）</label><input name="description" value="${UI.esc(it.description || '')}"></div>
       <div class="field"><label>圖片（可空，顯示在抽中訊息的縮圖）</label>${H.uploadField('image_url', it.image_url || '', { label: '圖片' })}</div>
+      <div class="field"><label>介面分類（背包／倉庫／製作頁怎麼歸類）</label>
+        <select name="category">
+          <option value="">— 自動推斷（照上面的種類）—</option>
+          ${(CATS || []).map(c => `<option value="${UI.esc(c.key)}" ${it.category === c.key ? 'selected' : ''}>${UI.esc((c.emoji || '') + c.name)}</option>`).join('')}
+        </select>
+        <div class="hint">留「自動推斷」就好，只有覺得歸錯類時才手動指定。</div></div>
       <div class="field">${H.toggle('enabled', it.enabled ?? 1, '啟用（停用後不會被抽到）')}</div>`;
 
     const openItem = (it) => {
@@ -425,6 +453,54 @@ App.page('gather', {
       if (!await UI.confirm('刪除這張地圖？正在使用它的玩家會回到預設地圖。')) return;
       await DEL('/gather-maps/' + b.dataset.dmap); UI.ok('已刪除'); App.go('gather');
     });
+
+    // ---- 物品／配方分類 ----
+    const drawCats = async () => {
+      const rows = await GET('/item-categories');
+      const body = el.querySelector('#catlist');
+      body.innerHTML = rows.map(c => `<tr data-cat="${c.id}">
+        <td><input name="emoji" value="${UI.esc(c.emoji || '')}" style="width:56px"></td>
+        <td><input name="name" value="${UI.esc(c.name)}" style="min-width:110px"></td>
+        <td><input name="key" value="${UI.esc(c.key)}" style="width:110px"></td>
+        <td><input name="sort" type="number" value="${c.sort}" style="width:70px"></td>
+        <td>${c.items}</td>
+        <td>${c.recipes}</td>
+        <td><label class="switch"><input name="enabled" type="checkbox" ${c.enabled ? 'checked' : ''}></label></td>
+        <td><button class="btn tiny" data-savecat="${c.id}">儲存</button>
+            <button class="btn tiny danger" data-delcat="${c.id}">刪除</button></td>
+      </tr>`).join('') || '<tr><td colspan="8" class="hint">還沒有分類</td></tr>';
+      body.querySelectorAll('[data-savecat]').forEach(b => b.onclick = async () => {
+        const tr = b.closest('tr');
+        try {
+          await PUT(`/item-categories/${b.dataset.savecat}`, {
+            emoji: tr.querySelector('[name=emoji]').value,
+            name: tr.querySelector('[name=name]').value,
+            key: tr.querySelector('[name=key]').value,
+            sort: Number(tr.querySelector('[name=sort]').value) || 0,
+            enabled: tr.querySelector('[name=enabled]').checked
+          });
+          UI.ok('已儲存'); drawCats();
+        } catch (e) { UI.err(e.message); }
+      });
+      body.querySelectorAll('[data-delcat]').forEach(b => b.onclick = async () => {
+        if (!await UI.confirm('刪除這個分類？屬於它的物品與配方不會被刪掉，只會退回「自動推斷」。')) return;
+        try { await DEL(`/item-categories/${b.dataset.delcat}`); UI.ok('已刪除'); drawCats(); }
+        catch (e) { UI.err(e.message); }
+      });
+    };
+    el.querySelector('#addcat').onclick = async () => {
+      try {
+        await POST('/item-categories', {
+          emoji: el.querySelector('#ncemoji').value,
+          name: el.querySelector('#ncname').value,
+          key: el.querySelector('#nckey').value,
+          sort: Number(el.querySelector('#ncsort').value) || 0
+        });
+        UI.ok('已新增'); el.querySelector('#ncname').value = ''; el.querySelector('#nckey').value = '';
+        drawCats();
+      } catch (e) { UI.err(e.message); }
+    };
+    drawCats();
 
     // ---- 每日抽籤獎池 ----
     const prizeForm = (p = {}) => `
@@ -571,6 +647,12 @@ App.page('gather', {
         <div class="field" style="max-width:90px"><label>圖示</label>
           <input name="emoji" data-bemoji value="${UI.esc(r.emoji || '')}" style="text-align:center"></div>
       </div>
+      <div class="field"><label>製作頁分類</label>
+        <select name="category">
+          <option value="">— 自動（照做出來的東西歸類）—</option>
+          ${(CATS || []).map(x => `<option value="${UI.esc(x.key)}" ${r.category === x.key ? 'selected' : ''}>${UI.esc((x.emoji || '') + x.name)}</option>`).join('')}
+        </select>
+        <div class="hint">玩家打開製作頁時要先選分類，這個配方會出現在這一類底下。</div></div>
       <div class="field"><label>材料</label><div id="mats">${matRows(mats)}</div>
         <button type="button" class="btn tiny secondary" id="addmat">＋ 加一項材料</button></div>
       <div class="form-row">
