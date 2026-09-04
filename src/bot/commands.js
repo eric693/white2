@@ -141,7 +141,8 @@ const builders = [
   new SlashCommandBuilder().setName('任務').setDescription('查看任務進度並領取獎勵')
     .addStringOption(o => o.setName('動作').setDescription('查看進度或領取獎勵')
       .addChoices({ name: '查看進度', value: 'list' }, { name: '領取獎勵', value: 'claim' })),
-  // /抽籤 已下架（改用小屋簽到）—— 程式與獎池資料都還在，要開回來把這行還原即可
+  // /抽籤 已完整下架（改用 /簽到）：指令、面板按鈕、獎勵與提示都移除了，
+  // 舊指令若因 Discord 快取還按得到，會回一則「已下架」說明，不會再發獎。
   new SlashCommandBuilder().setName('狀態').setDescription('查看你的冒險狀態總覽（星幣/動物/作物/工具耐久…）')
     .addUserOption(o => o.setName('玩家').setDescription('（僅管理員）查看指定玩家')),
   new SlashCommandBuilder().setName('修理').setDescription('花星幣把壞掉的工具修回滿耐久')
@@ -260,7 +261,7 @@ const builders = [
 // 冒險經濟那一整套都算遊戲；音樂、抽獎、警告、客服單這些管理／互動功能不加。
 const GAME_COMMANDS = new Set([
   '釣魚', '挖礦', '伐木', '採集', '狩獵', '錢包', '明細', '背包', '倉庫', '賣出', '商店', '購買', '圖鑑', '富豪榜',
-  '轉帳', '製作', '鍛造', '配方', '任務', '抽籤', '狀態', '修理', '地圖', '交易',
+  '轉帳', '製作', '鍛造', '配方', '任務', '狀態', '修理', '地圖', '交易',
   '牧場', '畜牧商店', '飼養', '收成', '放生', '偷', '孵化', '孵化室',
   '魚缸', '水族商店', '養魚', '餵魚', '撈金', '賣魚', '偷魚',
   '我的家', '升級家園', '家園卡', '簽到', '家園網頁', '家具', '廚房', '烹飪', '寵物', '寵物改名',

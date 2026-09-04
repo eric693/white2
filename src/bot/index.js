@@ -202,7 +202,7 @@ async function applyAppearance() {
 // 的 emit 是同步的 —— 所以在這裡把 isChatInputCommand()/isButton() 就地改成回 false，
 // 後面每個功能模組的 handler 都會直接略過這筆互動，不會出現「兩邊都回應」的錯誤。
 const BUTTON_FEATURE_HINTS = [
-  ['stock', 'stock'], ['auction', 'auction'], ['loan', 'loans'], ['tax', 'tax'],
+  ['stock', 'stock'], ['auction', 'auction'], ['loan', 'loans'], ['bank', 'loans'], ['tax', 'tax'],
   ['charity', 'charity'], ['ranch', 'ranch'], ['aqua', 'aquarium'], ['crop', 'crops'],
   ['pet', 'pets'], ['kitchen', 'kitchen'], ['furn', 'furniture'], ['home', 'home'],
   ['trade', 'trades'], ['gift', 'affinity'], ['music', 'music'], ['ticket', 'tickets'],

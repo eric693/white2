@@ -234,8 +234,9 @@ App.page('gather', {
       </div>
 
       <div class="card">
-        <h3>🎲 每日抽籤獎池</h3>
-        <div class="hint" style="margin-bottom:8px">玩家用 <code>/抽籤</code> 每天抽一次。機率＝該獎項權重 ÷ 全部啟用獎項的權重總和。幸運符只在當天有效，會疊到採集稀有率上。<b>全部停用或刪光時會退回系統預設獎池。</b></div>
+        <h3>🎲 抽籤獎池（已下架）</h3>
+        <div class="hint" style="margin-bottom:8px"><b>⚠️ 每日抽籤已於 2026-09 下架</b>，玩家端沒有任何入口（改用 <code>/簽到</code>）。
+          這份獎池保留是因為「幸運符」還在用同一組欄位，之後想把抽籤開回來也不必重建。目前這裡的設定不會影響玩家。</div>
         <div class="toolbar"><button class="btn" id="addprize">＋ 新增獎項</button></div>
         <div class="table-wrap"><table class="list">
           <thead><tr><th>獎項</th><th>內容</th><th>權重</th><th>機率</th><th>狀態</th><th></th></tr></thead>

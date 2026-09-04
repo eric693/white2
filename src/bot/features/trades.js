@@ -23,10 +23,13 @@ function noTradeIds(gid) {
   const hit = _noTradeCache.get(gid);
   if (hit && Date.now() - hit.at < 60000) return hit.ids;
   const ids = new Set();
-  // 只鎖「種子」，蛋開放交易
+  // 鎖「種子」，蛋開放交易
   for (const r of db.prepare('SELECT seed_item_id id FROM crop_seeds WHERE guild_id=? AND seed_item_id>0').all(gid)) ids.add(r.id);
   // 後台自己新增、kind 標成 seed 的也一併算進去
   for (const r of db.prepare("SELECT id FROM gather_items WHERE guild_id=? AND kind='seed'").all(gid)) ids.add(r.id);
+  // 角色禮物也鎖（規格 9）：禮物是拿來養好感度的，一旦能互相轉贈就會變成
+  // 「一個人買、全服共用」，好感度的成本就沒了。不需要的禮物只能低價賣回系統。
+  for (const r of db.prepare("SELECT id FROM gather_items WHERE guild_id=? AND kind='gift'").all(gid)) ids.add(r.id);
   _noTradeCache.set(gid, { at: Date.now(), ids });
   return ids;
 }
@@ -42,7 +45,11 @@ function createProposal(gid, fromUser, to, giveName, wantName, giveCount, wantCo
   const noTrade = noTradeIds(gid);
   const blocked = [give, want].filter(x => noTrade.has(x.id));
   if (blocked.length) {
-    return { error: `🚫 ${blocked.map(x => `${x.emoji || ''}**${x.name}**`).join('、')} 不能交易——種子只能自己種。\n想要的話請到 \`/種子商店\` 買，或自己去採集。` };
+    const gift = blocked.some(x => x.kind === 'gift');
+    return { error: `🚫 ${blocked.map(x => `${x.emoji || ''}**${x.name}**`).join('、')} 不能交易。\n`
+      + (gift
+        ? '角色禮物**不能交易、轉贈或變現**——要送角色請自己到 `/設施商店` 旁的禮物商店買。\n不需要的禮物可以用 `/賣出` 低價賣回系統清掉（回收價很低，只是清倉用）。'
+        : '種子只能自己種。想要的話請到 `/種子商店` 買，或自己去採集。') };
   }
   const have = invCount(gid, fromUser.id, give.id);
   if (have < giveCount) return { error: `你的 ${give.emoji || ''}${give.name} 不夠（有 ${have}，要給 ${giveCount}）。` };

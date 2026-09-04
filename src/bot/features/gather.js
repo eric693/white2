@@ -100,8 +100,18 @@ const money = (c, n) => `${c.currency_emoji || '🪙'} ${n.toLocaleString('en-US
 
 // 賣出單價：市場價 × (1 + 售價加成)。加成＝sell_pct（家園/家具/寵物…）＋魚類再加 fish_price_pct ＋該物品的寵物指定加成。
 // userBuffs 已把每種加成各自封頂，這裡直接相加即可。沒有 uid（純估價）就回市場價。
+// 角色禮物的回收價：規格 9 —— 禮物不能在玩家之間流通，只能用「極低價」
+// 賣回系統當清理用（例如原價 5,000 → 回收 10）。
+// 固定比例回收而不是固定金額：便宜的禮物才不會出現「賣掉比買進還賺」。
+// 加成（賣價 +%、料理加成…）一律不套用在禮物上，不然回收價會被拱高。
+const GIFT_BUYBACK_PCT = 0.2;          // 原價的 0.2%
+const GIFT_BUYBACK_MIN = 1;            // 至少 1 星幣，免得變成 0 讓人以為壞掉
+
 function sellUnit(gid, uid, item) {
   const base = livePrice(gid, item);
+  if (item && item.kind === 'gift') {
+    return Math.max(GIFT_BUYBACK_MIN, Math.floor((item.price || base) * GIFT_BUYBACK_PCT / 100));
+  }
   if (!uid) return base;
   const b = userBuffs(gid, uid);
   const pct = (b.sell_pct || 0) + (item.kind === 'fish' ? (b.fish_price_pct || 0) : 0) + itemBoost(gid, uid, item.name);
@@ -187,8 +197,9 @@ function seedMaps(gid) {
     tx();
   } catch (e) { logError(gid, '地圖預設建立失敗：', e.message); }
 }
-// 預設抽籤獎池：[名稱, emoji, 類型, 星幣, 幸運%, 權重, 排序]
-// 後台（釣魚挖礦頁 → 每日抽籤獎池）可改；這裡只在該伺服器完全沒獎項時灌一次。
+// 抽籤獎池（每日抽籤已於 2026-09 下架）。
+// 資料與後台頁保留，是因為「幸運符」這個道具還在用同一組欄位，
+// 而且哪天要把抽籤開回來也不必重建獎池。玩家端已經沒有任何入口。
 const SEED_PRIZES = [
   ['銅獎', '🥉', 'coin', 10, 0, 34, 0],
   ['銀獎', '🥈', 'coin', 25, 0, 26, 1],
@@ -205,7 +216,7 @@ function seedPrizes(gid) {
     tx();
   } catch (e) { logError(gid, '抽籤獎池預設建立失敗：', e.message); }
 }
-// 目前有效的獎池（全被停用或刪光時，退回預設獎池，避免 /抽籤 直接壞掉）
+// 目前有效的獎池（抽籤已下架，這裡只剩後台頁在讀）
 function prizePool(gid) {
   const rows = db.prepare('SELECT * FROM lottery_prizes WHERE guild_id=? AND enabled=1 AND weight>0 ORDER BY sort, id').all(gid);
   if (rows.length) return rows;
@@ -512,7 +523,7 @@ function currentTool(gid, userId, kind) {
 // 免費工具（售價 0）修理免費；其餘＝售價一半（可在後台自訂 repair_cost）
 const repairCostOf = (t) => (t.repair_cost > 0 ? t.repair_cost : Math.ceil((t.price || 0) / 2));
 
-// ---- 幸運加成（每日抽籤的幸運符）：回傳目前有效的額外幸運 %，過期自動視為 0 ----
+// ---- 幸運加成（幸運符）：回傳目前有效的額外幸運 %，過期自動視為 0 ----
 function activeLuck(gid, userId) {
   const row = db.prepare('SELECT pct, expire_at FROM luck_buffs WHERE guild_id=? AND user_id=?').get(gid, userId);
   return row && row.expire_at > Date.now() ? row.pct : 0;
@@ -962,7 +973,7 @@ const FAC_COLOR = { field: 0xf1c40f, greenhouse: 0x1abc9c, ranch: 0xe91e63, hatc
 
 // 「冒險面板」也放進來，讓管理員可以在後台把發布面板的權限授權給某個身分組
 // （例如大總管），不必為了發面板就給對方 Discord 的「管理伺服器」權限。
-const CMD_LIST = [...GATHER_CMDS, '製作', '鍛造', '配方', '錢包', '明細', '背包', '倉庫', '賣出', '商店', '購買', '圖鑑', '任務', '轉帳', '富豪榜', '抽籤', '地圖', '修理', '狀態', '冒險面板'];
+const CMD_LIST = [...GATHER_CMDS, '製作', '鍛造', '配方', '錢包', '明細', '背包', '倉庫', '賣出', '商店', '購買', '圖鑑', '任務', '轉帳', '富豪榜', '地圖', '修理', '狀態', '冒險面板'];
 const CMD_DEFAULT = (cmd) => ({
   enabled: 1,
   roles: '',
@@ -1414,7 +1425,7 @@ function init(client) {
     // 冒險面板按鈕 → 對應到同名指令（只接無參數的動作）
     const GATHER_BTN = {
       'adv:fish': '釣魚', 'adv:mine': '挖礦', 'adv:wood': '伐木', 'adv:forage': '採集', 'adv:hunt': '狩獵',
-      'adv:bag': '背包', 'adv:storage': '倉庫', 'adv:wallet': '錢包', 'adv:ledger': '明細', 'adv:sellall': '賣出', 'adv:draw': '抽籤', 'adv:map': '地圖',
+      'adv:bag': '背包', 'adv:storage': '倉庫', 'adv:wallet': '錢包', 'adv:ledger': '明細', 'adv:sellall': '賣出', 'adv:map': '地圖',
       'adv:rich': '富豪榜', 'adv:store': '商店', 'adv:recipe': '配方', 'adv:status': '狀態',
       // 製作分類的按鈕：製作／鍛造／修理各自對應同名指令的面板
       'adv:craftmake': '製作', 'adv:forge': '鍛造', 'adv:repair': '修理',
@@ -1425,7 +1436,7 @@ function init(client) {
     if (isBtn && GATHER_BTN[i.customId]) name = GATHER_BTN[i.customId];
     else if (i.isChatInputCommand()) name = i.commandName;
     else return;
-    const ALL = ['錢包', '明細', '背包', '倉庫', '賣出', '商店', '購買', '圖鑑', '富豪榜', '製作', '鍛造', '配方', '任務', '轉帳', '抽籤', '地圖', '修理', '狀態'];
+    const ALL = ['錢包', '明細', '背包', '倉庫', '賣出', '商店', '購買', '圖鑑', '富豪榜', '製作', '鍛造', '配方', '任務', '轉帳', '地圖', '修理', '狀態'];
     if (!GATHER_CMD[name] && !ALL.includes(name)) return;
 
     const gid = i.guildId;
@@ -1514,7 +1525,7 @@ function init(client) {
           return i.reply({ content: `還要休息 **${fmtWait(cd.wait)}**（<t:${nextTs}:R> 可再${KIND_NAME[kind]}）。`, flags: MessageFlags.Ephemeral });
         }
 
-        // 幸運＝道具幸運 + 抽籤幸運符 + 地圖幸運
+        // 幸運＝道具幸運 + 幸運符 + 地圖幸運
         const buffLuck = activeLuck(gid, uid);
         const mapLuck = map ? (map.luck_bonus || 0) : 0;
         const item = rollItem(gid, kind, (tool.luck || 0) + buffLuck + mapLuck, uid);
@@ -2190,7 +2201,6 @@ function init(client) {
         // 持股
         const mkC = guildConfig('market_config', gid);
         const hold = db.prepare('SELECT COALESCE(SUM(h.shares),0) sh, COALESCE(SUM(h.shares*s.price),0) val, COUNT(*) c FROM stock_holdings h JOIN stock_symbols s ON s.id=h.symbol_id WHERE h.guild_id=? AND h.user_id=? AND h.shares>0').get(gid, tid);
-        const drew = db.prepare('SELECT 1 FROM lottery_draws WHERE guild_id=? AND user_id=? AND day=?').get(gid, tid, today());
         const embed = new EmbedBuilder().setColor(brandColor()).setTitle(`📊 ${target.username} 的冒險狀態`)
           .setThumbnail(target.displayAvatarURL())
           .addFields(
@@ -2212,7 +2222,6 @@ function init(client) {
             { name: '📈 持股', value: (mkC.stock_enabled ? (hold.sh > 0 ? `${hold.c} 支 共 ${hold.sh.toLocaleString('en-US')} 股　市值約 ${hold.val.toLocaleString('en-US')}` : '目前沒有持股') : '股市未開放'), inline: true },
             { name: '🎒 背包', value: `${bag.kinds} 種 ${bag.total} 個　全賣約 ${bag.val.toLocaleString('en-US')}`, inline: false },
             { name: '🔨 工具', value: toolLines.join('\n'), inline: false },
-            { name: '🎲 每日抽籤', value: drew ? '今天已抽 ✅' : '今天還沒抽，快 /抽籤！', inline: false }
           )
           .setFooter({ text: '牧場/農地/溫室/孵化室的格子：/設施商店 買等級，或 /製作 一格一格開' });
         // 有磨損的工具就給修理選單，玩家不用打 /修理 也不用記名字（只有看自己時才給）
@@ -2235,39 +2244,14 @@ function init(client) {
         return await reply({ embeds: [embed], components: repairRow });
       }
 
-      // ---- 每日抽籤 ----
+      // 每日抽籤已於 2026-09 完整下架：指令、面板按鈕、獎勵、提示與規則全部移除。
+      // 這裡保留一個攔截分支，是因為 Discord 端的指令清單有快取，舊的
+      // /抽籤 可能還按得到——直接不處理的話玩家只會看到「應用程式沒有回應」。
       if (name === '抽籤') {
-        const day = today();
-        const drew = db.prepare('SELECT 1 FROM lottery_draws WHERE guild_id=? AND user_id=? AND day=?').get(gid, uid, day);
-        if (drew) {
-          const buff = activeLuck(gid, uid);
-          return i.reply({ content: `你今天已經抽過了，明天再來！${buff ? `（幸運符生效中 +${buff}%，<t:${Math.floor(endOfTodayMs() / 1000)}:R> 到期）` : ''}`, flags: MessageFlags.Ephemeral });
-        }
-        // 獎項（權重）由後台設定；預設是星幣為主，偶爾抽到幸運符（當日提升稀有掉落率）
-        const PRIZES = prizePool(gid);
-        const total = PRIZES.reduce((a, p) => a + p.weight, 0);
-        let r = Math.random() * total, prize = PRIZES[0];
-        for (const p of PRIZES) { r -= p.weight; if (r <= 0) { prize = p; break; } }
-
-        db.prepare('INSERT OR IGNORE INTO lottery_draws (guild_id,user_id,day) VALUES (?,?,?)').run(gid, uid, day);
-        let desc = '';
-        if (prize.type === 'coin') {
-          const now = addCoins(gid, uid, uname, prize.amount, '每日抽獎', prize.name);
-          desc = `抽中 ${prize.emoji} **${prize.name}**：${money(c, prize.amount)}！\n餘額 ${now.toLocaleString('en-US')} ${c.currency_name}`;
-        } else if (prize.type === 'luck') {
-          const exp = endOfTodayMs();
-          db.prepare('INSERT INTO luck_buffs (guild_id,user_id,pct,expire_at) VALUES (?,?,?,?) ON CONFLICT(guild_id,user_id) DO UPDATE SET pct=excluded.pct, expire_at=excluded.expire_at').run(gid, uid, prize.pct, exp);
-          desc = `抽中 ${prize.emoji} **${prize.name}**：今天採集稀有率 **+${prize.pct}%**！\n有效至 <t:${Math.floor(exp / 1000)}:R>`;
-        } else {
-          const exp = endOfTodayMs();
-          const now = addCoins(gid, uid, uname, prize.amount, '每日抽獎', prize.name);
-          db.prepare('INSERT INTO luck_buffs (guild_id,user_id,pct,expire_at) VALUES (?,?,?,?) ON CONFLICT(guild_id,user_id) DO UPDATE SET pct=excluded.pct, expire_at=excluded.expire_at').run(gid, uid, prize.pct, exp);
-          desc = `🎉 抽中 ${prize.emoji} **${prize.name}**：${money(c, prize.amount)} ＋ 今天稀有率 **+${prize.pct}%**！\n餘額 ${now.toLocaleString('en-US')} ${c.currency_name}`;
-        }
-        const embed = new EmbedBuilder().setColor(prize.type === 'coin' ? brandColor() : 0xf1c40f)
-          .setTitle('🎲 每日抽籤').setDescription(desc)
-          .setFooter({ text: '每天可抽一次，幸運符當日有效、會疊加到採集幸運值' });
-        return await reply({ embeds: [embed] });
+        return i.reply({
+          content: '🎲 每日抽籤已經下架了，改用 `/簽到`（回小屋簽到領星幣，連續簽到還有加碼）。',
+          flags: MessageFlags.Ephemeral
+        });
       }
 
       // ---- 地圖：查看與切換 ----

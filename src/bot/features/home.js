@@ -233,6 +233,24 @@ function homePanel(gid, uid, uname, displayName) {
   return { embeds: [embed], components: rows };
 }
 
+// 簽到獎勵下修（2026-09）：規格要求「降低直接發放星幣」。
+// 每日抽籤下架後，簽到變成唯一的每日免費星幣來源，原本的數字（基礎 500
+// ＋連續 100/天＋滿週 3000）等於躺著就有穩定收入，會把物價撐起來。
+// 一律砍到四成左右，實際數值仍由後台自行調整。
+// 只動還停在舊預設值的伺服器，後台改過的不覆蓋。
+(function migrateCheckinRewards() {
+  const { getSetting, setSetting } = require('../../db');
+  if (getSetting('checkin_2026_09_migrated', '0') === '1') return;
+  try {
+    db.prepare(`UPDATE home_config SET
+      checkin_base   = CASE WHEN checkin_base   = 500  THEN 200  ELSE checkin_base END,
+      checkin_streak = CASE WHEN checkin_streak = 100  THEN 40   ELSE checkin_streak END,
+      checkin_week   = CASE WHEN checkin_week   = 3000 THEN 1200 ELSE checkin_week END`).run();
+    setSetting('checkin_2026_09_migrated', '1');
+    console.log('  ↳ 簽到：已下修每日發放的星幣（後台可再調）');
+  } catch (e) { console.error('簽到獎勵搬遷失敗：', e.message); }
+})();
+
 // ---- 每日簽到（在自己的小屋簽到領金幣）----
 // 連續天數會加碼，斷一天就從頭；房屋階級越高簽到領越多，讓蓋房子有日常回報。
 const DOW = ['週一', '週二', '週三', '週四', '週五', '週六', '週日'];
