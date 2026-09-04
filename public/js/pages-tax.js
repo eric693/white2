@@ -1,10 +1,12 @@
-// ===== 稅金：農地稅／養殖稅／所得稅，定期自動結算 =====
+// ===== 稅金：所得稅／同居稅／寵物稅／房屋稅，四者獨立，定期自動結算 =====
+// 2026-09 改版：農地稅、養殖稅、證券稅、消費稅全部停徵（欄位保留給舊資料）。
 App.page('tax', {
   help: {
-    "intro": "定期把囤積的星幣抽回來，避免通貨膨脹。可分別開關所得稅、農地稅、養殖稅、消費稅與證券稅。",
+    "intro": "四種稅各自獨立：所得稅看實際獲利、同居稅看角色數量、寵物稅看寵物隻數、房屋稅看房屋等級。",
     "steps": [
       "先選結算週期與時間，再逐項開關要課哪些稅。",
-      "所得稅設免稅額與累進級距：超過免稅額的部分才課，每一級距只對超出的部分適用該稅率。",
+      "所得稅只課「這一期實際賺到的錢」：收入類進帳＋股票賣出後的淨損益。轉帳、存提款、信貸本金、退款與股票未實現漲跌都不算。",
+      "同居稅與寵物稅是倍增累進：第 1 個＝基礎、第 2 個 ×2、第 3 個 ×4…數量上限已取消，改用稅金節制。",
       "按「試算」可以先看這期會課到誰、各課多少，確認沒問題再等排程自動跑。"
     ],
     "notes": [
@@ -15,7 +17,7 @@ App.page('tax', {
     "terms": [
       [
         "稅基",
-        "課稅的計算基礎，可選餘額、本期收入或兩者取高。取高＝把錢花掉或囤著都逃不掉。"
+        "課稅的計算基礎。2026-09 起固定是「本期實際獲利」，不再對餘額或既有資產課稅。"
       ],
       [
         "欠稅",
@@ -23,7 +25,7 @@ App.page('tax', {
       ]
     ]
   },
-  title: '稅金', sub: '定期課徵農地稅／養殖稅／所得稅，把囤積的星幣抽回去', module: 'tax',
+  title: '稅金', sub: '所得稅（實際獲利）／同居稅／寵物稅／房屋稅，四者獨立計算', module: 'tax',
 
   async render(el) {
     await H.loadMeta();
@@ -70,21 +72,22 @@ App.page('tax', {
           <textarea name="exempt_roles" rows="2" placeholder="身分組 ID">${UI.esc(c.exempt_roles || '')}</textarea></div>
 
         <hr style="border:none;border-top:1px solid var(--border);margin:16px 0">
-        <h3>💰 所得稅（對「目前餘額」累進課徵）</h3>
+        <h3>💰 所得稅（只課「本期實際獲利」）</h3>
         <div class="field">${H.toggle('income_enabled', c.income_enabled, '開徵所得稅')}</div>
+        <div class="hint" style="margin-bottom:10px">
+          <b>課稅基準已固定為「本期實際獲利」</b>，不再能選餘額或總資產——
+          對既有資產課稅會變成玩家沒賺到錢也要繳。<br>
+          ✅ <b>計入</b>：賣東西、任務、簽到、成就、大賽、魚缸收成等收入，
+          ＋ 股票<b>賣出後</b>的淨損益（買賣手續費已含在內）。<br>
+          🚫 <b>不計入</b>：轉帳、銀行存提款、信貸本金與還款、各種退款、交易返還、
+          股票未實現漲跌，以及玩家原本就有的資產與餘額。
+        </div>
         <div class="form-row">
           <div class="field"><label>免稅額</label><input name="income_free" type="number" min="0" value="${c.income_free ?? 100000}">
-            <div class="hint">餘額低於這個數字完全不課，超過的部分才進級距。</div></div>
+            <div class="hint">本期獲利低於這個數字完全不課，超過的部分才進級距。</div></div>
           <div class="field"><label>單次稅額上限（占餘額 %）</label><input name="income_max_pct" type="number" min="0" max="100" value="${c.income_max_pct ?? 50}">
-            <div class="hint">三稅合計不會超過餘額的這個比例，避免一次被抄家。</div></div>
+            <div class="hint">四稅合計不會超過餘額的這個比例，避免一次被抄家。超過時先砍所得稅。</div></div>
         </div>
-        <div class="field"><label>課稅基準（要對什麼課）</label>
-          <select name="income_base">
-            <option value="balance" ${(c.income_base||'balance')==='balance'?'selected':''}>目前錢包餘額（花掉就課不到）</option>
-            <option value="earned" ${c.income_base==='earned'?'selected':''}>本期總收入（這期賺多少就課多少，花掉也逃不掉）</option>
-            <option value="max" ${c.income_base==='max'?'selected':''}>兩者取高（推薦：花掉、囤著都逃不掉，且不會重複課）</option>
-          </select>
-          <div class="hint">本期總收入＝上次結算之後入帳的星幣總和（採集、收成、撈金、賣股…都算）。結算後自動歸零重新算。</div></div>
         <div class="field">${H.toggle('income_flat', c.income_flat ?? 1, '整筆跳級（餘額落在哪一級，就用那一級的 % 課整個餘額）')}
           <div class="hint">關閉＝分段累進（像真實所得稅，只對超過的那一段課）。</div></div>
         <div class="table-wrap"><table class="list" id="bktable">
@@ -97,23 +100,28 @@ App.page('tax', {
           預設級距已改成<b>級距小、稅率低</b>（1／2／3／5／7／10／13／17／20%，共 9 級）：跳一級不會突然爆增，級距之間的差別也比較有感。要恢復預設就把下面的級距全部刪掉再儲存。</div>
 
         <hr style="border:none;border-top:1px solid var(--border);margin:16px 0">
-        <h3>🌾 農地稅（依「種著作物的格數」課，空地不課）</h3>
-        <div class="field">${H.toggle('land_enabled', c.land_enabled, '開徵農地稅')}</div>
-        <div class="form-row">
-          <div class="field"><label>每格農地</label><input name="land_field" type="number" min="0" value="${c.land_field ?? 50}"></div>
-          <div class="field"><label>每格溫室</label><input name="land_greenhouse" type="number" min="0" value="${c.land_greenhouse ?? 120}"></div>
-          <div class="field"><label>前幾格免稅</label><input name="land_free" type="number" min="0" value="${c.land_free ?? 2}"></div>
-        </div>
-        <div class="hint">只算「正在種東西」的格子，所以放著不採收＝一直被課稅，會逼玩家把作物收掉。</div>
-
-        <hr style="border:none;border-top:1px solid var(--border);margin:16px 0">
-        <h3>🐄 養殖稅（牧場動物＋魚缸的魚）</h3>
-        <div class="field">${H.toggle('breed_enabled', c.breed_enabled, '開徵養殖稅')}</div>
-        <div class="form-row">
-          <div class="field"><label>每隻牧場動物</label><input name="breed_animal" type="number" min="0" value="${c.breed_animal ?? 80}"></div>
-          <div class="field"><label>每條 SSR 魚</label><input name="breed_fish" type="number" min="0" value="${c.breed_fish ?? 200}"></div>
-          <div class="field"><label>前幾隻／條免稅</label><input name="breed_free" type="number" min="0" value="${c.breed_free ?? 1}"></div>
-        </div>
+        <details>
+          <summary><b>🗄️ 農地稅／養殖稅（2026-09 已停徵）</b></summary>
+          <div class="hint" style="margin:8px 0">
+            這兩種都是「依既有資產課稅」——玩家沒賺到錢也要繳，錢包被慢慢刮掉，
+            與新制「只課實際獲利」直接衝突，所以已經停徵，設定值不再影響結算。
+            欄位保留只是為了讓舊資料看得懂；真的要開回來就把開關打開。
+          </div>
+          <div class="field">${H.toggle('land_enabled', c.land_enabled, '開徵農地稅（已停用）')}</div>
+          <div class="form-row">
+            <div class="field"><label>每格農地</label><input name="land_field" type="number" min="0" value="${c.land_field ?? 50}"></div>
+            <div class="field"><label>每格溫室</label><input name="land_greenhouse" type="number" min="0" value="${c.land_greenhouse ?? 120}"></div>
+            <div class="field"><label>前幾格免稅</label><input name="land_free" type="number" min="0" value="${c.land_free ?? 2}"></div>
+          </div>
+          <div class="field">${H.toggle('breed_enabled', c.breed_enabled, '開徵養殖稅（已停用）')}</div>
+          <div class="form-row">
+            <div class="field"><label>每隻牧場動物</label><input name="breed_animal" type="number" min="0" value="${c.breed_animal ?? 80}"></div>
+            <div class="field"><label>每條 SSR 魚</label><input name="breed_fish" type="number" min="0" value="${c.breed_fish ?? 200}"></div>
+            <div class="field"><label>前幾隻／條免稅</label><input name="breed_free" type="number" min="0" value="${c.breed_free ?? 1}"></div>
+          </div>
+          <div class="field"><label>設施每高一階，土地稅 +N%</label><input name="land_tier_pct" type="number" min="0" value="${c.land_tier_pct ?? 20}"></div>
+        </details>
+      </div>
 
       <div class="card" style="max-width:820px">
         <h3>🏡 房屋稅</h3>
@@ -125,33 +133,51 @@ App.page('tax', {
         </div>
         <div class="form-row">
           <div class="field"><label>每件「已擺出」的家具加課</label><input name="house_furniture" type="number" min="0" value="${c.house_furniture ?? 50}"></div>
-          <div class="field"><label>每隻寵物加課</label><input name="house_pet" type="number" min="0" value="${c.house_pet ?? 150}"></div>
+          <div class="field"><label>每隻寵物加課（已停用）</label><input name="house_pet" type="number" min="0" value="${c.house_pet ?? 0}">
+            <div class="hint">寵物已經另有<b>寵物稅</b>，這裡再加課會變成同一隻課兩次，所以改版時歸零了。</div></div>
         </div>
-        <div class="hint">公式：基礎 ×（房屋階級 − 免稅階）^ 指數 ＋ 家具×單價 ＋ 寵物×單價。
-          目前設定下，Lv.15 的房子光階級就要 ${Math.round((c.house_base ?? 300) * Math.pow(15 - (c.house_free ?? 3), c.house_curve ?? 1.6)).toLocaleString('en-US')} 星幣／期。</div>
+        <div class="field"><label>各級房屋稅（選填，JSON）</label>
+          <input name="house_lv_table" value="${UI.esc(c.house_lv_table || '')}" placeholder='{"10":20000,"15":80000}'>
+          <div class="hint">想直接指定「幾階收多少」時填這裡，例如 <code>{"10":20000}</code>＝Lv.10 固定收 20,000。
+            沒填到的階級、或整欄留空，就用上面的曲線公式。填錯格式不會覆蓋原本的設定。</div></div>
+        <div class="hint">公式：基礎 ×（房屋階級 − 免稅階）^ 指數 ＋ 家具×單價。
+          2026-09 起整體調高（基礎 300 → 900）：家園加成是永久的，稅太輕蓋房子就變成純賺。<br>
+          目前設定下，Lv.15 的房子光階級就要 ${Math.round((c.house_base ?? 900) * Math.pow(15 - (c.house_free ?? 3), c.house_curve ?? 1.6)).toLocaleString('en-US')} 星幣／期。</div>
       </div>
 
       <div class="card" style="max-width:820px">
-        <h3>💞 伴侶稅</h3>
-        <div class="field">${H.toggle('partner_enabled', c.partner_enabled ?? 1, '課伴侶稅（角色搬進家裡就要養）')}</div>
+        <h3>💞 同居稅（倍增累進）</h3>
+        <div class="field">${H.toggle('partner_enabled', c.partner_enabled ?? 1, '課同居稅（角色搬進家裡就要養）')}</div>
         <div class="form-row">
-          <div class="field"><label>每位同居角色的基本額</label><input name="partner_base" type="number" min="0" value="${c.partner_base ?? 5000}"></div>
-          <div class="field"><label>好感度每一階再加課</label><input name="partner_per_lv" type="number" min="0" value="${c.partner_per_lv ?? 1500}"></div>
+          <div class="field"><label>第 1 位的基礎稅額</label><input name="partner_base" type="number" min="0" value="${c.partner_base ?? 5000}"></div>
+          <div class="field"><label>每多一位乘幾倍</label><input name="partner_step" type="number" min="2" max="10" value="${c.partner_step ?? 2}"></div>
         </div>
-        <div class="hint">例：基本 5,000 ＋ 每階 1,500，好感度 Lv.8 的同居對象每期就是 17,000。
-          關係越深越花錢，這是刻意的 —— 同居名額在「家園與成就」那頁設定。</div>
+        <div class="hint">
+          第 1 位＝基礎、第 2 位 ×${c.partner_step ?? 2}、第 3 位 ×${Math.pow(c.partner_step ?? 2, 2)}…依此類推。
+          目前設定下養 3 位每期共 <b>${(() => { const st = c.partner_step ?? 2, b0 = c.partner_base ?? 5000;
+            return Math.floor(b0 * (Math.pow(st, 3) - 1) / (st - 1)).toLocaleString('en-US'); })()}</b> 星幣。<br>
+          <b>同居人數已經沒有上限</b>，改由這條稅自然節制——養得起就儘管養。
+          （好感度加課 partner_per_lv 是舊制，已不再計入。）</div>
 
-        <h3 style="margin-top:18px">🌾 土地稅的等級加成</h3>
-        <div class="field"><label>設施每高一階，土地稅 +N%</label><input name="land_tier_pct" type="number" min="0" value="${c.land_tier_pct ?? 20}">
-          <div class="hint">12 階的大農場產量是入門田的好幾倍，稅不該一樣。0＝只按格數課稅（舊行為）。</div></div>
+        <h3 style="margin-top:18px">🐾 寵物稅（倍增累進）</h3>
+        <div class="field">${H.toggle('pet_enabled', c.pet_enabled ?? 1, '課寵物稅')}</div>
+        <div class="form-row">
+          <div class="field"><label>第 1 隻的基礎稅額</label><input name="pet_base" type="number" min="0" value="${c.pet_base ?? 3000}"></div>
+          <div class="field"><label>每多一隻乘幾倍</label><input name="pet_step" type="number" min="2" max="10" value="${c.pet_step ?? 2}"></div>
+        </div>
+        <div class="hint">
+          算法跟同居稅一樣。目前設定下養 3 隻每期共 <b>${(() => { const st = c.pet_step ?? 2, b0 = c.pet_base ?? 3000;
+            return Math.floor(b0 * (Math.pow(st, 3) - 1) / (st - 1)).toLocaleString('en-US'); })()}</b> 星幣。<br>
+          <b>寵物隻數也沒有上限</b>，已領養的寵物永久保留、可自由替換，不必重買也不會重置養成資料。</div>
       </div>
 
 
 
         <hr style="border:none;border-top:1px solid var(--border);margin:16px 0">
-        <h3>🛍️ 消費稅（本期在神秘商店兌換掉的金額）</h3>
-        <div class="hint" style="margin-bottom:10px">堵住「結算前把錢換成圖就課不到」的漏洞：這一期兌換花掉多少，就照比例課。上次結算之後的兌換才算，同一筆不會被課兩次。</div>
-        <div class="field">${H.toggle('spend_enabled', c.spend_enabled, '開徵消費稅')}</div>
+        <h3>🗄️ 消費稅（2026-09 已停徵）</h3>
+        <div class="hint" style="margin-bottom:10px"><b>已停徵，設定值不影響結算。</b>
+          新制只課「實際賺到的錢」，把錢花掉本來就不是收入，再課一次等於重複課稅。欄位保留給舊資料。</div>
+        <div class="field">${H.toggle('spend_enabled', c.spend_enabled, '開徵消費稅（已停用）')}</div>
         <div class="form-row">
           <div class="field"><label>稅率 %（本期兌換金額）</label><input name="spend_pct" type="number" min="0" max="100" step="0.5" value="${c.spend_pct ?? 20}">
             <div class="hint">例如 20%：這期兌換花了 20,000 → 課 4,000。</div></div>
@@ -196,7 +222,10 @@ App.page('tax', {
         </div>
         <hr style="border:none;border-top:1px solid var(--border);margin:16px 0">
         <h3>📈 證券稅（依「持股市值」課，股票也要繳稅）</h3>
-        <div class="field">${H.toggle('stock_enabled', c.stock_enabled, '開徵證券稅')}</div>
+        <div class="hint" style="margin-bottom:10px"><b>⚠️ 證券稅已於 2026-09 停徵，設定值不影響結算。</b>
+          股票改成只收<b>買賣手續費各 1.5%</b>，並採<b>實現獲利制</b>——賣出後的淨獲利才計入所得稅，
+          未實現的漲跌不課。再按持股市值課一次證券稅會與這條規則直接衝突。</div>
+        <div class="field">${H.toggle('stock_enabled', c.stock_enabled, '開徵證券稅（已停用）')}</div>
         <div class="form-row">
           <div class="field"><label>稅率 %（持股市值）</label><input name="stock_pct" type="number" min="0" max="100" step="0.5" value="${c.stock_pct ?? 5}">
             <div class="hint">市值＝所有持股的「股數 × 現價」，現價是負數的股票不計入、也不會退稅。</div></div>

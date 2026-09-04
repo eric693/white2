@@ -40,6 +40,9 @@ router.put('/tax', (req, res) => {
        land_enabled=@land_enabled, land_field=@land_field, land_greenhouse=@land_greenhouse, land_free=@land_free,
        breed_enabled=@breed_enabled, breed_animal=@breed_animal, breed_fish=@breed_fish, breed_free=@breed_free,
        partner_enabled=@partner_enabled, partner_base=@partner_base, partner_per_lv=@partner_per_lv,
+       partner_step=@partner_step,
+       pet_enabled=@pet_enabled, pet_base=@pet_base, pet_step=@pet_step,
+       house_lv_table=@house_lv_table,
        land_tier_pct=@land_tier_pct,
        house_enabled=@house_enabled, house_base=@house_base, house_curve=@house_curve,
        house_free=@house_free, house_furniture=@house_furniture, house_pet=@house_pet,
@@ -75,10 +78,16 @@ router.put('/tax', (req, res) => {
     breed_animal: keep(b.breed_animal, 'breed_animal', v => int(v, 80, 0)),
     breed_fish: keep(b.breed_fish, 'breed_fish', v => int(v, 200, 0)),
     breed_free: keep(b.breed_free, 'breed_free', v => int(v, 1, 0)),
-    // 伴侶稅：同居角色每位的基本額 ＋ 好感度每階加課
+    // 同居稅：倍增累進——第 1 位＝基礎，第 2 位 ×step，第 3 位 ×step²…
+    // （partner_per_lv 是舊制的「好感度每階加課」，2026-09 起不再計入，欄位保留給舊資料）
     partner_enabled: bool(b.partner_enabled, 'partner_enabled'),
     partner_base: keep(b.partner_base, 'partner_base', v => int(v, 5000, 0)),
     partner_per_lv: keep(b.partner_per_lv, 'partner_per_lv', v => int(v, 1500, 0)),
+    partner_step: keep(b.partner_step, 'partner_step', v => Math.max(2, Math.min(10, int(v, 2, 2)))),
+    // 寵物稅：同樣倍增累進
+    pet_enabled: bool(b.pet_enabled, 'pet_enabled'),
+    pet_base: keep(b.pet_base, 'pet_base', v => int(v, 3000, 0)),
+    pet_step: keep(b.pet_step, 'pet_step', v => Math.max(2, Math.min(10, int(v, 2, 2)))),
     // 土地稅依設施等級加成（每階 +N%）
     land_tier_pct: keep(b.land_tier_pct, 'land_tier_pct', v => int(v, 20, 0)),
     // 房屋稅：階級指數成長 ＋ 家具與寵物加課
@@ -88,6 +97,13 @@ router.put('/tax', (req, res) => {
     house_free: keep(b.house_free, 'house_free', v => int(v, 3, 0)),
     house_furniture: keep(b.house_furniture, 'house_furniture', v => int(v, 50, 0)),
     house_pet: keep(b.house_pet, 'house_pet', v => int(v, 150, 0)),
+    // 各級房屋稅直接指定（JSON，如 {"10":20000}）；留空就用上面的曲線公式
+    house_lv_table: keep(b.house_lv_table, 'house_lv_table', v => {
+      const t = String(v || '').trim();
+      if (!t) return '';
+      try { const o = JSON.parse(t); return (o && typeof o === 'object') ? JSON.stringify(o) : ''; }
+      catch { return cur.house_lv_table || ''; }   // 打錯字不要把原本的設定清掉
+    }),
     // 證券稅：按持股市值課
     stock_enabled: bool(b.stock_enabled, 'stock_enabled'),
     stock_pct: keep(b.stock_pct, 'stock_pct', v => Math.max(0, Math.min(100, Math.round(parseFloat(v) * 100) / 100 || 0))),
