@@ -11,7 +11,7 @@
 
 const SECRETARY_FEATURES = [
   'keywords', 'alerts', 'forum', 'reactionroles', 'welcome', 'birthday',
-  'announcements', 'poll', 'giveaway', 'wheel', 'reminder', 'music', 'tickets', 'xp'
+  'announcements', 'poll', 'giveaway', 'wheel', 'postwheel', 'reminder', 'music', 'tickets', 'xp'
 ];
 
 const BUTLER_FEATURES = [
@@ -62,7 +62,7 @@ const COMMAND_FEATURE = {
   play: 'music', join: 'music', leave: 'music', skip: 'music', prev: 'music', pause: 'music',
   resume: 'music', stop: 'music', clear: 'music', queue: 'music', np: 'music', shuffle: 'music',
   volume: 'music', remove: 'music', move: 'music', loop: 'music',
-  '抽獎': 'giveaway', '取消抽獎': 'giveaway',
+  '抽獎': 'giveaway', '取消抽獎': 'giveaway', '貼文轉盤': 'wheel',
   '客服面板': 'tickets', '投票': 'poll', '論壇整理': 'forum',
   '等級': 'xp', '排行': 'xp',
   // 管家

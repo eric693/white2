@@ -155,11 +155,11 @@ async function openTicket(i, subject, panelId) {
   const welcome = String(panel.welcome_text || c.welcome_text || '').replace(/{user}/g, `<@${i.user.id}>`).replace(/{username}/g, i.user.username);
   const embed = new EmbedBuilder().setColor(brandColor()).setTitle(`客服單 #${ticketId}`)
     .setDescription(welcome + (subject ? `\n\n**主旨**：${subject}` : ''))
-    .setFooter({ text: '處理完成後可按下方按鈕關閉此單' });
+    .setFooter({ text: '處理完成後由客服人員結案關閉；開單者可持續在此回覆補充' });
   const openExtra = attachImages(embed, panel.open_images, panel.open_image);
   // 關閉按鈕 + 面板設定的超連結按鈕
   const rows = [new ActionRowBuilder().addComponents(
-    new ButtonBuilder().setCustomId(`ticket:close:${ticketId}`).setLabel('關閉客服單').setStyle(ButtonStyle.Danger))];
+    new ButtonBuilder().setCustomId(`ticket:close:${ticketId}`).setLabel('關閉客服單（限客服）').setStyle(ButtonStyle.Danger))];
   rows.push(...buildButtonRows(panel.open_links));
   const supportTags = supportRoles.map(id => `<@&${id}>`).join(' ');
   await channel.send({ content: `<@${i.user.id}> ${supportTags}`, embeds: [embed, ...openExtra], components: rows.slice(0, 5) }).catch(() => {});
@@ -172,11 +172,16 @@ async function closeTicket(i, ticketId) {
   const t = db.prepare('SELECT * FROM tickets WHERE id=?').get(ticketId);
   if (!t || t.status !== 'open') return i.reply({ content: '此客服單已關閉。', flags: MessageFlags.Ephemeral });
 
-  // 開單者本人或客服/管理員可關
+  // 只有客服／管理端可以結案。開單者不能自己關，也不能刪頻道
+  // —— 之前開放本人關閉，結果常有「誤按關閉」「還沒處理完就自己關掉」「吵完就關單跑掉」，
+  // 客服端反而找不到單。開單者仍然可以在單內正常發言、補資料。
   const isSupport = i.member.permissions.has('ManageChannels')
     || i.member.roles.cache.some(r => csv(c.support_role_ids).includes(r.id));
-  if (i.user.id !== t.user_id && !isSupport) {
-    return i.reply({ content: '只有開單者或客服人員可以關閉此單。', flags: MessageFlags.Ephemeral });
+  if (!isSupport) {
+    return i.reply({
+      content: '🔒 客服單只能由客服人員結案。\n若你的問題已經解決，直接在這裡說一聲，客服確認後會幫你關閉；在那之前你都還可以繼續回覆與補充資料。',
+      flags: MessageFlags.Ephemeral
+    });
   }
 
   db.prepare(`UPDATE tickets SET status='closed', closed_at=datetime('now','localtime'), closed_by=? WHERE id=?`)
