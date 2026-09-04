@@ -273,6 +273,123 @@ function autoIncubate(gid, uid) {
   return lines;
 }
 
+// ================== 工作區域（規格 5）==================
+// 舊做法：一位同居角色只能帶「1 個能力」，所以農地要自動化得同時有兩位——
+// 一位收成、一位播種，玩家根本湊不出來。
+//
+// 規格要的是「1 名角色負責 1 個工作區域**完整**自動化」，所以改成用區域指派：
+// 指派一位角色到「農地」，他就會收成＋重新播種；指派到「牧場」，就餵養＋
+// 照顧＋收取產物。一個區域只能派一位，一位角色也只能顧一個區域。
+//
+// 必要物資不足時自動暫停（沒種子就不播、沒飼料就不餵），補足後下一輪自然
+// 恢復——每個動作本身都會先檢查，所以不需要另外記「暫停中」的狀態。
+//
+// 換人不會動到任何資料：指派只是 home_partners.work_area 這一個欄位，
+// 設施、作物、動物、物資與進度都在玩家自己身上，跟誰在顧完全無關。
+require('../../db').ensureColumns('home_partners', {
+  work_area: "TEXT NOT NULL DEFAULT ''"
+});
+
+const WORK_AREAS = {
+  farm: {
+    name: '🌾 農地', desc: '自動收成成熟作物 ＋ 用背包裡的種子重新播種',
+    need: '農地種子（沒有就暫停播種，收成照常）'
+  },
+  greenhouse: {
+    name: '🏡 溫室', desc: '自動收成成熟花卉 ＋ 用背包裡的種子重新播種',
+    need: '溫室種子（沒有就暫停播種，收成照常）'
+  },
+  ranch: {
+    name: '🐄 牧場', desc: '自動照顧動物並收取蛋／奶進背包',
+    need: '不需要物資'
+  },
+  hatchery: {
+    name: '🥚 孵化室', desc: '自動把背包裡的蛋放進孵化室 ＋ 領走孵好的動物（牧場滿了會賣掉）',
+    need: '可孵化的蛋（沒有就暫停放蛋，領取照常）'
+  },
+  aquarium: {
+    name: '🐠 魚缸', desc: '自動餵魚 ＋ 把累積的星幣領進錢包',
+    need: '買飼料的星幣（不夠就暫停餵食，領取照常）'
+  }
+};
+
+/** 牧場：照顧動物並把成熟的產物收進背包 */
+function tendRanch(gid, uid) {
+  const { harvest } = require('./ranch');
+  const r = harvest(gid, uid);
+  if (!r || r.empty) return [];
+  return r.lines || [];
+}
+
+/** 跑完一個工作區域的完整流程，回傳做了哪些事 */
+function runArea(gid, uid, uname, area) {
+  const lines = [];
+  const push = (arr, prefix) => { if (arr && arr.length) lines.push(prefix ? `${prefix}${arr.join('、')}` : arr.join('、')); };
+  switch (area) {
+    case 'farm':
+      push(harvestPlots(gid, uid, 'field'), '收成 ');
+      push(autoPlant(gid, uid, uname, 'field'), '播種 ');
+      break;
+    case 'greenhouse':
+      push(harvestPlots(gid, uid, 'greenhouse'), '收成 ');
+      push(autoPlant(gid, uid, uname, 'greenhouse'), '播種 ');
+      break;
+    case 'ranch':
+      push(tendRanch(gid, uid), '收取 ');
+      break;
+    case 'hatchery':
+      push(autoIncubate(gid, uid), '放蛋 ');
+      push(collectHatched(gid, uid, uname), '領取 ');
+      break;
+    case 'aquarium': {
+      const { feedAll, accrue } = require('./aquarium');
+      const fed = feedAll(gid, uid, uname);
+      if (fed && !fed.error) lines.push('餵了魚');
+      accrue(gid, uid);
+      const total = db.prepare('SELECT COALESCE(SUM(pending),0) n FROM aquarium_slots WHERE guild_id=? AND user_id=?').get(gid, uid).n;
+      if (total > 0) {
+        db.transaction(() => {
+          db.prepare('UPDATE aquarium_slots SET pending=0 WHERE guild_id=? AND user_id=?').run(gid, uid);
+          require('./gather').addCoins(gid, uid, uname, total, '同居能力', '幫你收魚缸');
+        })();
+        lines.push(`魚缸領到 ${total.toLocaleString('en-US')} 星幣`);
+      }
+      break;
+    }
+    default: return [];
+  }
+  return lines;
+}
+
+/** 這位玩家目前每個區域各派了誰（沒派就是 null） */
+function areaAssignments(gid, uid) {
+  const rows = db.prepare(
+    `SELECT p.role_id, p.work_area, r.name FROM home_partners p
+       JOIN wheel_roles r ON r.id = p.role_id
+      WHERE p.guild_id=? AND p.user_id=?`).all(gid, uid);
+  const out = {};
+  for (const key of Object.keys(WORK_AREAS)) {
+    out[key] = rows.find(r => r.work_area === key) || null;
+  }
+  return out;
+}
+
+/** 指派／取消指派。一個區域只能一位，一位角色也只顧一個區域。 */
+function assignArea(gid, uid, roleId, area) {
+  if (area && !WORK_AREAS[area]) return { error: '沒有這個工作區域。' };
+  const p = db.prepare('SELECT 1 FROM home_partners WHERE guild_id=? AND user_id=? AND role_id=?').get(gid, uid, roleId);
+  if (!p) return { error: '這位角色沒有住在你家。' };
+  db.transaction(() => {
+    if (area) {
+      // 這個區域原本派的人先卸任（一個區域只能一位）
+      db.prepare("UPDATE home_partners SET work_area='' WHERE guild_id=? AND user_id=? AND work_area=?").run(gid, uid, area);
+    }
+    db.prepare('UPDATE home_partners SET work_area=? WHERE guild_id=? AND user_id=? AND role_id=?')
+      .run(area || '', gid, uid, roleId);
+  })();
+  return { ok: true, area };
+}
+
 /** 一位同居角色跑一次它的能力，回傳這次做了什麼（沒事做就回 null） */
 function runOne(gid, p, skill) {
   const uid = p.user_id, uname = p.user_name || '';
@@ -362,6 +479,27 @@ function runDaily(gid, mode = 'daily') {
       if (lines && lines.length) out.push({ user_id: p.user_id, role: p.role_name, skill: skill.name, lines });
     } catch (e) { logError(gid, `同居能力執行失敗（${p.user_id}）：`, e.message); }
   }
+
+  // ---- 工作區域（規格 5）----
+  // 跟「能力」是兩條獨立的線：能力由管理端指定、一位角色一個；
+  // 區域由玩家自己指派，一位角色包辦那個區域的完整流程。
+  // 全部都是收成／照顧類，所以只在每小時那一輪跑（每日那輪跑會讓作物卡半天）。
+  if (mode === 'hourly') {
+    const areas = db.prepare(
+      `SELECT p.user_id, p.work_area, r.name AS role_name, w.username AS user_name
+         FROM home_partners p
+         JOIN wheel_roles r ON r.id = p.role_id
+         LEFT JOIN econ_wallets w ON w.guild_id=p.guild_id AND w.user_id=p.user_id
+        WHERE p.guild_id=? AND p.work_area <> ''`).all(gid);
+    for (const p of areas) {
+      try {
+        const lines = runArea(gid, p.user_id, p.user_name || '', p.work_area);
+        if (lines.length) {
+          out.push({ user_id: p.user_id, role: p.role_name, skill: (WORK_AREAS[p.work_area] || {}).name || p.work_area, lines });
+        }
+      } catch (e) { logError(gid, `工作區域執行失敗（${p.user_id}／${p.work_area}）：`, e.message); }
+    }
+  }
   return out;
 }
 
@@ -408,7 +546,7 @@ function notifyChannel(client, gid) {
   return null;
 }
 
-module.exports = { designatedSkill,
+module.exports = { WORK_AREAS, runArea, areaAssignments, assignArea, designatedSkill,
   init, ABILITIES, KIND_LABEL, seedSkills, valueFor, skillText,
   skillsForRole, skillById, activeSkill, passivePct, runDaily, DEFAULT_SKILLS
 };

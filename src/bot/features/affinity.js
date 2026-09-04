@@ -396,13 +396,30 @@ function partnerPanel(gid, uid, uname) {
       + `⚠️ 同居稅**倍增累進**：第 1 位 ${(tc.partner_base || 0).toLocaleString('en-US')}、`
       + `第 2 位 ×${step}、第 3 位 ×${step * step}…　住越多位，每一位的稅都比前一位貴一倍。`)
     .addFields({ name: `目前同居（每期同居稅合計 ${totalTax.toLocaleString('en-US')}）`, value: list.length
-      ? list.map((p, idx) => `💕 **${p.name}**　${levelName(gid, p.level)}（Lv.${p.level}）\n`
-        + `　能力：${partnerSkillText(p, gid)}\n`
-        + `　這一位每期 ${taxAt(idx + 1).toLocaleString('en-US')}`
-        + (p.paid_total ? `　已繳 ${p.paid_total.toLocaleString('en-US')}` : '')).join('\n')
+      ? list.map((p, idx) => {
+        const area = p.work_area ? (WORK_AREAS[p.work_area] || {}).name : '';
+        return `💕 **${p.name}**　${levelName(gid, p.level)}（Lv.${p.level}）\n`
+          + `　能力：${partnerSkillText(p, gid)}\n`
+          + `　工作：${area || '沒有指派'}\n`
+          + `　這一位每期 ${taxAt(idx + 1).toLocaleString('en-US')}`
+          + (p.paid_total ? `　已繳 ${p.paid_total.toLocaleString('en-US')}` : '');
+      }).join('\n')
       : '還沒有人住進來' });
 
+  // 工作區域一覽：哪些區域已經有人顧、哪些還空著
+  const assigned = areaAssignments(gid, uid);
+  e.addFields({
+    name: '🛠️ 工作區域（一位角色包辦一個區域）',
+    value: Object.entries(WORK_AREAS).map(([key, a]) =>
+      `${a.name}　${assigned[key] ? `**${assigned[key].name}** 負責中` : '_無人_'}\n　${a.desc}`).join('\n')
+      + '\n\n_物資不足時會自動暫停（例如沒種子就不播種），補齊後下一輪自動恢復。換人不會重置任何設施、作物、動物或進度。_'
+  });
+
   const rows = [NAV('love')];
+  if (list.length) {
+    rows.push(new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId('partnerwork').setLabel('🛠️ 指派工作區域').setStyle(ButtonStyle.Primary)));
+  }
   const cands = partnerCandidates(gid, uid);
   const full = slots <= 0;   // 沒有數量上限了，只剩「房屋等級不夠」這一種不能邀請的情況
   if (!full && cands.length && def && def.visit_ok) {
@@ -475,6 +492,7 @@ function lovePanel(gid, uid, uname) {
 // 這是刻意共用的：體力就是每天唯一的行動額度，玩家得自己決定要拿去挖礦還是去逛街。
 // 而且體力**不吃任何加成** —— 家具寵物再多也不會多給體力，只能去特殊商店花錢買。
 const { staminaState, bumpPoints } = require('./gather');
+const { WORK_AREAS, areaAssignments, assignArea } = require('./partnerskills');
 
 /** 隨機挑一位角色：見過越多次的權重越低，讓沒遇過的優先出場 */
 function pickRole(gid, uid) {
@@ -877,6 +895,64 @@ function init(client) {
             ...eph
           }).catch(() => {});
         }
+        // ---- 工作區域指派（規格 5）----
+        // 兩段式：先選區域 → 再選要派誰。反過來（先選人再選區域）的話，
+        // 玩家得先記住哪個區域已經有人顧，操作起來比較費神。
+        if (i.isButton() && i.customId === 'partnerwork') {
+          const assigned = areaAssignments(gid, uid);
+          const menu = new StringSelectMenuBuilder().setCustomId('workarea')
+            .setPlaceholder('要安排哪一個工作區域？')
+            .addOptions(Object.entries(WORK_AREAS).map(([key, a]) => ({
+              label: a.name.replace(/^\S+\s*/, '').slice(0, 100) || key,
+              emoji: a.name.split(' ')[0],
+              description: (assigned[key] ? `目前：${assigned[key].name}` : '目前無人負責').slice(0, 100),
+              value: key
+            })));
+          return i.reply({
+            content: '🛠️ 一位角色可以包辦一個工作區域的完整流程。要安排哪一個？',
+            components: [new ActionRowBuilder().addComponents(menu)], ...eph
+          }).catch(() => {});
+        }
+        if (i.isStringSelectMenu() && i.customId === 'workarea') {
+          const area = i.values[0];
+          const a = WORK_AREAS[area];
+          const list2 = partnersOf(gid, uid);
+          if (!list2.length) return i.update({ content: '你家還沒有同居角色。', components: [] }).catch(() => {});
+          const menu = new StringSelectMenuBuilder().setCustomId(`workpick:${area}`)
+            .setPlaceholder('派誰負責？')
+            .addOptions([{ label: '（取消指派，這個區域改成無人負責）', value: '0' }]
+              .concat(list2.slice(0, 24).map(p => ({
+                label: p.name.slice(0, 100),
+                description: (p.work_area && p.work_area !== area
+                  ? `目前顧著 ${(WORK_AREAS[p.work_area] || {}).name || p.work_area}，改派會離開那裡`
+                  : (p.work_area === area ? '目前就是他在顧' : '目前沒有工作')).slice(0, 100),
+                value: String(p.role_id)
+              }))));
+          return i.update({
+            content: `${a.name}\n${a.desc}\n需要的物資：${a.need}\n\n派誰負責？`,
+            components: [new ActionRowBuilder().addComponents(menu)]
+          }).catch(() => {});
+        }
+        if (i.isStringSelectMenu() && i.customId.startsWith('workpick:')) {
+          const area = i.customId.split(':')[1];
+          const roleId = parseInt(i.values[0], 10);
+          const a = WORK_AREAS[area] || { name: area };
+          if (!roleId) {
+            // 取消指派：把目前顧這個區域的人卸任
+            const cur2 = areaAssignments(gid, uid)[area];
+            if (cur2) assignArea(gid, uid, cur2.role_id, '');
+            return i.update({ content: `已取消 ${a.name} 的指派，現在沒有人負責。`, components: [] }).catch(() => {});
+          }
+          const r = assignArea(gid, uid, roleId, area);
+          if (r.error) return i.update({ content: r.error, components: [] }).catch(() => {});
+          const who = partnersOf(gid, uid).find(p => p.role_id === roleId);
+          return i.update({
+            content: `✅ **${who ? who.name : '角色'}** 開始負責 ${a.name}。\n${a.desc}\n`
+              + `需要的物資：${a.need}\n_物資不足會自動暫停，補齊後下一輪自動恢復；換人不會重置任何進度。_`,
+            components: []
+          }).catch(() => {});
+        }
+
         // 送禮按鈕：兩百多位角色沒辦法全塞進下拉，所以先列「你認識的」讓他挑，
         // 想送沒互動過的角色還是可以用 /送禮 打名字搜尋。
         if (i.isButton() && (i.customId === 'giftpanel' || i.customId === 'adv:gift')) {
