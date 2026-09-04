@@ -930,7 +930,17 @@ function init(client) {
       }
 
       if (i.commandName === '持股') return i.reply({ embeds: [portfolioEmbed(gid, i.user.id, i.user.username)], flags: MessageFlags.Ephemeral });
-      if (i.commandName === '股神榜') return i.reply({ embeds: [leaderboardEmbed(gid)], flags: MessageFlags.Ephemeral });
+      if (i.commandName === '股神榜') {
+        // 個人資產私密化：損益排行等於把別人的股票資產攤開，改成管理端專用
+        const { isAdmin } = require('../privacy');
+        if (!isAdmin(i.member)) {
+          return i.reply({
+            content: '🔒 股神榜已改為管理端專用，一般玩家看不到其他人的持股與損益。\n你自己的損益請用 `/持股` 查看。',
+            flags: MessageFlags.Ephemeral
+          });
+        }
+        return i.reply({ embeds: [leaderboardEmbed(gid)], flags: MessageFlags.Ephemeral });
+      }
     } catch (e) {
       logError(i.guildId, '股市互動失敗：', e.message);
       const msg = { content: '⚠️ 系統忙碌，請再試一次。', flags: MessageFlags.Ephemeral };

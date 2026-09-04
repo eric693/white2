@@ -984,6 +984,7 @@ function cmdPerm(gid, cmd) {
 }
 // 管理員判定：伺服器管理權限即可，不必另外設身分組
 const isAdmin = (member) => !!member && (member.permissions.has('Administrator') || member.permissions.has('ManageGuild'));
+const { resolveTarget } = require('../privacy');   // 個人資產只有本人與管理端看得到
 
 // ---- 物品用途標記 ----
 // 玩家最怕的就是 `/賣出 全部` 把做料理、做工具、要種要孵的東西一起清掉。
@@ -1321,11 +1322,17 @@ function init(client) {
         .setFooter({ text: `共得 ${gained.toLocaleString('en-US')}｜餘額 ${now.toLocaleString('en-US')} ${cc.currency_name}` });
       return i.update({ content: '', embeds: [embed], components: [] }).catch(() => {});
     }
-    // 明細翻頁（led:<玩家>:<頁碼>）——只有本人（或看別人明細的那個人）點得到，直接改原訊息
+    // 明細翻頁（led:<玩家>:<頁碼>）——直接改原訊息
+    // 按鈕誰都按得到，玩家 id 又寫在 customId 裡，所以這裡一定要再擋一次：
+    // 只有本人與管理端能看，否則等於留了一個查別人收支的後門。
     if (i.isButton() && i.customId.startsWith('led:')) {
       const [, tid, pg] = i.customId.split(':');
       const gid2 = i.guildId;
       if (!gid2) return;
+      if (tid !== i.user.id && !isAdmin(i.member)) {
+        const { deniedMessage } = require('../privacy');
+        return i.reply({ content: deniedMessage('ledger'), flags: MessageFlags.Ephemeral }).catch(() => {});
+      }
       const u = await i.client.users.fetch(tid).catch(() => null);
       const view = ledgerView(gid2, u || { id: tid, username: '玩家' }, parseInt(pg, 10) || 0);
       return i.update(view).catch(() => {});
@@ -1502,12 +1509,13 @@ function init(client) {
 
       // ---- 錢包 ----
       if (name === '錢包') {
-        const target = (!isBtn && i.options.getUser('玩家')) || i.user;
+        const t = resolveTarget(i, 'wallet');
+        if (t.denied) return i.reply({ content: t.denied, flags: MessageFlags.Ephemeral });
+        const target = t.user;
         const w = wallet(gid, target.id, target.username);
-        const rank = db.prepare('SELECT COUNT(*) n FROM econ_wallets WHERE guild_id=? AND coins > ?').get(gid, w.coins).n + 1;
         const embed = new EmbedBuilder().setColor(brandColor())
           .setTitle(`${target.username} 的錢包`)
-          .setDescription(`目前持有　**${money(c, w.coins)}**\n累計賺取　${money(c, w.total_earned)}\n財富排名　#${rank}`)
+          .setDescription(`目前持有　**${money(c, w.coins)}**\n累計賺取　${money(c, w.total_earned)}`)
           .setThumbnail(target.displayAvatarURL());
         // 玩家常問「錢什麼時候進來的」→ 錢包直接附最近 5 筆，要看更多再開 /明細
         const last = db.prepare('SELECT * FROM econ_ledger WHERE guild_id=? AND user_id=? ORDER BY id DESC LIMIT 5').all(gid, target.id);
@@ -1532,7 +1540,9 @@ function init(client) {
 
       // ---- 背包 ----
       if (name === '背包') {
-        const target = (!isBtn && i.options.getUser('玩家')) || i.user;
+        const t = resolveTarget(i, 'bag');
+        if (t.denied) return i.reply({ content: t.denied, flags: MessageFlags.Ephemeral });
+        const target = t.user;
         const rows = db.prepare(
           `SELECT v.count, it.* FROM gather_inventory v JOIN gather_items it ON it.id = v.item_id
             WHERE v.guild_id=? AND v.user_id=? AND v.count > 0 ORDER BY it.kind, it.price DESC`
@@ -1994,6 +2004,14 @@ function init(client) {
 
       // ---- 富豪榜 ----
       if (name === '富豪榜') {
+        // 財富榜保留，但改成管理端專用：一般玩家不得看到別人的餘額與排名
+        // （個人資產私密化之後，公開排行等於從後門把餘額全部曝光）
+        if (!isAdmin(i.member)) {
+          return i.reply({
+            content: '🔒 財富榜已改為管理端專用，一般玩家看不到其他人的資產排名。\n你自己的餘額請用 `/錢包` 查看。',
+            flags: MessageFlags.Ephemeral
+          });
+        }
         const rows = db.prepare('SELECT * FROM econ_wallets WHERE guild_id=? ORDER BY coins DESC LIMIT 10').all(gid);
         if (!rows.length) return i.reply({ content: '還沒有人有存款。', flags: MessageFlags.Ephemeral });
         const medal = ['🥇', '🥈', '🥉'];
@@ -2005,7 +2023,9 @@ function init(client) {
 
       // ---- 狀態總覽（看全貌）----
       if (name === '狀態') {
-        const target = (!isBtn && i.options.getUser('玩家')) || i.user;
+        const t = resolveTarget(i, 'status');
+        if (t.denied) return i.reply({ content: t.denied, flags: MessageFlags.Ephemeral });
+        const target = t.user;
         const tid = target.id;
         const w = wallet(gid, tid, target.username);
         const map = activeMap(gid, tid);

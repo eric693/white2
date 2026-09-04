@@ -684,7 +684,10 @@ function init(client) {
       if (!c.enabled) {
         return i.reply({ content: '這個伺服器目前沒有開徵稅金。', flags: MessageFlags.Ephemeral });
       }
-      const target = i.options.getUser('玩家') || i.user;
+      const { resolveTarget } = require('../privacy');
+      const t = resolveTarget(i, 'tax');
+      if (t.denied) return i.reply({ content: t.denied, flags: MessageFlags.Ephemeral });
+      const target = t.user;
       if (isExempt(gid, target.id, i.guild && i.guild.members.cache.get(target.id))) {
         return i.reply({ content: `✅ ${target.username} 在免稅名單內，不會被課稅。`, flags: MessageFlags.Ephemeral });
       }

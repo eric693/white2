@@ -105,10 +105,10 @@ const builders = [
   // ---- 釣魚 / 挖礦掛機 ----
   new SlashCommandBuilder().setName('釣魚').setDescription('拋竿釣魚，隨機獲得不同稀有度的漁獲（有冷卻時間）'),
   new SlashCommandBuilder().setName('挖礦').setDescription('下礦坑挖礦，隨機獲得不同稀有度的礦產（有冷卻時間）'),
-  new SlashCommandBuilder().setName('錢包').setDescription('查看貨幣餘額與財富排名')
-    .addUserOption(o => o.setName('玩家').setDescription('要查看的玩家（不填＝自己）')),
-  new SlashCommandBuilder().setName('背包').setDescription('查看目前持有的漁獲與礦產')
-    .addUserOption(o => o.setName('玩家').setDescription('要查看的玩家（不填＝自己）')),
+  new SlashCommandBuilder().setName('錢包').setDescription('查看自己的貨幣餘額（個人隱私，他人不可查）')
+    .addUserOption(o => o.setName('玩家').setDescription('（僅管理員）查看指定玩家')),
+  new SlashCommandBuilder().setName('背包').setDescription('查看自己的背包（個人隱私，他人不可查）')
+    .addUserOption(o => o.setName('玩家').setDescription('（僅管理員）查看指定玩家')),
   new SlashCommandBuilder().setName('賣出').setDescription('把背包裡的東西賣掉換取貨幣')
     .addStringOption(o => o.setName('物品').setDescription('物品名稱、稀有度（N/R/SR/SSR）或「全部」，不填＝全部'))
     .addIntegerOption(o => o.setName('數量').setDescription('每種要賣幾個（不填＝全賣）').setMinValue(1)),
@@ -119,7 +119,8 @@ const builders = [
     .addStringOption(o => o.setName('種類').setDescription('要看哪一本')
       .addChoices({ name: '釣魚', value: 'fish' }, { name: '挖礦', value: 'mine' }))
     .addUserOption(o => o.setName('玩家').setDescription('要查看的玩家（不填＝自己）')),
-  new SlashCommandBuilder().setName('富豪榜').setDescription('查看伺服器貨幣排行榜'),
+  new SlashCommandBuilder().setName('富豪榜').setDescription('（管理員）查看伺服器財富排行榜')
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
   new SlashCommandBuilder().setName('轉帳').setDescription('把星幣轉給其他玩家（可能收手續費、有每日上限）')
     .addUserOption(o => o.setName('對象').setDescription('要轉給誰').setRequired(true))
     .addIntegerOption(o => o.setName('金額').setDescription('要轉多少').setRequired(true).setMinValue(1)),
@@ -140,7 +141,7 @@ const builders = [
       .addChoices({ name: '查看進度', value: 'list' }, { name: '領取獎勵', value: 'claim' })),
   // /抽籤 已下架（改用小屋簽到）—— 程式與獎池資料都還在，要開回來把這行還原即可
   new SlashCommandBuilder().setName('狀態').setDescription('查看你的冒險狀態總覽（星幣/動物/作物/工具耐久…）')
-    .addUserOption(o => o.setName('玩家').setDescription('查看其他玩家（不填＝自己）')),
+    .addUserOption(o => o.setName('玩家').setDescription('（僅管理員）查看指定玩家')),
   new SlashCommandBuilder().setName('修理').setDescription('花星幣把壞掉的工具修回滿耐久')
     .addStringOption(o => o.setName('道具').setDescription('要修理的工具名稱（用 /商店 查看）').setRequired(true)),
   new SlashCommandBuilder().setName('地圖').setDescription('查看與切換採集地圖（高級地圖次數少但稀有率高）'),
@@ -201,8 +202,8 @@ const builders = [
     .addStringOption(o => o.setName('角色').setDescription('打字搜尋角色名字').setRequired(true).setAutocomplete(true)),
   new SlashCommandBuilder().setName('設施商店').setDescription('買農地／溫室／牧場／孵化室的等級，擴充格數'),
 
-  new SlashCommandBuilder().setName('稅單').setDescription('查看本期要繳的稅（農地稅／養殖稅／所得稅）與上期實繳')
-    .addUserOption(o => o.setName('玩家').setDescription('查看其他玩家的稅單（不填＝自己）')),
+  new SlashCommandBuilder().setName('稅單').setDescription('查看本期要繳的稅與上期實繳（個人隱私，他人不可查）')
+    .addUserOption(o => o.setName('玩家').setDescription('（僅管理員）查看指定玩家')),
 
   new SlashCommandBuilder().setName('捐款').setDescription('把星幣捐進慈善基金會（可折抵稅額，帳目全服公開）')
     .addIntegerOption(o => o.setName('金額').setDescription('要捐多少星幣').setRequired(true).setMinValue(1)),
@@ -248,7 +249,8 @@ const builders = [
     .addStringOption(o => o.setName('代號').setDescription('股票代號或名稱').setRequired(true))
     .addStringOption(o => o.setName('股數').setDescription('要賣幾股，或填「全部」').setRequired(true)),
   new SlashCommandBuilder().setName('持股').setDescription('查看我的投資組合、市值與損益'),
-  new SlashCommandBuilder().setName('股神榜').setDescription('全伺服器的股票損益排行'),
+  new SlashCommandBuilder().setName('股神榜').setDescription('（管理員）全伺服器的股票損益排行')
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
 ];
 
 
