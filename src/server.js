@@ -107,6 +107,7 @@ app.use('/api', require('./routes/home'));
 app.use('/api', require('./routes/auction'));
 app.use('/api', require('./routes/contest'));
 app.use('/api', require('./routes/users'));
+app.use('/api', require('./routes/subscriptions'));
 // 玩家的個人家園網頁（唯讀，不需登入，網址帶簽章 token）
 app.use('/', require('./routes/homepage'));
 // 玩家遊戲 App（Phase 1 唯讀）：/play/:token，手機可加到主畫面當 PWA
@@ -167,8 +168,14 @@ app.use((err, req, res, next) => {
   res.status(bad ? 400 : 500).json({ error: bad ? 'request body 不是合法的 JSON' : '伺服器內部錯誤' });
 });
 
+// 後台網站只由「其中一個」行程開起來：兩隻機器人各是一個 process，
+// 都去 listen 同一個埠會直接 EADDRINUSE。預設開，第二隻用 WEB=0 關掉。
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`🌐 後台網站已啟動： http://localhost:${PORT}`));
+if (String(process.env.WEB || '1') !== '0') {
+  app.listen(PORT, () => console.log(`🌐 後台網站已啟動： http://localhost:${PORT}`));
+} else {
+  console.log('ℹ️  WEB=0：本行程只跑機器人，不啟動後台網站');
+}
 
 // ---- 啟動 Discord 機器人 ----
 bot.start();

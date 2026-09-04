@@ -7,7 +7,9 @@
     "start": "node src/server.js",
     "dev": "node --watch src/server.js",
     "seed": "node scripts/seed.js",
-    "register": "node scripts/register-commands.js"
+    "register": "node scripts/register-commands.js",
+    "start:secretary": "BOT_ROLE=secretary node src/server.js",
+    "start:butler": "BOT_ROLE=butler WEB=0 node src/server.js"
   },
   "dependencies": {
     "@discordjs/opus": "^0.10.0",

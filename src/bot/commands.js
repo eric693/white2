@@ -272,4 +272,4 @@ for (const cmd of builders) {
 const commands = builders.map(c => c.toJSON());
 
 
-module.exports = { builders, commands };
+module.exports = { builders, commands, GAME_COMMANDS };

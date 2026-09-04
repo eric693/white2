@@ -1,8 +1,9 @@
-const { Client, GatewayIntentBits, Partials } = require('discord.js');
+const { Client, GatewayIntentBits, Partials, MessageFlags } = require('discord.js');
 const path = require('path');
 const fs = require('fs');
 const { getSetting, ensureGuild, db } = require('../db');
-const { commands } = require('./commands');
+const { botRole, roleLabel, featuresFor, commandsFor, commandFeature } = require('./roles');
+const { hasFeature, lockedMessage } = require('../subscription');
 const { absUrl } = require('../util/url');
 
 // 頭像存的是 /uploads/xxx 相對路徑；setAvatar 需要「本機檔路徑」或「完整網址」。
@@ -18,11 +19,33 @@ function resolveAvatar(v) {
 }
 
 // 指令即時註冊到某台伺服器：伺服器指令會「立刻」生效（全域指令要等最多 1 小時）。
+// 訂閱付費牆（第一層）：方案沒包含的功能，指令直接不註冊到那台伺服器
+// —— 玩家看不到、也點不到，比「點了才說要付費」乾淨。
+// 到期／續費／後台改方案後，呼叫 refreshGuildCommands() 重新註冊即可生效。
+function allowedCommands(guildId) {
+  const role = botRole();
+  return commandsFor(role).filter(c => {
+    const key = commandFeature(c.name);
+    return !key || hasFeature(guildId, role, key);
+  });
+}
+
 async function registerGuildCommands(guildId, guildName) {
   try {
-    await client.application.commands.set(commands, guildId);
-    console.log(`  ↳ 已即時註冊 ${commands.length} 個指令到 ${guildName || guildId}`);
+    const cmds = allowedCommands(guildId);
+    await client.application.commands.set(cmds, guildId);
+    console.log(`  ↳ 已即時註冊 ${cmds.length} 個指令到 ${guildName || guildId}`);
   } catch (e) { console.error(`註冊指令到 ${guildName || guildId} 失敗：`, e.message); }
+}
+
+// 訂閱狀態變動（續費、升降級、到期）後重新整理指令清單。
+// 不傳 guildId ＝ 全部伺服器都重整（每日到期檢查用）。
+async function refreshGuildCommands(guildId) {
+  if (!client.application) return;
+  const targets = guildId
+    ? [client.guilds.cache.get(guildId)].filter(Boolean)
+    : [...client.guilds.cache.values()];
+  for (const g of targets) await registerGuildCommands(g.id, g.name);
 }
 
 const client = new Client({
@@ -42,15 +65,13 @@ client.setMaxListeners(50);
 
 let ready = false;
 
-// 要載入的功能模組（每個匯出 init(client)）
-const FEATURES = [
-  'keywords', 'alerts', 'forum', 'reactionroles', 'welcome', 'birthday', 'announcements',
-  'poll', 'giveaway', 'wheel', 'reminder', 'music', 'tickets', 'xp', 'gather', 'facility', 'ranch', 'aquarium', 'special', 'trades', 'crops', 'stock', 'tax', 'charity', 'auction', 'contest', 'loans', 'home', 'furniture', 'kitchen', 'dex', 'pets', 'affinity', 'partnerskills', 'help', 'panel'
-];
+// 要載入的功能模組（每個匯出 init(client)）。
+// 依 BOT_ROLE 只載入自己那一半：秘書＝功能型、管家＝遊戲型（見 roles.js）
+const FEATURES = featuresFor();
 
 client.once('clientReady', async () => {
   ready = true;
-  console.log(`✅ Discord 機器人已上線：${client.user.tag}`);
+  console.log(`✅ Discord 機器人已上線：${client.user.tag}（角色：${roleLabel()}）`);
   // 多伺服器：把目前所在的每個伺服器登錄並初始化設定
   for (const [, g] of client.guilds.cache) {
     try { ensureGuild(g.id, g.name, g.iconURL() || ''); } catch (e) { console.error('登錄伺服器失敗：', e.message); }
@@ -64,7 +85,18 @@ client.once('clientReady', async () => {
   try { await client.application.commands.set([]); } catch (e) { console.error('清除全域指令失敗：', e.message); }
   for (const [, g] of client.guilds.cache) await registerGuildCommands(g.id, g.name);
   applyAppearance().catch(() => {});
+  startExpiryWatch();
 });
+
+// 訂閱到期自動限制：每天凌晨重新整理各伺服器的指令清單。
+// 到期當下不需要做任何資料處理（判定端一律看 expires_at），這裡只是把
+// 「已經不能用的付費指令」從 Discord 的指令列表拿掉，玩家才不會點了才被擋。
+function startExpiryWatch() {
+  const cron = require('node-cron');
+  cron.schedule('5 0 * * *', () => {
+    refreshGuildCommands().catch(e => console.error('到期重整指令失敗：', e.message));
+  }, { timezone: process.env.TZ || 'Asia/Taipei' });
+}
 
 // 被邀請進新伺服器 → 檢查白名單，未核准就自動退出（只給朋友使用）
 client.on('guildCreate', async (g) => {
@@ -162,6 +194,46 @@ async function applyAppearance() {
   } catch (e) { console.warn('設定機器人狀態失敗：', e.message); }
 }
 
+// ---- 訂閱付費牆（第二層）：執行時攔截 ----
+// 為什麼還要這層：指令清單有 Discord 端快取，到期後玩家的舊清單可能還點得到；
+// 面板按鈕／下拉選單更是發出去就一直留在頻道裡，不會因為退訂而消失。
+//
+// 這個 listener 在功能模組之前註冊（模組是 clientReady 後才 init），而 discord.js
+// 的 emit 是同步的 —— 所以在這裡把 isChatInputCommand()/isButton() 就地改成回 false，
+// 後面每個功能模組的 handler 都會直接略過這筆互動，不會出現「兩邊都回應」的錯誤。
+const BUTTON_FEATURE_HINTS = [
+  ['stock', 'stock'], ['auction', 'auction'], ['loan', 'loans'], ['tax', 'tax'],
+  ['charity', 'charity'], ['ranch', 'ranch'], ['aqua', 'aquarium'], ['crop', 'crops'],
+  ['pet', 'pets'], ['kitchen', 'kitchen'], ['furn', 'furniture'], ['home', 'home'],
+  ['trade', 'trades'], ['gift', 'affinity'], ['music', 'music'], ['ticket', 'tickets'],
+  ['wheel', 'wheel'], ['poll', 'poll'], ['giveaway', 'giveaway']
+];
+function interactionFeature(i) {
+  if (i.isChatInputCommand?.()) return commandFeature(i.commandName);
+  const id = String(i.customId || '');
+  if (!id) return null;
+  const hit = BUTTON_FEATURE_HINTS.find(([prefix]) => id.startsWith(prefix));
+  return hit ? hit[1] : null;
+}
+
+client.on('interactionCreate', (i) => {
+  try {
+    if (!i.guildId) return;                       // 私訊不擋
+    if (!i.isChatInputCommand?.() && !i.isButton?.() && !i.isStringSelectMenu?.()) return;
+    const key = interactionFeature(i);
+    if (!key) return;                             // 沒對應到功能鍵＝基本功能，一律放行
+    const role = botRole();
+    if (hasFeature(i.guildId, role, key)) return;
+
+    // 讓後面的功能模組完全略過這筆互動
+    i.isChatInputCommand = () => false;
+    i.isButton = () => false;
+    i.isStringSelectMenu = () => false;
+    i.isAutocomplete = () => false;
+    i.reply({ content: lockedMessage(i.guildId, role, key), flags: MessageFlags.Ephemeral }).catch(() => {});
+  } catch (e) { console.error('訂閱檢查失敗：', e.message); }
+});
+
 // ---- 卡頓偵測 ----
 // 「互動無回應」常常不是那個功能壞掉，而是整個 event loop 被別的同步工作卡住幾秒
 // （SQLite 是同步的，結算／稅務／股市跑大批資料時會這樣）。這裡每 200ms 量一次延遲，
@@ -251,10 +323,18 @@ setInterval(() => {
   }
 }, 30000).unref();
 
+// 各角色自己的 token；沒設就退回舊的 DISCORD_TOKEN（單機器人模式相容）
+function roleToken() {
+  const role = botRole();
+  if (role === 'secretary') return process.env.DISCORD_TOKEN_SECRETARY || process.env.DISCORD_TOKEN;
+  if (role === 'butler') return process.env.DISCORD_TOKEN_BUTLER || process.env.DISCORD_TOKEN;
+  return process.env.DISCORD_TOKEN;
+}
+
 function start() {
-  const token = process.env.DISCORD_TOKEN;
+  const token = roleToken();
   if (!token || token === '你的機器人Token') {
-    console.warn('⚠️  尚未設定 DISCORD_TOKEN，機器人未啟動（後台網站仍可使用）。請填好 .env 後重啟。');
+    console.warn(`⚠️  尚未設定 ${roleLabel()} 的 Token，機器人未啟動（後台網站仍可使用）。請填好 .env 後重啟。`);
     return;
   }
   client.login(token).catch(err => console.error('❌ 機器人登入失敗：', err.message));
@@ -291,4 +371,4 @@ async function deleteAppEmoji(emojiId) {
   await client.application.emojis.delete(emojiId).catch(() => {});
 }
 
-module.exports = { client, start, isReady, mainGuild, guildList, applyAppearance, fetchChannel, uploadAppEmoji, deleteAppEmoji };
+module.exports = { client, start, isReady, mainGuild, refreshGuildCommands, guildList, applyAppearance, fetchChannel, uploadAppEmoji, deleteAppEmoji };
