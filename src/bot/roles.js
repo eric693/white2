@@ -17,7 +17,7 @@ const SECRETARY_FEATURES = [
 const BUTLER_FEATURES = [
   'gather', 'facility', 'ranch', 'aquarium', 'special', 'trades', 'crops', 'stock',
   'tax', 'charity', 'auction', 'contest', 'loans', 'home', 'furniture', 'kitchen',
-  'dex', 'pets', 'affinity', 'partnerskills', 'help', 'panel'
+  'dex', 'pets', 'affinity', 'partnerskills', 'bank', 'help', 'panel'
 ];
 
 // 目前行程扮演的角色（.env 的 BOT_ROLE）
@@ -83,7 +83,7 @@ const COMMAND_FEATURE = {
   '設施商店': 'facility',
   '稅單': 'tax',
   '捐款': 'charity', '基金會': 'charity', '拍賣': 'auction',
-  '貸款': 'loans', '信用貸款': 'loans', '還款': 'loans',
+  '銀行': 'loans', '信用貸款': 'loans', '還款': 'loans',
   '特殊商店': 'special', '兌換': 'special',
   '行情': 'stock', '股市': 'stock', '個股': 'stock', '買股': 'stock', '賣股': 'stock',
   '持股': 'stock', '股神榜': 'stock'

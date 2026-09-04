@@ -212,11 +212,10 @@ const builders = [
   new SlashCommandBuilder().setName('拍賣').setDescription('基金會拍賣會：限時競標特殊家具、珍稀寵物與成就稱號'),
   new SlashCommandBuilder().setName('基金會').setDescription('查看慈善基金會的帳目、捐款榜與抵稅比例'),
 
-  new SlashCommandBuilder().setName('貸款').setDescription('用工具／作物／魚缸的魚當抵押品借星幣（不填金額＝查額度）')
-    .addIntegerOption(o => o.setName('金額').setDescription('要借多少星幣（不填＝只查可借額度與現有貸款）').setMinValue(1)),
-  new SlashCommandBuilder().setName('信用貸款').setDescription('免抵押借星幣（單筆上限較低，到期沒還直接從餘額扣款）')
+  new SlashCommandBuilder().setName('銀行').setDescription('存款與信貸（存提自由、按日生息；個人隱私，他人不可查）'),
+  new SlashCommandBuilder().setName('信用貸款').setDescription('免抵押借星幣（到期沒還直接從餘額扣款）')
     .addIntegerOption(o => o.setName('金額').setDescription('要借多少星幣（不填＝查額度與說明）').setMinValue(1)),
-  new SlashCommandBuilder().setName('還款').setDescription('償還物資貸款（全部還清就贖回抵押品）')
+  new SlashCommandBuilder().setName('還款').setDescription('償還貸款（舊制物資貸款還清一樣贖回抵押品）')
     .addIntegerOption(o => o.setName('金額').setDescription('要還多少（不填＝全部還清）').setMinValue(1)),
 
   new SlashCommandBuilder().setName('幫助').setDescription('冒險生活指令總表（採集/牧場/種植/交易/兌換…）'),
@@ -266,7 +265,7 @@ const GAME_COMMANDS = new Set([
   '魚缸', '水族商店', '養魚', '餵魚', '撈金', '賣魚', '偷魚',
   '我的家', '升級家園', '家園卡', '簽到', '家園網頁', '家具', '廚房', '烹飪', '寵物', '寵物改名',
   '成就', '送禮', '邀請', '好感度', '設施商店', '稅單', '捐款', '基金會', '拍賣',
-  '貸款', '信用貸款', '還款', '幫助', '冒險面板',
+  '銀行', '信用貸款', '還款', '幫助', '冒險面板',
   '種子商店', '種植', '農地', '溫室', '採收', '特殊商店', '兌換',
   '行情', '股市', '個股', '買股', '賣股', '持股', '股神榜'
 ]);

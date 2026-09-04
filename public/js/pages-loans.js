@@ -24,33 +24,46 @@ App.page('loans', {
 
     el.innerHTML = `
       <div class="card" style="max-width:820px" id="cfgwrap">
-        <h3>設定</h3>
-        <div class="hint" style="margin-bottom:10px">玩家用 <code>/貸款 金額</code> 借錢，系統自動挑抵押品代管（<b>只收工具、農地／溫室作物、魚缸的魚</b>）。
-          工具被押走期間<b>不能採集</b>（需搭配採集頁的「禁止徒手」）、作物收不到、魚不產星幣。
-          <code>/還款</code> 全部還清 → 抵押品原封不動還回去；到期沒還 → 沒收抵押品、債務一併結清。</div>
-        <div class="field">${H.toggle('enabled', c.enabled, '啟用物資貸款')}</div>
+        <h3>🏦 銀行設定</h3>
+        <div class="hint" style="margin-bottom:10px">
+          2026-09 起銀行只有兩項業務：<b>存款</b>與<b>信用貸款</b>。
+          物資貸款／物資抵押已停辦——已經借出去的舊貸款照常可以 <code>/還款</code>，
+          還清一樣把抵押品還給玩家，但不會再有新的物資貸款。
+        </div>
+
+        <h4 style="margin:14px 0 6px">💰 存款</h4>
+        <div class="field">${H.toggle('deposit_enabled', c.deposit_enabled ?? 1, '啟用存款（玩家用 /銀行 自由存提）')}</div>
         <div class="form-row">
-          <div class="field"><label>抵押率 %（可借 ÷ 抵押品估值）</label><input name="ltv_pct" type="number" min="1" max="100" value="${c.ltv_pct ?? 70}">
-            <div class="hint">70％＝估值 10,000 的物資只能借 7,000，還不出來對玩家就是虧的。</div></div>
-          <div class="field"><label>單筆上限（0＝不限）</label><input name="max_loan" type="number" min="0" value="${c.max_loan ?? 0}"></div>
+          <div class="field"><label>年利率 %</label><input name="deposit_apr" type="number" min="0" max="100" step="0.0001" value="${c.deposit_apr ?? 0.0001}">
+            <div class="hint">按日累積：每天利息＝存款 × 年利率 ÷ 365。利率很低時每天不到 1 星幣，系統會先累著，<b>滿 1 星幣才入帳</b>，不會被捨去吃掉。<br>存款定位是「保管」不是投資；想調成有感的利率就往上加。</div></div>
+          <div class="field"><label>單人存款上限（0＝不限）</label><input name="deposit_max" type="number" min="0" value="${c.deposit_max ?? 0}"></div>
+        </div>
+        <div class="hint">存提款只是錢換位置，<b>不列入所得</b>，不會被課所得稅。</div>
+
+        <h4 style="margin:18px 0 6px">🪪 信用貸款</h4>
+        <div class="field">${H.toggle('credit_enabled', c.credit_enabled ?? 1, '啟用信用貸款（免抵押）')}</div>
+        <div class="form-row">
+          <div class="field"><label>單筆上限</label><input name="credit_max" type="number" min="1" value="${c.credit_max ?? 50000}"></div>
+          <div class="field"><label>利息 %（借出時就算進應還金額）</label><input name="credit_interest_pct" type="number" min="0" max="100" step="0.5" value="${c.credit_interest_pct ?? 15}">
+            <div class="hint">免抵押的風險由利息承擔，所以比舊的物資貸款高。</div></div>
         </div>
         <div class="form-row">
-          <div class="field"><label>期限（天）</label><input name="term_days" type="number" min="1" value="${c.term_days ?? 7}"></div>
-          <div class="field"><label>利息 %（借出時就算進應還金額）</label><input name="interest_pct" type="number" min="0" max="100" step="0.5" value="${c.interest_pct ?? 5}"></div>
-          <div class="field"><label>同時最多幾筆未還</label><input name="max_open" type="number" min="1" value="${c.max_open ?? 1}"></div>
+          <div class="field"><label>期限（天）</label><input name="credit_term_days" type="number" min="1" value="${c.credit_term_days ?? 7}"></div>
+          <div class="field"><label>同時最多幾筆未還</label><input name="credit_max_open" type="number" min="1" value="${c.credit_max_open ?? 1}"></div>
         </div>
-        <div class="field"><label>抵押品挑選順序</label>
-          <select name="collateral_order">
-            <option value="tool,crop,fish" ${(c.collateral_order||'tool,crop,fish')==='tool,crop,fish'?'selected':''}>工具 → 作物 → 魚（推薦：先押最容易贖回的）</option>
-            <option value="crop,fish,tool" ${c.collateral_order==='crop,fish,tool'?'selected':''}>作物 → 魚 → 工具（工具最後才動）</option>
-            <option value="fish,crop,tool" ${c.collateral_order==='fish,crop,tool'?'selected':''}>魚 → 作物 → 工具</option>
-            <option value="crop" ${c.collateral_order==='crop'?'selected':''}>只收作物</option>
-            <option value="tool" ${c.collateral_order==='tool'?'selected':''}>只收工具</option>
-          </select>
-          <div class="hint">同一類裡面一律「便宜的先押」，盡量少押到貴的東西。</div></div>
         <div class="field">${H.toggle('debtor_only', c.debtor_only, '只有餘額是負數（負債）的人才能貸款')}</div>
         <div class="field"><label>公告頻道（留空＝不公告）</label>${H.chanSelect('channel', c.channel || '')}
           <div class="hint">借款與到期沒收都會公告，違約會被大家看到。</div></div>
+
+        <details style="margin-top:14px">
+          <summary class="hint">舊制物資貸款設定（已停辦，只影響尚未還清的舊貸款）</summary>
+          <div class="form-row" style="margin-top:8px">
+            <div class="field"><label>抵押率 %</label><input name="ltv_pct" type="number" min="1" max="100" value="${c.ltv_pct ?? 70}"></div>
+            <div class="field"><label>期限（天）</label><input name="term_days" type="number" min="1" value="${c.term_days ?? 7}"></div>
+            <div class="field"><label>利息 %</label><input name="interest_pct" type="number" min="0" max="100" step="0.5" value="${c.interest_pct ?? 5}"></div>
+          </div>
+        </details>
+
         <div style="margin-top:16px;display:flex;gap:8px;flex-wrap:wrap">
           <button class="btn" id="savecfg">儲存設定</button>
           <button class="btn secondary" id="sweep">立即處理到期貸款</button>

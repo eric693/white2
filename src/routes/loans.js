@@ -28,7 +28,11 @@ router.put('/loans', (req, res) => {
   db.prepare(
     `UPDATE loan_config SET enabled=@enabled, ltv_pct=@ltv_pct, max_loan=@max_loan, max_open=@max_open,
        term_days=@term_days, interest_pct=@interest_pct, debtor_only=@debtor_only,
-       collateral_order=@collateral_order, channel=@channel
+       collateral_order=@collateral_order, channel=@channel,
+       deposit_enabled=@deposit_enabled, deposit_apr=@deposit_apr, deposit_max=@deposit_max,
+       credit_enabled=@credit_enabled, credit_max=@credit_max,
+       credit_interest_pct=@credit_interest_pct, credit_term_days=@credit_term_days,
+       credit_max_open=@credit_max_open
      WHERE guild_id=@guild_id`
   ).run({
     enabled: bool(b.enabled, 'enabled'),
@@ -41,9 +45,19 @@ router.put('/loans', (req, res) => {
     collateral_order: keep(b.collateral_order, 'collateral_order', v => String(v).split(/[\s,;、]+/)
       .map(x => x.trim()).filter(x => KINDS.includes(x)).join(',') || 'tool,crop,fish'),
     channel: keep(b.channel, 'channel', v => String(v || '')),
+    // 存款：年利率允許很小的小數（預設 0.0001%），所以不能用 int 或四捨五入到兩位
+    deposit_enabled: bool(b.deposit_enabled, 'deposit_enabled'),
+    deposit_apr: keep(b.deposit_apr, 'deposit_apr', v => Math.max(0, Math.min(100, parseFloat(v) || 0))),
+    deposit_max: keep(b.deposit_max, 'deposit_max', v => int(v, 0, 0)),
+    // 信貸
+    credit_enabled: bool(b.credit_enabled, 'credit_enabled'),
+    credit_max: keep(b.credit_max, 'credit_max', v => Math.max(1, int(v, 50000, 1))),
+    credit_interest_pct: keep(b.credit_interest_pct, 'credit_interest_pct', v => Math.max(0, Math.min(100, parseFloat(v) || 0))),
+    credit_term_days: keep(b.credit_term_days, 'credit_term_days', v => Math.max(1, int(v, 7, 1))),
+    credit_max_open: keep(b.credit_max_open, 'credit_max_open', v => Math.max(1, int(v, 1, 1))),
     guild_id: req.guildId
   });
-  audit(req.user.name, '更新物資貸款設定', 'gather', '', req.guildId);
+  audit(req.user.name, '更新銀行設定（存款／信貸）', 'gather', '', req.guildId);
   res.json({ ok: true });
 });
 

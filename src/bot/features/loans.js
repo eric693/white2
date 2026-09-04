@@ -116,6 +116,12 @@ function pick(gid, userId, amount) {
 // ---- 借款 ----
 function borrow(gid, userId, username, amount) {
   const c = cfg(gid);
+  // 物資貸款／物資抵押已於 2026-09 下架：所有借貸統一為信用貸款。
+  // 這支函式保留是因為「既有的未還清物資貸款」還要能還款與贖回抵押品——
+  // 直接刪掉會讓那些人的抵押品永遠卡在系統裡拿不回來。
+  if (!c.asset_loan_enabled) {
+    return { ok: false, msg: '物資貸款已經停辦了，改用 `/信用貸款`（免抵押）。\n已經借出去的物資貸款照常可以 `/還款`，還清一樣會把抵押品還你。' };
+  }
   if (!c.enabled) return { ok: false, msg: '這個伺服器目前沒有開放物資貸款。' };
   const w = db.prepare('SELECT * FROM econ_wallets WHERE guild_id=? AND user_id=?').get(gid, userId);
   if (!w) return { ok: false, msg: '你還沒有錢包（先玩一下再來借吧）。' };
@@ -418,8 +424,9 @@ function init(client) {
       // 貸款面板按鈕：查詢 + 三顆動作鈕（免記指令）
       if (i.isButton() && i.customId === 'adv:loan') {
         const lc = cfg(i.guildId);
-        const btns = [new ButtonBuilder().setCustomId('loan:borrow').setLabel('物資借款').setEmoji('🏦').setStyle(ButtonStyle.Primary)];
+        const btns = [];
         if (lc.credit_enabled) btns.push(new ButtonBuilder().setCustomId('loan:credit').setLabel('信用借款').setEmoji('🪪').setStyle(ButtonStyle.Primary));
+        // 物資借款已停辦，只留還款；舊貸款照樣還得掉
         btns.push(new ButtonBuilder().setCustomId('loan:repay').setLabel('還款').setEmoji('💸').setStyle(ButtonStyle.Success));
         return await i.reply({ embeds: [infoEmbed(i.guildId, i.user.id)], components: [new ActionRowBuilder().addComponents(btns)], flags: MessageFlags.Ephemeral });
       }
@@ -466,22 +473,8 @@ function init(client) {
       if (!i.isChatInputCommand()) return;
       const gid = i.guildId;
 
-      if (i.commandName === '貸款') {
-        const amount = i.options.getInteger('金額');
-        if (amount == null) return await i.reply({ embeds: [infoEmbed(gid, i.user.id)], flags: MessageFlags.Ephemeral });
-        const r = borrow(gid, i.user.id, i.user.username, amount);
-        if (!r.ok) return await i.reply({ content: `❌ ${r.msg}`, flags: MessageFlags.Ephemeral });
-        const emb = new EmbedBuilder().setColor(brandColor())
-          .setTitle('🏦 貸款成功')
-          .setDescription(`借到 **${money(gid, r.loan.principal)}**（利息 ${money(gid, r.loan.interest)}，應還 **${money(gid, r.loan.owed)}**）\n`
-            + `目前餘額 ${money(gid, r.coins)}\n到期：<t:${Math.floor(r.loan.due_ms / 1000)}:f>（<t:${Math.floor(r.loan.due_ms / 1000)}:R>）`)
-          .addFields({
-            name: '被代管的抵押品（還清就還你）',
-            value: r.picked.map(x => `・${x.detail} — 估值 ${money(gid, x.value)}`).join('\n').slice(0, 1024)
-          })
-          .setFooter({ text: '工具被押走期間不能採集；到期沒還會沒收抵押品' });
-        return await i.reply({ embeds: [emb], flags: MessageFlags.Ephemeral });
-      }
+      // /貸款 已改為 /銀行（存款＋信貸一起看），由 bank.js 處理。
+      // 物資貸款停辦後，這裡不再有「借物資」的入口。
 
       if (i.commandName === '信用貸款') {
         const amount = i.options.getInteger('金額');

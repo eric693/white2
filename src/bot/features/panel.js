@@ -71,7 +71,7 @@ const TABS = {
     desc: '賣東西、玩股票、繳稅、借錢、標拍賣。（每日簽到、財經新聞在上面的常用捷徑）\n⚠️ 股價可能跌到**負數**，賣出會倒扣星幣，出場前先看清楚現價。',
     rows: [
       [['adv:sellpick', '賣出', '💰', ButtonStyle.Primary], ['adv:trade', '交易', '🔄', ButtonStyle.Primary], ['stk:market', '股市行情', '📈', ButtonStyle.Primary], ['stk:buymenu', '買股', '📥', ButtonStyle.Success], ['stk:sellmenu', '賣股', '📤', ButtonStyle.Danger]],
-      [['stk:mine', '我的持股', '📊'], ['adv:tax', '我的稅單', '🧾'], ['adv:charity', '基金會', '❤️'], ['adv:loan', '物資貸款', '🏦'], ['adv:auction', '拍賣會', '🔨']]
+      [['stk:mine', '我的持股', '📊'], ['adv:tax', '我的稅單', '🧾'], ['adv:charity', '基金會', '❤️'], ['adv:bank', '銀行', '🏦'], ['adv:auction', '拍賣會', '🔨']]
     ]
   }
 };
