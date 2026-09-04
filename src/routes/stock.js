@@ -169,19 +169,29 @@ router.post('/market-news', guardModule('news'), (req, res) => {
     .map(e => ({ ...e, mult_pct: normMultPct(e.mult_pct) }))
     .filter(e => e.mult_pct !== 100);
   const stockFx = Array.isArray(b.stock_fx) ? b.stock_fx.filter(f => f && f.symbol_id) : [];
-  // 只發星幣、不動物價股價的快報（紓困／慶祝）也算數
+  // 只發星幣、不動物價股價的快報（紓困／慶祝）也算數。
+  // 世界動態改版後，「什麼效果都沒有」也是合法的——官方公告、城市大小事、
+  // 角色動向本來就只是故事，不必為了發一則消息硬掰一個物價變動出來。
   const payoutEach = int(b.payout_each, 0, 0);
-  if (!effects.length && !stockFx.length && payoutEach <= 0) {
-    return res.status(400).json({ error: '至少要加一條影響（物價、股價，或發星幣）' });
-  }
+  const CATEGORIES = ['官方', '城市', 'NPC', '角色', '財經', '企業', '股票', '活動', '市場', '世界觀'];
+  const category = CATEGORIES.includes(String(b.category)) ? String(b.category) : '財經';
   const r = db.prepare(
-    `INSERT INTO market_news (guild_id,headline,body,image_url,duration_h,effects,stock_fx,effect_ts,created_by,payout_each)
-     VALUES (?,?,?,?,?,?,?,?,?,?)`
+    `INSERT INTO market_news (guild_id,headline,body,image_url,duration_h,effects,stock_fx,effect_ts,created_by,payout_each,category,pinned)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`
   ).run(req.guildId, String(b.headline), String(b.body || ''), String(b.image_url || ''),
     int(b.duration_h, 6, 1), JSON.stringify(effects), JSON.stringify(stockFx),
-    b.effect_ts ? Math.floor(int(b.effect_ts, 0, 0) / 3600000) * 3600000 : 0, req.user.name, payoutEach);
-  audit(req.user.name, `發布財經快報：${b.headline}`);
+    b.effect_ts ? Math.floor(int(b.effect_ts, 0, 0) / 3600000) * 3600000 : 0, req.user.name, payoutEach,
+    category, b.pinned ? 1 : 0);
+  audit(req.user.name, `發布世界動態［${category}］：${b.headline}`);
   res.json({ id: r.lastInsertRowid });
+});
+
+// 置頂／取消置頂：置頂的動態不受時效限制，會一直留在「最新」的最上面
+router.post('/market-news/:id/pin', guardModule('news'), (req, res) => {
+  const on = (req.body || {}).pinned ? 1 : 0;
+  db.prepare('UPDATE market_news SET pinned=? WHERE id=? AND guild_id=?').run(on, req.params.id, req.guildId);
+  audit(req.user.name, `${on ? '置頂' : '取消置頂'}世界動態 #${req.params.id}`);
+  res.json({ ok: true });
 });
 
 // 一鍵清除所有「已結束」的快報（時段已過的，不影響還在生效中的）

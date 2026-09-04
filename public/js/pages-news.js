@@ -1,4 +1,7 @@
-// ===== 財經新聞（獨立頁面）=====
+// ===== 世界動態（獨立頁面）=====
+// 原本叫「財經新聞」，2026-09 擴充成整個世界的消息時間軸：官方公告、城市、
+// NPC、角色、財經、企業、股票、活動、市場、世界觀。遊戲公告也走這裡，
+// 不另外開一個公告入口。動態不一定要有遊戲效果——純故事也可以發。
 // 為什麼要從股市頁拆出來：新聞掌管的是「全服所有物品的賣價 ＋ 股價」，
 // 權責比其他任何一頁都大，所以給它自己的鑰匙（news），可以單獨交給某個管理員，
 // 而那個人不會同時拿到股票掛牌、參數與成交紀錄。
@@ -15,7 +18,7 @@ App.page('news', {
       "舊的新聞到期會自動失效，價格回到基準。"
     ]
   },
-  title: '財經新聞', sub: '快報會改變全服物價與股價 —— 這一頁掌管所有東西的價錢', module: 'news',
+  title: '世界動態', sub: '官方公告、城市、NPC、角色、財經、活動…可選擇是否連動物價與股價', module: 'news',
 
   async render(el) {
     await H.loadMeta();
@@ -29,7 +32,7 @@ App.page('news', {
     el.innerHTML = `
       <div class="card" style="max-width:760px" id="cfgwrap">
         <h3>新聞開關</h3>
-        <div class="field">${H.toggle('enabled', c.enabled, '啟用財經新聞快報（新聞會改變物品賣價）')}</div>
+        <div class="field">${H.toggle('enabled', c.enabled, '啟用世界動態（含會改變物品賣價的財經快報）')}</div>
         <div class="hint" style="margin:6px 0 14px">
           關掉之後所有物品都是原價，已排程的快報也不會生效。
           新聞的<strong>股價</strong>效果另外還要「股市」那一頁有開啟股市才會套用。
@@ -77,12 +80,13 @@ App.page('news', {
         })
       ].join('<br>');
       return `<tr>
-              <td style="max-width:240px">${UI.esc(n.headline)}</td>
+              <td style="max-width:240px">${n.pinned ? '📌 ' : ''}<span class="tag">${UI.esc(n.category || '財經')}</span> ${UI.esc(n.headline)}</td>
               <td style="font-size:13px">${fxText || '—'}</td>
               <td style="white-space:nowrap">${slot}<div class="hint" style="font-size:12px">共 ${n.duration_h} 小時</div>${left}</td>
               <td>${ended ? '<span class="tag">已結束</span>' : (n.applied ? (n.announced ? '<span class="tag ok">生效中·已發布</span>' : '<span class="tag ok">生效中</span>') : '<span class="tag">排程中</span>')}</td>
               <td>${UI.esc(n.created_by || '')}</td>
-              <td><button class="btn tiny secondary" data-dnews="${n.id}">撤銷</button></td>
+              <td><button class="btn tiny" data-pin="${n.id}" data-on="${n.pinned ? 0 : 1}">${n.pinned ? '取消置頂' : '置頂'}</button>
+                  <button class="btn tiny secondary" data-dnews="${n.id}">撤銷</button></td>
             </tr>`;
     }).join('') : '<tr><td colspan="6" class="hint">還沒有發過快報。</td></tr>'}
           </tbody>
@@ -144,9 +148,18 @@ App.page('news', {
     el.querySelector('#addnews').onclick = () => {
       const symsOpt = targets.symbols.map(s => `<option value="${s.id}">${UI.esc((s.emoji || '') + s.name)}（${UI.esc(s.code)}）</option>`).join('');
       UI.modal({
-        title: '發布財經快報', okText: '發布',
+        title: '發布世界動態', okText: '發布',
         bodyHTML: `
-          <div class="field"><label>標題</label><input name="headline" placeholder="🥚 蛋雞流感席捲南區牧場"></div>
+          <div class="form-row">
+            <div class="field" style="max-width:170px"><label>分類</label>
+              <select name="category">
+                ${['財經','官方','城市','NPC','角色','企業','股票','活動','市場','世界觀']
+                  .map(x => `<option value="${x}">${x}</option>`).join('')}
+              </select></div>
+            <div class="field" style="flex:1"><label>標題</label><input name="headline" placeholder="🥚 蛋雞流感席捲南區牧場"></div>
+          </div>
+          <div class="field">${H.toggle('pinned', false, '置頂（不受時效限制，永遠留在「最新」最上面）')}</div>
+          <div class="hint" style="margin-bottom:8px">下面的物價／股價／發星幣<b>全部可以留空</b>——只是一則消息也能發。要連動遊戲系統再填。</div>
           <div class="field"><label>內文</label><textarea name="body" rows="3" placeholder="產蛋量預估下滑三成，蛋商已開始搶貨。"></textarea></div>
           <div class="form-row">
             <div class="field"><label>開始時間（只選整點，留空＝馬上）</label>
@@ -202,7 +215,9 @@ App.page('news', {
             }
             await POST('/market-news', {
               headline: v('headline'), body: v('body'), image_url: v('image_url'),
-              duration_h: parseInt(v('duration_h'), 10) || 3, effects, stock_fx, effect_ts, payout_each
+              duration_h: parseInt(v('duration_h'), 10) || 3, effects, stock_fx, effect_ts, payout_each,
+              category: v('category') || '財經',
+              pinned: !!back?.querySelector('[name=pinned]')?.checked
             });
           } catch (e) { UI.err(e.message); return false; }
           UI.ok(v('start_date') ? '已排程，到時間會自動生效' : '已發布，一分鐘內生效'); App.go('news');
@@ -235,6 +250,10 @@ App.page('news', {
     el.querySelectorAll('[data-dnews]').forEach(b => b.onclick = async () => {
       if (!await UI.confirm('撤銷這則快報？還在生效的物價倍率會立刻結束，已成交的交易不會回溯。')) return;
       await DEL('/market-news/' + b.dataset.dnews); UI.ok('已撤銷'); App.go('news');
+    });
+    el.querySelectorAll('[data-pin]').forEach(b => b.onclick = async () => {
+      await POST(`/market-news/${b.dataset.pin}/pin`, { pinned: b.dataset.on === '1' });
+      UI.ok(b.dataset.on === '1' ? '已置頂' : '已取消置頂'); App.go('news');
     });
     el.querySelector('#clearnews').onclick = async () => {
       if (!await UI.confirm('清除所有「已結束」的快報？（時段已過的，不影響還在生效中的）')) return;

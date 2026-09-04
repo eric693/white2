@@ -1,4 +1,4 @@
-// 財經新聞快報 ＋ 星幣股市
+// 世界動態 ＋ 星幣股市
 //
 // 兩個子系統共用一組新聞：一則快報可以同時推動「物價」（market_modifiers，
 // 影響 /賣出 的賣價）與「股價」（stock_symbols 的下一個 tick）。
@@ -655,7 +655,7 @@ function quotesEmbed(gid) {
   const c = cfg(gid);
   if (!c.enabled) {
     return new EmbedBuilder().setColor(brandColor()).setTitle('📰 行情')
-      .setDescription('目前沒有開放財經新聞，物價都是固定的。');
+      .setDescription('目前沒有開放世界動態，物價都是固定的。');
   }
   const mods = activeModifiers(gid);
   if (!mods.length) {
@@ -678,20 +678,76 @@ function quotesEmbed(gid) {
     .setFooter({ text: '倍率只影響賣出價格，買東西的價格不變' });
 }
 
-// 玩家在面板點「📰新聞」看到的：最近已生效／排程中的財經新聞（不用靠頻道公告）
-function newsEmbed(gid) {
+// ================== 世界動態 ==================
+// 原本這裡叫「財經新聞」，只能發影響物價／股價的快報。
+// 2026-09 擴充成「世界動態」：官方公告、城市大小事、NPC 與角色的動向、
+// 財經、企業、股票、活動、市場、世界觀，全部走同一條時間軸——
+// 遊戲公告也併進來，不再另外開一個公告入口（兩個入口只會讓人漏看其中一個）。
+//
+// 重點：**不是每則動態都要有遊戲效果**。effects／stock_fx 留空就純粹是則故事，
+// 想連動物價或股價再填，由管理端自己決定。
+require('../../db').ensureColumns('market_news', {
+  category: "TEXT NOT NULL DEFAULT '財經'",
+  pinned: 'INTEGER NOT NULL DEFAULT 0'
+});
+
+const NEWS_CATEGORIES = ['官方', '城市', 'NPC', '角色', '財經', '企業', '股票', '活動', '市場', '世界觀'];
+const CAT_EMOJI = {
+  官方: '📢', 城市: '🏙️', NPC: '🧑‍🌾', 角色: '💞', 財經: '📰',
+  企業: '🏢', 股票: '📈', 活動: '🎉', 市場: '🛒', 世界觀: '🌏'
+};
+
+// 玩家看到的世界動態。
+//   mode 'latest'（預設）＝置頂在前，其餘照時間新到舊，只列「還在生效／最近」的
+//   mode 'history'        ＝連已經結束的一起列
+//   category              ＝只看某一類
+function worldEmbed(gid, { category = '', mode = 'latest' } = {}) {
   const now = Date.now();
-  // 只給玩家看「正在生效中」的新聞：已觸發(applied=1) 且 時段還沒結束；排程中/已結束的都不顯示
-  const rows = db.prepare('SELECT * FROM market_news WHERE guild_id=? AND applied=1 ORDER BY effect_ts DESC, id DESC LIMIT 20').all(gid)
-    .filter(n => (n.effect_ts || 0) + Math.max(1, n.duration_h || 6) * 3600000 > now).slice(0, 6);
-  const embed = new EmbedBuilder().setColor(brandColor()).setTitle('📰 財經新聞');
-  if (!rows.length) return embed.setDescription('目前沒有財經新聞，市場一片平靜。');
-  // 只給玩家看標題與劇情內文，不顯示實際漲跌數字（避免玩家照著新聞去買賣套利）
-  for (const n of rows.slice(0, 6)) {
-    embed.addFields({ name: n.headline.slice(0, 250), value: (n.body || '　').slice(0, 1024) });
+  let rows = db.prepare(
+    'SELECT * FROM market_news WHERE guild_id=? AND applied=1 ORDER BY pinned DESC, effect_ts DESC, id DESC LIMIT 100').all(gid);
+  if (category) rows = rows.filter(n => (n.category || '財經') === category);
+  if (mode === 'latest') {
+    // 還在生效中的，加上置頂的（置頂不受時效限制）
+    rows = rows.filter(n => n.pinned || (n.effect_ts || 0) + Math.max(1, n.duration_h || 6) * 3600000 > now);
   }
-  return embed.setFooter({ text: '📰 璃白Yu財經 · 最新市場動態' });
+  rows = rows.slice(0, 8);
+
+  const embed = new EmbedBuilder().setColor(brandColor())
+    .setTitle(`🌏 世界動態${category ? `｜${CAT_EMOJI[category] || ''}${category}` : ''}${mode === 'history' ? '（歷史）' : ''}`);
+  if (!rows.length) {
+    return embed.setDescription(category
+      ? `目前沒有「${category}」類的動態。`
+      : '目前風平浪靜，沒有任何動態。');
+  }
+  // 只給玩家看標題與內文，不顯示實際漲跌數字（避免照著新聞去套利）
+  for (const n of rows) {
+    const cat = n.category || '財經';
+    embed.addFields({
+      name: `${n.pinned ? '📌 ' : ''}${CAT_EMOJI[cat] || ''}［${cat}］${n.headline}`.slice(0, 250),
+      value: (n.body || '　').slice(0, 1024)
+    });
+  }
+  return embed.setFooter({ text: '🌏 璃白Yu光世界動態 · 官方公告與各地消息都在這裡' });
 }
+
+// 分類／最新／歷史的切換列
+function worldRows(category = '', mode = 'latest') {
+  const menu = new StringSelectMenuBuilder().setCustomId(`world:cat:${mode}`)
+    .setPlaceholder(category ? `分類：${category}` : '全部分類')
+    .addOptions([{ label: '全部分類', value: '_all', default: !category }]
+      .concat(NEWS_CATEGORIES.map(c => ({
+        label: c, emoji: CAT_EMOJI[c], value: c, default: c === category
+      }))));
+  const btns = new ActionRowBuilder().addComponents(
+    new ButtonBuilder().setCustomId(`world:mode:latest:${category || '_all'}`).setLabel('最新')
+      .setStyle(mode === 'latest' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+    new ButtonBuilder().setCustomId(`world:mode:history:${category || '_all'}`).setLabel('歷史')
+      .setStyle(mode === 'history' ? ButtonStyle.Primary : ButtonStyle.Secondary));
+  return [new ActionRowBuilder().addComponents(menu), btns];
+}
+
+// 舊名保留：面板與其他模組還在呼叫 newsEmbed
+const newsEmbed = (gid) => worldEmbed(gid);
 
 // ================== 新聞發布（後台建立 → 機器人發到頻道）==================
 function applyNews(client, gid) {
@@ -790,7 +846,7 @@ async function announce(client, gid, n, effects, end, paid) {
 }
 
 // ================== 指令 ==================
-const CMDS = ['股市', '個股', '買股', '賣股', '持股', '股神榜', '行情'];
+const CMDS = ['股市', '個股', '買股', '賣股', '持股', '股神榜', '行情', '世界動態'];
 
 function channelOk(gid, chId) {
   const list = csv(cfg(gid).channels);
@@ -809,7 +865,9 @@ function init(client) {
         const [, act, key] = i.customId.split(':');
         if (act === 'market') return i.reply({ embeds: [marketEmbed(i.guildId)], flags: MessageFlags.Ephemeral });
         if (act === 'quotes') return i.reply({ embeds: [quotesEmbed(i.guildId)], flags: MessageFlags.Ephemeral });
-        if (act === 'news') return i.reply({ embeds: [newsEmbed(i.guildId)], flags: MessageFlags.Ephemeral });
+        if (act === 'news') {
+          return i.reply({ embeds: [worldEmbed(i.guildId)], components: worldRows(), flags: MessageFlags.Ephemeral });
+        }
         if (act === 'mine') return i.reply({ embeds: [portfolioEmbed(i.guildId, i.user.id, i.user.username)], flags: MessageFlags.Ephemeral });
         if (act === 'chart') {
           const s = symbolByKey(i.guildId, key);
@@ -894,15 +952,31 @@ function init(client) {
         return i.update(r.error ? { content: r.error, components: [], embeds: [] } : { content: '', embeds: [r.embed], components: [] }).catch(() => {});
       }
 
+      // 世界動態：分類下拉與最新／歷史切換
+      if (i.isStringSelectMenu?.() && i.customId.startsWith('world:cat:')) {
+        const mode = i.customId.split(':')[2] === 'history' ? 'history' : 'latest';
+        const cat = i.values[0] === '_all' ? '' : i.values[0];
+        return i.update({ embeds: [worldEmbed(i.guildId, { category: cat, mode })], components: worldRows(cat, mode) }).catch(() => {});
+      }
+      if (i.isButton?.() && i.customId.startsWith('world:mode:')) {
+        const [, , mode, rawCat] = i.customId.split(':');
+        const cat = rawCat === '_all' ? '' : rawCat;
+        return i.update({ embeds: [worldEmbed(i.guildId, { category: cat, mode })], components: worldRows(cat, mode) }).catch(() => {});
+      }
+
       if (!i.isChatInputCommand() || !CMDS.includes(i.commandName)) return;
       const gid = i.guildId;
       if (!gid) return i.reply({ content: '這個指令只能在伺服器裡使用。', flags: MessageFlags.Ephemeral });
       const c = cfg(gid);
 
-      // 行情（物價新聞）只吃 enabled；其餘是股市指令
+      // 行情（物價）只吃 enabled；其餘是股市指令
       if (i.commandName === '行情') {
-        if (!c.enabled) return i.reply({ content: '財經新聞目前沒有開放。', flags: MessageFlags.Ephemeral });
+        if (!c.enabled) return i.reply({ content: '世界動態目前沒有開放。', flags: MessageFlags.Ephemeral });
         return i.reply({ embeds: [quotesEmbed(gid)], flags: MessageFlags.Ephemeral });
+      }
+
+      if (i.commandName === '世界動態') {
+        return i.reply({ embeds: [worldEmbed(gid)], components: worldRows(), flags: MessageFlags.Ephemeral });
       }
       if (!c.stock_enabled) return i.reply({ content: '股市目前沒有開放。', flags: MessageFlags.Ephemeral });
       if (!channelOk(gid, i.channelId)) {
@@ -983,7 +1057,7 @@ function init(client) {
     }
   }, { timezone: 'Asia/Taipei' });
 
-  console.log('  ↳ 財經新聞／星幣股市模組已載入（預設關閉，後台開啟）');
+  console.log('  ↳ 世界動態／星幣股市模組已載入（預設關閉，後台開啟）');
 }
 
 module.exports = { init, enforceHoldings, forceSell, catchUp, runTick, seedGuild, buy, sell, sparkline };

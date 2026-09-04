@@ -239,8 +239,9 @@ const builders = [
     .addStringOption(o => o.setName('商品').setDescription('要兌換的獎勵名稱（用 /特殊商店 查看）').setRequired(true))
     .addIntegerOption(o => o.setName('數量').setDescription('要兌換幾份（不填＝1）').setMinValue(1).setMaxValue(25)),
 
-  // ---- 財經新聞 ＋ 星幣股市（後台預設關閉，開啟後才會有作用）----
-  new SlashCommandBuilder().setName('行情').setDescription('查看目前的財經新聞行情（哪些東西賣得比較貴）'),
+  // ---- 世界動態 ＋ 星幣股市（後台預設關閉，開啟後才會有作用）----
+  new SlashCommandBuilder().setName('世界動態').setDescription('官方公告、城市、NPC、角色、財經、活動…全世界的消息'),
+  new SlashCommandBuilder().setName('行情').setDescription('查看目前的物價行情（哪些東西賣得比較貴）'),
   new SlashCommandBuilder().setName('股市').setDescription('查看所有股票的現價與走勢'),
   new SlashCommandBuilder().setName('個股').setDescription('查看單一股票的 K 線與你的持股損益')
     .addStringOption(o => o.setName('代號').setDescription('股票代號或名稱（用 /股市 查看）').setRequired(true)),
@@ -268,7 +269,7 @@ const GAME_COMMANDS = new Set([
   '成就', '送禮', '邀請', '好感度', '設施商店', '稅單', '捐款', '基金會', '拍賣',
   '銀行', '信用貸款', '還款', '幫助', '冒險面板',
   '種子商店', '種植', '農地', '溫室', '採收', '特殊商店', '兌換',
-  '行情', '股市', '個股', '買股', '賣股', '持股', '股神榜'
+  '世界動態', '行情', '股市', '個股', '買股', '賣股', '持股', '股神榜'
 ]);
 const GAME_PREFIX = '【遊戲】';
 for (const cmd of builders) {

@@ -42,7 +42,7 @@ const MODULES = [
   { key: 'home',         label: '小屋與成就',        group: '遊戲區' },
   { key: 'stock',        label: '股市',              group: '遊戲區' },
   // 新聞獨立成一把鑰匙：它掌管全服物價與股價，權責跟其他頁面完全不同
-  { key: 'news',         label: '財經新聞（掌管物價）', group: '遊戲區' },
+  { key: 'news',         label: '世界動態（含物價快報）', group: '遊戲區' },
 
   { key: 'blacklist',    label: '黑名單',            group: '設定' },
   { key: 'media',        label: '媒體庫',            group: '設定' },

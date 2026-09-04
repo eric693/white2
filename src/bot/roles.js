@@ -85,7 +85,7 @@ const COMMAND_FEATURE = {
   '捐款': 'charity', '基金會': 'charity', '拍賣': 'auction',
   '銀行': 'loans', '信用貸款': 'loans', '還款': 'loans',
   '特殊商店': 'special', '兌換': 'special',
-  '行情': 'stock', '股市': 'stock', '個股': 'stock', '買股': 'stock', '賣股': 'stock',
+  '世界動態': 'stock', '行情': 'stock', '股市': 'stock', '個股': 'stock', '買股': 'stock', '賣股': 'stock',
   '持股': 'stock', '股神榜': 'stock'
 };
 function commandFeature(name) { return COMMAND_FEATURE[name] || null; }

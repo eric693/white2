@@ -68,7 +68,7 @@ const TABS = {
   money: {
     label: '金錢', emoji: '💰', color: 0x9b59b6,
     title: '💰 賺錢與理財',
-    desc: '賣東西、玩股票、繳稅、借錢、標拍賣。（每日簽到、財經新聞在上面的常用捷徑）\n⚠️ 股價可能跌到**負數**，賣出會倒扣星幣，出場前先看清楚現價。',
+    desc: '賣東西、玩股票、繳稅、借錢、標拍賣。（每日簽到、世界動態在上面的常用捷徑）\n⚠️ 股價可能跌到**負數**，賣出會倒扣星幣，出場前先看清楚現價。',
     rows: [
       [['adv:sellpick', '賣出', '💰', ButtonStyle.Primary], ['adv:trade', '交易', '🔄', ButtonStyle.Primary], ['stk:market', '股市行情', '📈', ButtonStyle.Primary], ['stk:buymenu', '買股', '📥', ButtonStyle.Success], ['stk:sellmenu', '賣股', '📤', ButtonStyle.Danger]],
       [['stk:mine', '我的持股', '📊'], ['adv:tax', '我的稅單', '🧾'], ['adv:charity', '基金會', '❤️'], ['adv:bank', '銀行', '🏦'], ['adv:auction', '拍賣會', '🔨']]
@@ -86,7 +86,7 @@ const QUICK = [
   ['adv:checkin', '簽到', '📅', '每日簽到領星幣'],
   ['adv:dex', '圖鑑', '📖', '收集進度'],
   ['adv:titles', '成就', '🏅', '稱號與成就'],
-  ['stk:news', '財經新聞', '📰', '影響股價的消息'],
+  ['stk:news', '世界動態', '🌏', '官方公告與各地消息'],
   ['adv:contest', '大賽', '🏆', '週賽／月賽排行榜'],
   ['adv:homeweb', '完整網頁版', '🖼️', '在瀏覽器看完整家園']
 ];
