@@ -80,7 +80,12 @@ function fields(b) {
     buyout_price: int(b.buyout_price, 0, 0),
     mats_cost: mats(b.mats_cost),
     start_ts: Number.isFinite(start) ? start : Date.now(),
-    end_ts: (Number.isFinite(start) ? start : Date.now()) + Math.round(hours * 3600000)
+    end_ts: (Number.isFinite(start) ? start : Date.now()) + Math.round(hours * 3600000),
+    // 參加資格：指定身分組（逗號分隔的 id，空＝不限）。刻意不寫死成基金會，
+    // 管理端要換成任何身分組都行。mode：bid＝可看不可出價；view＝禁止進入
+    require_role: String(b.require_role || '').split(/[\s,;、]+/).map(x => x.trim())
+      .filter(x => /^\d+$/.test(x)).join(','),
+    require_mode: b.require_mode === 'view' ? 'view' : 'bid'
   };
 }
 

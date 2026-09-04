@@ -73,12 +73,48 @@ function nextMin(gid, a) {
   return t.amount + Math.max(1, inc);
 }
 
+// ---------- 參加資格 ----------
+// 規格 16：管理端可以指定「只有某個身分組的人能參加」，例如基金會完成捐款
+// 後拿到的身分組。條件刻意不寫死成基金會 —— 存的是 Discord 身分組 id，
+// 管理端想換成任何身分組都行（活動限定、贊助者、VIP…）。
+//
+// require_mode：
+//   'bid'  ＝ 可以看、但不能出價（預設，資訊透明）
+//   'view' ＝ 連拍賣內容都不給看（禁止進入）
+require('../../db').ensureColumns('auctions', {
+  require_role: "TEXT NOT NULL DEFAULT ''",     // 逗號分隔的身分組 id，空＝不限
+  require_mode: "TEXT NOT NULL DEFAULT 'bid'"
+});
+
+const roleIds = (s2) => String(s2 || '').split(/[\s,;、]+/).map(x => x.trim()).filter(Boolean);
+
+// member 有沒有資格。沒設身分組就一律有資格。
+function eligible(a, member) {
+  const need = roleIds(a && a.require_role);
+  if (!need.length) return true;
+  if (!member || !member.roles || !member.roles.cache) return false;
+  // 管理端自己一律放行，不然管理員連測試都不能測
+  if (member.permissions?.has?.('ManageGuild')) return true;
+  return need.some(r => member.roles.cache.has(r));
+}
+
+// 沒資格時要給的說明（也用在「可看不可出價」的提示上）
+function ineligibleText(a, guild) {
+  const names = roleIds(a.require_role)
+    .map(id => guild?.roles?.cache?.get(id)?.name || `身分組 ${id}`)
+    .map(n => `**${n}**`).join('、');
+  return `🔒 這場拍賣限定 ${names} 才能參加。`;
+}
+
 // ---------- 出價 ----------
-function placeBid(gid, uid, uname, auctionId, amount) {
+function placeBid(gid, uid, uname, auctionId, amount, member) {
   const c = cfg(gid);
   if (!c.enabled) return { error: '拍賣會目前沒有開放。' };
   const a = db.prepare('SELECT * FROM auctions WHERE id=? AND guild_id=?').get(auctionId, gid);
   if (!a) return { error: '找不到這場拍賣。' };
+  if (!eligible(a, member)) {
+    return { error: ineligibleText(a, member && member.guild) + '\n取得指定身分組之後就可以出價了。' };
+  }
   if (a.status !== 'live') return { error: a.status === 'scheduled' ? '這場拍賣還沒開始。' : '這場拍賣已經結束了。' };
   if (a.end_ts <= Date.now()) return { error: '這場拍賣剛剛結束了。' };
 
@@ -128,12 +164,12 @@ function placeBid(gid, uid, uname, auctionId, amount) {
 }
 
 // ---------- 直接買下 ----------
-function buyout(gid, uid, uname, auctionId) {
+function buyout(gid, uid, uname, auctionId, member) {
   const a = db.prepare('SELECT * FROM auctions WHERE id=? AND guild_id=?').get(auctionId, gid);
   if (!a) return { error: '找不到這場拍賣。' };
   if (!a.buyout_price) return { error: '這件標的沒有開放直接買下。' };
   if (a.status !== 'live') return { error: '這場拍賣不在進行中。' };
-  const r = placeBid(gid, uid, uname, auctionId, Math.max(a.buyout_price, nextMin(gid, a)));
+  const r = placeBid(gid, uid, uname, auctionId, Math.max(a.buyout_price, nextMin(gid, a)), member);
   if (r.error) return r;
   // 立刻結標
   db.prepare('UPDATE auctions SET end_ts=? WHERE id=?').run(Date.now(), a.id);
@@ -258,6 +294,10 @@ function auctionEmbed(gid, a) {
   if (a.buyout_price > 0) e.addFields({ name: '直接買下', value: money(gid, a.buyout_price), inline: true });
   if (mats.length) e.addFields({ name: '得標另收材料', value: mats.map(m => `${m.item} ×${m.count}`).join('、') + '\n（材料不夠會按原價折算星幣補收）', inline: false });
   if (a.image_url) e.setImage(a.image_url);
+  if (roleIds(a.require_role).length) {
+    e.addFields({ name: '參加資格', value: `限定 ${roleIds(a.require_role).map(r => `<@&${r}>`).join('、')} 才能出價`
+      + (a.require_mode === 'view' ? '（未符合資格的人看不到這場拍賣）' : '（其他人可以觀看，但不能出價）'), inline: false });
+  }
   e.setFooter({ text: `拍賣 #${a.id}｜出價 ${a.bids} 次｜出價即鎖款，被超越自動全額退回` });
   return e;
 }
@@ -272,8 +312,9 @@ function auctionRow(gid, a) {
   return row;
 }
 
-function auctionPanel(gid) {
-  const list = liveAuctions(gid);
+function auctionPanel(gid, member) {
+  // require_mode='view' 的場次對沒資格的人是「禁止進入」——連列表都不出現
+  const list = liveAuctions(gid).filter(a => a.require_mode !== 'view' || eligible(a, member));
   const soon = db.prepare("SELECT * FROM auctions WHERE guild_id=? AND status='scheduled' ORDER BY start_ts LIMIT 5").all(gid);
   if (!list.length) {
     const e = new EmbedBuilder().setColor(brandColor()).setTitle('🔨 基金會拍賣會')
@@ -350,14 +391,18 @@ function init(client) {
 
       if (i.isChatInputCommand() && i.commandName === '拍賣') {
         if (!cfg(gid).enabled) return i.reply({ content: '拍賣會目前沒有開放。', ...eph }).catch(() => {});
-        return i.reply({ ...auctionPanel(gid), ...eph }).catch(() => {});
+        return i.reply({ ...auctionPanel(gid, i.member), ...eph }).catch(() => {});
       }
 
       if (i.isButton() && (i.customId.startsWith('aucbid:') || i.customId === 'adv:auction')) {
-        if (i.customId === 'adv:auction') return i.reply({ ...auctionPanel(gid), ...eph }).catch(() => {});
+        if (i.customId === 'adv:auction') return i.reply({ ...auctionPanel(gid, i.member), ...eph }).catch(() => {});
         const id = parseInt(i.customId.split(':')[1], 10);
         const a = db.prepare('SELECT * FROM auctions WHERE id=? AND guild_id=?').get(id, gid);
         if (!a) return i.reply({ content: '找不到這場拍賣。', ...eph }).catch(() => {});
+        // 沒資格就別讓他打完金額才被退回——直接在開視窗之前說清楚
+        if (!eligible(a, i.member)) {
+          return i.reply({ content: ineligibleText(a, i.guild) + '\n取得指定身分組之後就可以出價了。', ...eph }).catch(() => {});
+        }
         const min = nextMin(gid, a);
         const modal = new ModalBuilder().setCustomId(`aucmodal:${id}`).setTitle(`出價：${refInfo(gid, a).name}`.slice(0, 45))
           .addComponents(new ActionRowBuilder().addComponents(
@@ -369,7 +414,7 @@ function init(client) {
       if (i.isModalSubmit() && i.customId.startsWith('aucmodal:')) {
         const id = parseInt(i.customId.split(':')[1], 10);
         const raw = i.fields.getTextInputValue('amount').replace(/[,\s]/g, '');
-        const out = placeBid(gid, uid, uname, id, parseInt(raw, 10));
+        const out = placeBid(gid, uid, uname, id, parseInt(raw, 10), i.member);
         if (out.error) return i.reply({ content: out.error, ...eph }).catch(() => {});
         await i.reply({
           content: `✅ 已出價 **${money(gid, out.amount)}**，這筆錢先鎖住了；被人超越會自動全額退回。`
@@ -392,7 +437,7 @@ function init(client) {
 
       if (i.isButton() && i.customId.startsWith('aucbuy:')) {
         const id = parseInt(i.customId.split(':')[1], 10);
-        const out = buyout(gid, uid, uname, id);
+        const out = buyout(gid, uid, uname, id, i.member);
         if (out.error) return i.reply({ content: out.error, ...eph }).catch(() => {});
         return i.reply({ content: `⚡ 你直接買下了！成交金額 **${money(gid, out.amount)}**，一分鐘內會完成交付與公告。`, ...eph }).catch(() => {});
       }

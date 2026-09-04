@@ -150,6 +150,15 @@ App.page('auction', {
           </div></div>
         <div class="field"><label>持續（小時）</label><input name="duration_h" type="number" min="0.25" step="0.25" value="${r.end_ts && r.start_ts ? ((r.end_ts - r.start_ts) / 3600000).toFixed(2) : 24}"></div>
       </div>
+      <div class="form-row">
+        <div class="field"><label>參加資格（身分組）</label>${H.roleSelect('require_role', (r.require_role || '').split(',')[0] || '', { emptyLabel: '— 不限，所有人都能出價 —' })}
+          <div class="hint">只有這個身分組的人能參加。<b>不限定於基金會</b>——想用捐款者、贊助者、活動限定或任何身分組都可以，換一個就好。管理員一律不受限。</div></div>
+        <div class="field"><label>沒有資格的人</label>
+          <select name="require_mode">
+            <option value="bid" ${(r.require_mode || 'bid') === 'bid' ? 'selected' : ''}>可以觀看，但不能出價</option>
+            <option value="view" ${r.require_mode === 'view' ? 'selected' : ''}>禁止進入（連這場拍賣都看不到）</option>
+          </select></div>
+      </div>
       <div class="hint">出價會當場鎖款、被超越自動退回；結束前 ${c.antisnipe_min ?? 3} 分鐘內有人出價會自動延長 ${c.extend_min ?? 3} 分鐘。</div>`;
 
     // 標的下拉要跟著「拍什麼」連動
