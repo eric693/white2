@@ -144,32 +144,30 @@ function shopEmbeds(gid, uid, gc) {
 }
 
 function shopMenu(gid, uid, gc) {
-  const opts = [];
+  // 一個下拉最多 25 項，5 種設施 × 12 階早就超過。
+  // 以前是把全部選項串起來每 25 個切一刀 —— 結果同一種設施會被切成兩半，
+  // 例如只有 1 階牧場的人，第二個下拉是從「牧場 5 階」開始，看起來就像低階買不到。
+  // 改成「一種設施一個下拉」（最多 5 行），每種設施的所有可買階級都在自己那行裡。
+  const rows = [];
   for (const type of TYPE_KEYS) {
+    if (rows.length >= 5) break;
     const cur = ownedTier(gid, uid, type);
-    for (const d of defsOf(gid, type)) {
-      if (d.tier <= cur) continue;                     // 已擁有同階或更高階就不再列出
-      opts.push({
-        label: `${TYPES[type].name}：${d.name}（${d.tier} 階，共 ${d.slots} 格）`.slice(0, 100),
+    const opts = defsOf(gid, type)
+      .filter(d => d.tier > cur)                       // 已擁有同階或更高階就不再列出
+      .slice(0, 25)
+      .map(d => ({
+        label: `${d.name}（${d.tier} 階，共 ${d.slots} 格）`.slice(0, 100),
         description: `${d.price.toLocaleString('en-US')} ${gc.currency_name}`.slice(0, 100),
         value: String(d.id),
         emoji: d.emoji || TYPES[type].emoji
-      });
-    }
-  }
-  if (!opts.length) return null;
-  // 一個下拉最多 25 項，但 5 種設施 × 十幾階早就超過 —— 以前直接 slice(0,25)，
-  // 結果排在後面的牧場、魚缸高階根本選不到。改成分成好幾個下拉（最多 4 行，留 1 行給按鈕）。
-  const rows = [];
-  for (let n = 0; n < opts.length && rows.length < 4; n += 25) {
-    const part = opts.slice(n, n + 25);
-    // 這一段涵蓋哪幾種設施，直接寫在提示文字上，玩家才知道要往哪個下拉找
-    const kinds = [...new Set(part.map(o => o.label.split('：')[0]))].join('、');
+      }));
+    if (!opts.length) continue;
     rows.push(new ActionRowBuilder().addComponents(
-      new StringSelectMenuBuilder().setCustomId(`facbuy:${rows.length}`)
-        .setPlaceholder(`選要買的設施等級（${kinds}）`.slice(0, 150)).addOptions(part)));
+      new StringSelectMenuBuilder().setCustomId(`facbuy:${type}`)
+        .setPlaceholder(`${TYPES[type].name}：選要買的等級（${cur ? `目前 ${cur} 階` : '尚未擁有'}）`.slice(0, 150))
+        .addOptions(opts)));
   }
-  return rows;
+  return rows.length ? rows : null;
 }
 
 function buy(gid, uid, uname, defId) {
