@@ -206,7 +206,7 @@ function homePanel(gid, uid, uname, displayName) {
     .setDescription(def.unlocks ? `*${def.unlocks}*` : ' ')
     .addFields(
       { name: '💰 資產', value: money(gc, w.coins), inline: true },
-      { name: '🐾 寵物', value: `${pets} / ${def.pet_cap}`, inline: true },
+      { name: '🐾 寵物', value: def.pet_cap > 0 ? `${pets} 隻（無上限）` : '尚未解鎖', inline: true },
       { name: '🛋️ 家具', value: `${furn} / ${def.furniture_cap}`, inline: true }
     );
   if (buffLine) embed.addFields({ name: '⭐ 目前加成', value: buffLine });

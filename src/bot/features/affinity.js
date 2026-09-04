@@ -213,27 +213,44 @@ const partnersOf = (gid, uid) => db.prepare(
     WHERE p.guild_id=? AND p.user_id=? ORDER BY p.since`).all(gid, uid);
 
 /**
- * 同居名額：跟著房屋階級長，最多 3 位。
- * Lv.6 起 1 位、Lv.10 起 2 位、Lv.13 起 3 位（門檻可在後台改 partner_lv2 / partner_lv3）。
+ * 同居名額：2026-09 起取消數量上限。
+ *
+ * 上限拿掉之後改由「同居稅」節制——稅是倍增累進的（第 1 位基礎、第 2 位 ×2、
+ * 第 3 位 ×4…），養得起就儘管養，第 6 位的稅金已經是基礎的 32 倍。
+ * 用錢節制比寫死名額好：不需要為了多住一位去逼玩家把房子蓋到 Lv.12。
+ *
+ * 房屋等級仍然是「能不能開始同居」的門檻（Lv.6 起），只是不再限制人數。
+ * 回傳 Infinity 代表無上限，呼叫端只拿它跟現有人數比大小。
  */
 function partnerSlots(gid, uid, uname) {
   const c = hcfg(gid);
-  const cap = Math.max(1, Math.min(3, c.partner_slots ?? 3));
-  if (!uid) return cap;
+  if (!uid) return Infinity;
   const lv = homeOf(gid, uid, uname).level;
-  // 房屋規格：Lv.6 起 1 位、Lv.8 起 2 位、Lv.12 起 3 位（門檻在後台可調）
-  let n = lv >= (c.partner_level ?? 6) ? 1 : 0;
-  if (lv >= (c.partner_lv2 ?? 8)) n = 2;
-  if (lv >= (c.partner_lv3 ?? 12)) n = 3;
-  return Math.min(cap, n);
+  return lv >= (c.partner_level ?? 6) ? Infinity : 0;
 }
+
+// ---- 同居名單與轉盤分離（2026-09）----
+// 轉盤是「推薦其他創作者的角色」用的，裡面本來就會有別人家的孩子；
+// 舊版把「逛街會出現（stroll_ok）」直接當成同居候選，等於抽到誰就能把誰
+// 娶回家。現在改成獨立的 partner_ok 旗標，由管理端自己挑誰可以同居，
+// 轉盤抽到角色不會自動變成同居對象。
+// 遷移時先把 partner_ok 對齊現在的 stroll_ok，才不會有人的同居對象突然消失。
+(function ensurePartnerFlag() {
+  const { ensureColumns, getSetting, setSetting } = require('../../db');
+  ensureColumns('wheel_roles', { partner_ok: 'INTEGER NOT NULL DEFAULT 0' });
+  if (getSetting('partner_ok_migrated', '0') === '1') return;
+  try {
+    db.prepare('UPDATE wheel_roles SET partner_ok = stroll_ok').run();
+    setSetting('partner_ok_migrated', '1');
+  } catch (e) { console.error('同居名單遷移失敗：', e.message); }
+})();
 
 /** 可以邀請同居的候選名單（好感度達標、還沒住進來的） */
 function partnerCandidates(gid, uid) {
   const need = Math.max(0, hcfg(gid).partner_level ?? 6);
   return db.prepare(
     `SELECT a.role_id, a.level, a.points, r.name FROM affinity a JOIN wheel_roles r ON r.id=a.role_id
-      WHERE a.guild_id=? AND a.user_id=? AND a.level >= ? AND r.enabled=1 AND r.stroll_ok=1
+      WHERE a.guild_id=? AND a.user_id=? AND a.level >= ? AND r.enabled=1 AND r.partner_ok=1
         AND a.role_id NOT IN (SELECT role_id FROM home_partners WHERE guild_id=? AND user_id=?)
       ORDER BY a.points DESC LIMIT 25`).all(gid, uid, need, gid, uid);
 }
@@ -324,8 +341,8 @@ function moveIn(gid, uid, uname, roleId = 0) {
 
   const cur = partnersOf(gid, uid);
   const slots = partnerSlots(gid, uid, uname);
-  if (cur.length >= slots) {
-    return { error: `你家已經住滿了（${cur.length}/${slots} 位）。名額跟著房屋階級長 —— 把家蓋更大就能多住一位，或先請現在的搬走。` };
+  if (slots <= 0) {
+    return { error: `你的家還沒到可以同居的階級（需要 **Lv.${c.partner_level ?? 6}**，你現在 Lv.${home.level}）。` };
   }
   const need = Math.max(0, c.partner_level ?? 6);
   // 指定對象：要確認好感度真的達標，不能靠改 customId 硬塞
@@ -365,26 +382,29 @@ function partnerPanel(gid, uid, uname) {
   const need = Math.max(0, c.partner_level ?? 6);
   const home = homeOf(gid, uid, uname);
   const def = levelDef(gid, home.level);
-  const taxOf = (lv) => (tc.partner_base || 0) + (tc.partner_per_lv || 0) * Math.max(0, lv || 0);
+  // 同居稅是倍增累進的：第 n 位那一筆＝基礎 × 倍率^(n−1)
+  const step = Math.max(2, tc.partner_step || 2);
+  const taxAt = (nth) => Math.floor((tc.partner_base || 0) * Math.pow(step, Math.max(0, nth - 1)));
+  const totalTax = list.reduce((a, _, idx) => a + taxAt(idx + 1), 0);
 
   const e = new EmbedBuilder().setColor(0xeb459e).setTitle('💞 同居')
     .setDescription(
-      `請角色搬進你家一起住（目前 ${list.length}/${slots} 位）。\n`
-      + `條件：家園 **Lv.6** 以上 ＋ 該角色好感度 **${levelName(gid, need)}（Lv.${need}）** 以上。\n`
-      + `名額跟著房屋階級長：Lv.${c.partner_level ?? 6} 起 1 位、Lv.${c.partner_lv2 ?? 8} 起 2 位、Lv.${c.partner_lv3 ?? 12} 起 3 位。\n`
+      `請角色搬進你家一起住（目前 **${list.length}** 位，沒有數量上限）。\n`
+      + `條件：家園 **Lv.${need}** 以上 ＋ 該角色好感度 **${levelName(gid, need)}（Lv.${need}）** 以上。\n`
       + `每位角色都有**自己專屬的能力**（幫忙收成、自動種植、每日賺錢…），搬進來就會自動生效。\n`
       + `數值會隨**好感度階級**成長，好感度越高效果越強。\n`
-      + `⚠️ 同居要繳**伴侶稅**：每位每期 ${(tc.partner_base || 0).toLocaleString('en-US')} ＋ 好感度每階 ${(tc.partner_per_lv || 0).toLocaleString('en-US')}。`)
-    .addFields({ name: '目前同居', value: list.length
-      ? list.map(p => `💕 **${p.name}**　${levelName(gid, p.level)}（Lv.${p.level}）\n`
+      + `⚠️ 同居稅**倍增累進**：第 1 位 ${(tc.partner_base || 0).toLocaleString('en-US')}、`
+      + `第 2 位 ×${step}、第 3 位 ×${step * step}…　住越多位，每一位的稅都比前一位貴一倍。`)
+    .addFields({ name: `目前同居（每期同居稅合計 ${totalTax.toLocaleString('en-US')}）`, value: list.length
+      ? list.map((p, idx) => `💕 **${p.name}**　${levelName(gid, p.level)}（Lv.${p.level}）\n`
         + `　能力：${partnerSkillText(p, gid)}\n`
-        + `　每期伴侶稅 ${taxOf(p.level).toLocaleString('en-US')}`
+        + `　這一位每期 ${taxAt(idx + 1).toLocaleString('en-US')}`
         + (p.paid_total ? `　已繳 ${p.paid_total.toLocaleString('en-US')}` : '')).join('\n')
-      : `還沒有人住進來（0/${slots}）` });
+      : '還沒有人住進來' });
 
   const rows = [NAV('love')];
   const cands = partnerCandidates(gid, uid);
-  const full = list.length >= slots;
+  const full = slots <= 0;   // 沒有數量上限了，只剩「房屋等級不夠」這一種不能邀請的情況
   if (!full && cands.length && def && def.visit_ok) {
     rows.push(...selectRows('partnerpick', cands.map(x => ({
       label: x.name.slice(0, 100),
@@ -763,9 +783,9 @@ function init(client) {
           const line = adLine(out.role);
           const e = new EmbedBuilder().setColor(0xeb459e).setTitle(`💞 ${out.role.name} 搬進來了！`)
             .setDescription((line ? `💬 **「${line}」**\n\n` : '')
-              + `從今天起 **${out.role.name}** 住在你家（${out.used}/${out.slots}）。\n`
+              + `從今天起 **${out.role.name}** 住在你家（第 ${out.used} 位）。\n`
               + `✨ 他的專屬能力 **${out.skill ? require('./partnerskills').skillText(out.skill, out.level || 0) : '（管理員尚未設定）'}** 已經自動生效。\n`
-              + `⚠️ 每期會多一筆**伴侶稅**，請確認你養得起 —— 養不起可以請他搬走。`);
+              + `⚠️ 每期會多一筆**同居稅**，而且是倍增累進（住越多位越貴）——請確認你養得起，養不起可以請他搬走。`);
           if (out.role.image_url) e.setThumbnail(absUrl(out.role.image_url));
           return i.followUp({ embeds: [e], ...eph }).catch(() => {});
         }

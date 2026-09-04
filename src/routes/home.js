@@ -274,6 +274,31 @@ router.post('/role-skills', (req, res) => {
   res.json({ ok: true, roles: roleIds.length, skills: skillIds.length });
 });
 
+// ---------- 可同居角色名單 ----------
+// 轉盤與同居完全分離：轉盤裡可以放其他創作者的角色，但誰能被娶回家
+// 由管理端在這裡自己挑，抽到不等於可以同居。
+router.get('/partner-roles', (req, res) => {
+  res.json(db.prepare(
+    'SELECT id, name, author, enabled, partner_ok FROM wheel_roles WHERE guild_id=? ORDER BY author, name').all(req.guildId));
+});
+
+router.post('/partner-roles', (req, res) => {
+  const b = req.body || {};
+  const on = b.partner_ok ? 1 : 0;
+  let changed = 0;
+  if (Array.isArray(b.ids) && b.ids.length) {
+    const upd = db.prepare('UPDATE wheel_roles SET partner_ok=? WHERE guild_id=? AND id=?');
+    db.transaction(() => { for (const id of b.ids) changed += upd.run(on, req.guildId, int(id, 0, 0)).changes; })();
+  } else if (b.author !== undefined && b.author !== null) {
+    changed = db.prepare('UPDATE wheel_roles SET partner_ok=? WHERE guild_id=? AND trim(author)=trim(?)')
+      .run(on, req.guildId, String(b.author)).changes;
+  } else if (b.all) {
+    changed = db.prepare('UPDATE wheel_roles SET partner_ok=? WHERE guild_id=?').run(on, req.guildId).changes;
+  }
+  audit(req.user.name, `${on ? '開放' : '排除'}可同居角色 ${changed} 位`);
+  res.json({ ok: true, changed });
+});
+
 // ---------- 逛街角色名單 ----------
 // 轉盤裡不是「角色」的項目（模擬器、活動介紹）或不想出場的作者，可以整批排除。
 router.get('/stroll-roles', (req, res) => {

@@ -100,9 +100,13 @@ const petsOf = (gid, uid) => db.prepare(
   `SELECT o.*, p.name, p.emoji, p.rarity, p.skill_name, p.buff_type, p.buff_pct, p.feed_hours, p.target_item, p.category
      FROM pet_owned o JOIN pet_defs p ON p.id=o.pet_id
     WHERE o.guild_id=? AND o.user_id=? ORDER BY o.id`).all(gid, uid);
+// 寵物數量上限已於 2026-09 取消，改由「寵物稅」倍增累進節制
+//（第 1 隻基礎、第 2 隻 ×2、第 3 隻 ×4…）。
+// 房屋等級仍然是「能不能開始養寵物」的門檻：pet_cap 為 0 的階級還是不能養，
+// 但只要能養就沒有隻數限制。回傳 Infinity 代表無上限。
 const petCap = (gid, uid, uname) => {
   const def = levelDef(gid, homeOf(gid, uid, uname).level);
-  return def ? def.pet_cap : 0;
+  return def && def.pet_cap > 0 ? Infinity : 0;
 };
 // 幾顆心（0~5），純顯示用
 const hearts = (n) => { const k = Math.min(5, Math.max(0, Math.floor((n || 0) / 20))); return '❤️'.repeat(k) + '🤍'.repeat(5 - k); };
@@ -127,10 +131,7 @@ function adoptPet(gid, uid, uname, petId) {
   const home = homeOf(gid, uid, uname);
   if (home.level < p.min_level) return { error: `${p.name} 需要家園 **Lv.${p.min_level}**（你現在 Lv.${home.level}）才養得起。` };
   const cap = petCap(gid, uid, uname);
-  const have = petsOf(gid, uid).length;
-  if (have >= cap) return { error: cap <= 0
-    ? '你的房子還不能養寵物，需要家園 **Lv.3 鄉間住宅**。'
-    : `你的家最多養 ${cap} 隻（已經有 ${have} 隻）。小屋塞不下那麼多寵物 —— 想多養就去 \`/升級家園\`。` };
+  if (cap <= 0) return { error: '你的房子還不能養寵物，需要家園 **Lv.3 鄉間住宅**。' };
   if (!p.price) return { error: `${p.name} 不販售，要靠特殊管道才能取得。` };
   // 寵物一律「只用金錢」買，不吃材料 —— 材料留給蓋房子與做家具，
   // 寵物改用比較貴的價格當門檻（後台調價格就好，不用再湊材料表）
@@ -233,7 +234,10 @@ function petPanel(gid, uid, uname) {
   const embed = new EmbedBuilder().setColor(brandColor()).setTitle('🐾 寵物')
     .setDescription(cap <= 0
       ? '你的房子還不能養寵物，需要家園 **Lv.3 鄉間住宅**。'
-      : `可養 **${list.length} / ${cap}** 隻（由房屋階級決定，最多 3 隻）。\n寵物**不會生蛋生奶** —— 牠給的是技能加成，而且加成按親密度比例給，不餵就沒效果。`)
+      : `目前養了 **${list.length}** 隻，**沒有數量上限**。\n`
+        + '已經領養的寵物**永久保留**，可以自由替換要帶哪一隻上場，不必重買、養成資料也不會重置。\n'
+        + '⚠️ 隻數由**寵物稅**節制：倍增累進（第 1 隻基礎、第 2 隻 ×2、第 3 隻 ×4…），養越多每期越貴。\n'
+        + '寵物**不會生蛋生奶** —— 牠給的是技能加成，而且加成按親密度比例給，不餵就沒效果。')
     .setFooter({ text: (() => {
       // 體力（跟釣魚挖礦、逛街共用同一池）順便顯示在這裡，玩家不用再跑一次別的指令
       try {
@@ -273,7 +277,7 @@ function petPanel(gid, uid, uname) {
       })))));
   const shop = db.prepare('SELECT * FROM pet_defs WHERE guild_id=? AND enabled=1 AND price>0 AND min_level<=? ORDER BY sort').all(gid, home.level);
   // 寵物種類已經超過 25 隻，直接 slice 會讓後面的品種永遠領養不到 —— 滿了就換下一行。
-  if (shop.length && list.length < cap) rows.push(...selectRows('petadopt', shop.map(p => ({
+  if (shop.length) rows.push(...selectRows('petadopt', shop.map(p => ({
     label: `${RARITY[p.rarity] || ''}${p.emoji || ''}${p.name}`.slice(0, 100),
     description: `${p.price.toLocaleString('en-US')} 星幣｜${p.skill_name}　${p.target_item ? p.target_item + ' 掉落率' : (BUFF_TYPES[p.buff_type] || '')}+${p.buff_pct}%`.slice(0, 100),
     value: String(p.id)

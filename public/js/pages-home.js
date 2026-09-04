@@ -27,7 +27,7 @@ App.page('home', {
     const TABS = [
       ['config', '⚙️ 總設定'], ['levels', '🏠 小屋階級'], ['furniture', '🛋️ 家具'],
       ['kitchen', '🍳 廚房與料理'], ['pets', '🐾 寵物'], ['ach', '🏅 成就'],
-      ['affinity', '💕 好感度'], ['giftpref', '🎁 角色喜好'], ['partner', '💞 同居能力'], ['roleskill', '🎭 角色能力'], ['stroll', '🛍️ 逛街角色'], ['players', '👥 玩家現況']
+      ['affinity', '💕 好感度'], ['giftpref', '🎁 角色喜好'], ['partner', '💞 同居能力'], ['roleskill', '🎭 角色能力'], ['stroll', '🛍️ 逛街角色'], ['partnerroles', '🏠 可同居角色'], ['players', '👥 玩家現況']
     ];
     let tab = sessionStorage.getItem('w2_home_tab') || 'config';
     if (!TABS.some(t => t[0] === tab)) tab = 'config';
@@ -810,7 +810,7 @@ App.page('home', {
             <h3>🛍️ 誰會在逛街時出現</h3>
             <div class="hint" style="margin-bottom:10px">
               轉盤裡不是「角色」的項目（模擬器、活動介紹…），或不想讓他參與逛街的作者，可以在這裡排除。
-              目前<b>${onCount}</b> 位角色會在逛街時出現（同居對象也只從這份名單裡抽）。
+              目前<b>${onCount}</b> 位角色會在逛街時出現。<br>同居對象是另一份名單（見「🏠 可同居角色」），兩者已經完全分開。
             </div>
             <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">
               <div class="field" style="max-width:220px;margin:0"><label>依作者批次設定</label>
@@ -836,6 +836,58 @@ App.page('home', {
           UI.ok('已排除'); draw();
         };
         bindRoleToggles(body);
+        return;
+      }
+
+      if (tab === 'partnerroles') {
+        const roles = await GET('/partner-roles');
+        const authors = [...new Set(roles.map(r => (r.author || '').trim()))].sort();
+        const onCount = roles.filter(r => r.partner_ok && r.enabled).length;
+        const rows = (list, kw) => list
+          .filter(r => !kw || (r.name || '').includes(kw) || (r.author || '').includes(kw))
+          .map(r => `<tr>
+            <td>${UI.esc(r.name)}</td>
+            <td style="font-size:13px">${UI.esc(r.author || '')}</td>
+            <td>${r.enabled ? '✅' : '<span class="hint">停用</span>'}</td>
+            <td><label class="switch"><input type="checkbox" data-prole="${r.id}" ${r.partner_ok ? 'checked' : ''}> ${r.partner_ok ? '可同居' : '不可'}</label></td>
+          </tr>`).join('') || '<tr><td colspan="4" class="hint">找不到符合的角色</td></tr>';
+        const bind = () => body.querySelectorAll('[data-prole]').forEach(cb => cb.onchange = async () => {
+          try {
+            await POST('/partner-roles', { ids: [Number(cb.dataset.prole)], partner_ok: cb.checked });
+            cb.parentElement.lastChild.textContent = cb.checked ? ' 可同居' : ' 不可';
+          } catch (e) { UI.err(e.message); cb.checked = !cb.checked; }
+        });
+        body.innerHTML = `
+          <div class="card">
+            <h3>🏠 誰可以被邀請同居</h3>
+            <div class="hint" style="margin-bottom:10px">
+              轉盤與同居已經完全分開：轉盤可以放其他創作者的角色，但<b>抽到不會自動變成同居對象</b>。
+              誰能被娶回家由這裡決定。目前 <b>${onCount}</b> 位角色可同居。<br>
+              同居人數沒有上限，改由<b>同居稅</b>倍增累進節制（第 1 位基礎、第 2 位 ×2、第 3 位 ×4…）。
+            </div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">
+              <div class="field" style="max-width:220px;margin:0"><label>依作者批次設定</label>
+                <select id="pauthor">${authors.map(a => `<option value="${UI.esc(a)}">${UI.esc(a || '（沒有作者）')}（${roles.filter(r => (r.author || '').trim() === a).length}）</option>`).join('')}</select></div>
+              <button class="btn small" id="pon">整個作者開放</button>
+              <button class="btn small secondary" id="poff">整個作者排除</button>
+              <div class="spacer" style="flex:1"></div>
+              <input id="pkw" placeholder="搜尋角色或作者" style="max-width:180px">
+            </div>
+            <div class="table-wrap" style="max-height:480px;overflow:auto"><table class="list">
+              <thead><tr><th>角色</th><th>作者</th><th>轉盤啟用</th><th>可否同居</th></tr></thead>
+              <tbody id="prlist">${rows(roles, '')}</tbody>
+            </table></div>
+          </div>`;
+        body.querySelector('#pkw').oninput = (e) => { body.querySelector('#prlist').innerHTML = rows(roles, e.target.value.trim()); bind(); };
+        body.querySelector('#pon').onclick = async () => {
+          await POST('/partner-roles', { author: body.querySelector('#pauthor').value, partner_ok: true });
+          UI.ok('已開放'); draw();
+        };
+        body.querySelector('#poff').onclick = async () => {
+          await POST('/partner-roles', { author: body.querySelector('#pauthor').value, partner_ok: false });
+          UI.ok('已排除'); draw();
+        };
+        bind();
         return;
       }
 
