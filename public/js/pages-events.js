@@ -13,7 +13,8 @@ App.page('birthday', {
   title: '生日驗證與慶生', sub: '加入年齡驗證、生日名單與慶生設定', module: 'birthday',
   async render(el) {
     await H.loadMeta();
-    const [vc, bc, list] = await Promise.all([GET('/verify-config'), GET('/birthday-config'), GET('/birthdays')]);
+    const [vc, bc, list, under] = await Promise.all([
+      GET('/verify-config'), GET('/birthday-config'), GET('/birthdays'), GET('/underage')]);
     el.innerHTML = `
       <div class="card" style="max-width:660px" id="vwrap">
         <h3>加入年齡驗證</h3>
@@ -32,6 +33,10 @@ App.page('birthday', {
             私訊被對方關閉時會自動退回頻道發送。</div></div>
         <div class="field"><label>退回頻道發送時，幾秒後自動刪除（0＝不刪）</label>
           <input name="prompt_delete_sec" type="number" min="0" value="${vc.prompt_delete_sec ?? 120}"></div>
+        <div class="field"><label>入群幾分鐘內沒完成驗證就自動踢（0＝不踢）</label>
+          <input name="kick_timeout_min" type="number" min="0" value="${vc.kick_timeout_min ?? 0}">
+          <div class="hint">每分鐘檢查一次。已填生日或已拿到通過身分組的人不會被踢；機器人踢不動的（管理員、身分組較高）也會跳過。</div></div>
+        <div class="field">${H.toggle('block_underage', vc.block_underage ?? 1, '曾被判未成年者，之後再填生日一律拒絕（防止改年份重試）')}</div>
         <div class="field"><label>驗證頻道（放按鈕面板的地方）</label>${H.chanSelect('verify_channel', vc.verify_channel)}</div>
         <div class="field"><label>通過後給予的身分組</label>${H.roleSelect('pass_role', vc.pass_role)}</div>
         <div class="field"><label>驗證提示文字</label><textarea name="prompt_text">${UI.esc(vc.prompt_text)}</textarea>
@@ -75,6 +80,21 @@ App.page('birthday', {
       </div>
 
       <div class="card">
+        <div class="toolbar"><h3 style="margin:0">未成年攔截名單（${under.length}）</h3></div>
+        <div class="table-wrap"><table class="list">
+          <thead><tr><th>使用者</th><th>ID</th><th>填的生日</th><th>當時年齡</th><th>次數</th><th>狀態</th><th>最後嘗試</th><th></th></tr></thead>
+          <tbody>${under.length ? under.map(u => `
+            <tr><td>${UI.esc(u.username || '—')}</td><td><code>${u.user_id}</code></td>
+              <td>${UI.esc(u.birth)}</td><td>${u.age}</td><td>${u.attempts}</td>
+              <td>${u.blocked ? '<span class="tag danger">封鎖中</span>' : '已解除'}</td>
+              <td>${UI.esc(u.updated_at || u.created_at || '')}</td>
+              <td><button class="btn tiny secondary" data-ublock="${u.user_id}" data-to="${u.blocked ? 0 : 1}">${u.blocked ? '解除封鎖' : '重新封鎖'}</button>
+                <button class="btn tiny danger" data-udel="${u.user_id}">刪除</button></td></tr>`).join('')
+            : '<tr><td colspan="8" class="empty">目前沒有被擋下的紀錄</td></tr>'}
+          </tbody></table></div>
+      </div>
+
+      <div class="card">
         <div class="toolbar"><h3 style="margin:0">生日名單（${list.length}）</h3><div class="spacer"></div>
           <button class="btn small" id="addb">＋ 手動新增</button></div>
         <div class="table-wrap"><table class="list">
@@ -113,7 +133,7 @@ App.page('birthday', {
             <tbody>${d.history.length ? d.history.map(h => `
               <tr><td>${UI.esc(h.created_at)}</td>
                 <td class="wrap">${UI.esc(h.username || '—')}<br><code>${h.user_id}</code></td>
-                <td>${({ set: '填寫', update: '修改', delete: '刪除' })[h.action] || h.action}</td>
+                <td>${({ set: '填寫', update: '修改', delete: '刪除', underage: '未成年被擋' })[h.action] || h.action}</td>
                 <td>${UI.esc(h.old_value || '—')} → ${UI.esc(h.new_value || '—')}</td>
                 <td>${UI.esc(h.operator || '玩家自填')}</td></tr>`).join('')
               : '<tr><td colspan="5" class="empty">尚無紀錄</td></tr>'}
@@ -138,6 +158,14 @@ App.page('birthday', {
           <div class="field"><label>日</label><input name="birth_d" type="number"></div>
         </div>`,
       onOk: async (back) => { await POST('/birthdays', H.collect(back)); UI.ok('已新增'); App.go('birthday'); }
+    });
+    el.querySelectorAll('[data-ublock]').forEach(b => b.onclick = async () => {
+      await PUT('/underage/' + b.dataset.ublock, { blocked: Number(b.dataset.to) });
+      UI.ok('已更新'); App.go('birthday');
+    });
+    el.querySelectorAll('[data-udel]').forEach(b => b.onclick = async () => {
+      if (!await UI.confirm('刪除這筆攔截紀錄？之後他可以重新填寫生日。')) return;
+      await DEL('/underage/' + b.dataset.udel); UI.ok('已刪除'); App.go('birthday');
     });
     el.querySelectorAll('[data-del]').forEach(b => b.onclick = async () => {
       if (!await UI.confirm('刪除此生日資料？')) return;

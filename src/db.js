@@ -535,7 +535,11 @@ ensureColumns('verify_config', {
   // dm＝私訊本人（預設）／channel＝頻道公開發／panel＝不主動發，只靠常駐面板
   join_prompt_mode: "TEXT NOT NULL DEFAULT 'dm'",
   // 退回頻道發送時，幾秒後自動刪除（0＝不刪）
-  prompt_delete_sec: 'INTEGER NOT NULL DEFAULT 120'
+  prompt_delete_sec: 'INTEGER NOT NULL DEFAULT 120',
+  // 入群後幾分鐘內沒完成驗證就自動踢（0＝不踢）
+  kick_timeout_min: 'INTEGER NOT NULL DEFAULT 0',
+  // 曾被判未成年的人，之後再填生日一律拒絕
+  block_underage: 'INTEGER NOT NULL DEFAULT 1'
 });
 
 ensureColumns('polls', {

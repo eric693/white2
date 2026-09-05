@@ -40,6 +40,23 @@ async function postBirthdayPanel(client, channelId, gid) {
   await ch.send({ embeds: [embed], components: [fillBtn('填寫 / 修改生日')] });
 }
 
+// 未成年攔截名單：查／記
+function underageRow(gid, userId) {
+  return db.prepare('SELECT * FROM verify_underage WHERE guild_id = ? AND user_id = ?').get(gid, userId);
+}
+function recordUnderage(gid, user, y, m, d, age) {
+  db.prepare(
+    `INSERT INTO verify_underage (guild_id, user_id, username, birth, age)
+     VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(guild_id, user_id) DO UPDATE SET username=excluded.username, birth=excluded.birth,
+       age=excluded.age, attempts=attempts+1, updated_at=datetime('now','localtime')`
+  ).run(gid, user.id, user.username, `${y}/${m}/${d}`, age);
+  db.prepare(
+    `INSERT INTO birthday_history (guild_id, user_id, username, action, old_value, new_value, operator)
+     VALUES (?, ?, ?, 'underage', '', ?, '')`
+  ).run(gid, user.id, user.username, `${y}/${m}/${d}（${age} 歲）`);
+}
+
 function saveBirthday(gid, user, y, m, d, operator = '') {
   const old = db.prepare('SELECT * FROM birthdays WHERE guild_id = ? AND user_id = ?').get(gid, user.id);
   db.prepare(
@@ -101,6 +118,20 @@ function init(client) {
       try {
         const gid = i.guild.id;
         const c = verifyCfg(gid);
+
+        // 曾被判未成年 → 直接拒絕，不給他改年份重填
+        if (c.enabled && c.block_underage) {
+          const bad = underageRow(gid, i.user.id);
+          if (bad && bad.blocked) {
+            db.prepare('UPDATE verify_underage SET attempts = attempts + 1, updated_at = datetime(\'now\',\'localtime\') WHERE id = ?').run(bad.id);
+            await i.reply({ content: '你先前的年齡驗證未通過，無法再次填寫。如有疑問請聯繫管理員。', flags: MessageFlags.Ephemeral }).catch(() => {});
+            if (c.kick_underage && i.member) {
+              setTimeout(() => i.member.kick('年齡驗證黑名單').catch(() => {}), 1500);
+            }
+            return;
+          }
+        }
+
         const y = parseInt(i.fields.getTextInputValue('y'), 10);
         const m = parseInt(i.fields.getTextInputValue('m'), 10);
         const d = parseInt(i.fields.getTextInputValue('d'), 10);
@@ -112,6 +143,7 @@ function init(client) {
 
         // 6.2 年齡驗證（僅在啟用驗證時擋人）
         if (c.enabled && age < c.min_age) {
+          recordUnderage(gid, i.user, y, m, d, age);   // 留檔，之後不准換個年份再試
           await i.reply({ content: `很抱歉，本伺服器僅開放滿 ${c.min_age} 歲者加入。`, flags: MessageFlags.Ephemeral }).catch(() => {});
           if (c.kick_underage && i.member) {
             setTimeout(() => i.member.kick(`未滿 ${c.min_age} 歲，生日驗證未通過`).catch(() => {}), 1500);
@@ -136,6 +168,11 @@ function init(client) {
   // 10.4 每分鐘跑一次；由各伺服器自己的 send_time 決定要不要發（多伺服器各自獨立）
   cron.schedule('* * * * *', () => {
     runBirthdayCheck(client).catch(e => console.error('慶生檢查失敗：', e.message));
+  }, { timezone: 'Asia/Taipei' });
+
+  // 入群後逾時未完成驗證 → 自動踢（每分鐘掃一次；重啟後也還有效）
+  cron.schedule('* * * * *', () => {
+    kickUnverified(client).catch(e => console.error('逾時未驗證檢查失敗：', e.message));
   }, { timezone: 'Asia/Taipei' });
 
   // 10.2 每天中午檢查未填生日的成員並提醒
@@ -206,6 +243,32 @@ async function runBirthdayCheckGuild(client, gid, force = false) {
   }
 }
 
+// 入群逾時未驗證就踢掉（verify_config.kick_timeout_min > 0 才動作）
+async function kickUnverified(client) {
+  for (const gid of activeGuildIds()) {
+    if (!allowed(gid, 'birthday')) continue;
+    const c = verifyCfg(gid);
+    if (!c.enabled || !(Number(c.kick_timeout_min) > 0)) continue;
+    const guild = client.guilds.cache.get(gid);
+    if (!guild) continue;
+    try {
+      const deadline = Date.now() - Number(c.kick_timeout_min) * 60000;
+      const have = new Set(db.prepare('SELECT user_id FROM birthdays WHERE guild_id = ?').all(gid).map(r => r.user_id));
+      // 有 GuildMembers intent，成員都在快取裡；只有快取明顯不完整時才真的打 API，
+      // 免得每分鐘對每台伺服器全量 fetch。
+      if (guild.members.cache.size < (guild.memberCount || 0)) await guild.members.fetch();
+      for (const [, mem] of guild.members.cache) {
+        if (mem.user.bot) continue;
+        if (have.has(mem.id)) continue;                                  // 已填生日
+        if (c.pass_role && mem.roles.cache.has(c.pass_role)) continue;   // 已通過驗證
+        if (!mem.joinedTimestamp || mem.joinedTimestamp > deadline) continue;
+        if (!mem.kickable) continue;                                     // 權限不足／管理員就跳過
+        await mem.kick(`入群 ${c.kick_timeout_min} 分鐘內未完成生日驗證`).catch(() => {});
+      }
+    } catch (e) { logError(gid, '逾時未驗證踢除失敗：', e && e.stack ? e.stack : e); }
+  }
+}
+
 // 10.2 提醒尚未填寫生日的成員（持續提醒，填完自動停止；遍歷所有伺服器）
 async function remindMissing(client) {
   for (const gid of activeGuildIds()) {
@@ -252,4 +315,4 @@ async function remindMissingGuild(client, gid) {
   console.log(`  ↳ 已提醒 ${missing.size} 位尚未填寫生日的成員`);
 }
 
-module.exports = { init, calcAge, runBirthdayCheck, remindMissing, saveBirthday };
+module.exports = { init, calcAge, runBirthdayCheck, remindMissing, saveBirthday, kickUnverified };

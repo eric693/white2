@@ -270,6 +270,22 @@ CREATE TABLE IF NOT EXISTS birthday_history (
   created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
 
+-- 未成年攔截名單（被年齡驗證擋下的人；blocked=1 時不准再填生日）
+CREATE TABLE IF NOT EXISTS verify_underage (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id   TEXT NOT NULL DEFAULT '',
+  user_id    TEXT NOT NULL,
+  username   TEXT NOT NULL DEFAULT '',
+  birth      TEXT NOT NULL DEFAULT '',      -- 當時填的生日 y/m/d
+  age        INTEGER NOT NULL DEFAULT 0,
+  attempts   INTEGER NOT NULL DEFAULT 1,    -- 累計被擋次數
+  blocked    INTEGER NOT NULL DEFAULT 1,    -- 1=再次填寫直接拒絕
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  UNIQUE(guild_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_verify_underage_guild ON verify_underage(guild_id);
+
 -- ===== 玩家生日 =====
 CREATE TABLE IF NOT EXISTS birthdays (
   user_id     TEXT PRIMARY KEY,

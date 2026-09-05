@@ -13,10 +13,11 @@ router.get('/verify-config', (req, res) => {
 router.put('/verify-config', (req, res) => {
   const b = req.body || {};
   db.prepare(
-    `UPDATE verify_config SET enabled=?, min_age=?, verify_channel=?, pass_role=?, kick_underage=?, prompt_text=?, join_prompt_mode=?, prompt_delete_sec=? WHERE guild_id=?`
+    `UPDATE verify_config SET enabled=?, min_age=?, verify_channel=?, pass_role=?, kick_underage=?, prompt_text=?, join_prompt_mode=?, prompt_delete_sec=?, kick_timeout_min=?, block_underage=? WHERE guild_id=?`
   ).run(b.enabled ? 1 : 0, parseInt(b.min_age) || 18, b.verify_channel || '', b.pass_role || '', b.kick_underage ? 1 : 0, b.prompt_text || '',
     ['dm', 'channel', 'panel'].includes(b.join_prompt_mode) ? b.join_prompt_mode : 'dm',
-    Math.max(0, parseInt(b.prompt_delete_sec, 10) || 0), req.guildId);
+    Math.max(0, parseInt(b.prompt_delete_sec, 10) || 0),
+    Math.max(0, parseInt(b.kick_timeout_min, 10) || 0), b.block_underage ? 1 : 0, req.guildId);
   audit(req.user.name, '更新生日驗證設定');
   res.json({ ok: true });
 });
@@ -74,6 +75,24 @@ router.get('/birthday-logs', (req, res) => {
         WHERE s.guild_id = ? ORDER BY s.sent_at DESC LIMIT 200`
     ).all(req.guildId)
   });
+});
+
+// ---- 未成年攔截名單 ----
+router.get('/underage', (req, res) => {
+  res.json(db.prepare('SELECT * FROM verify_underage WHERE guild_id = ? ORDER BY updated_at DESC LIMIT 300').all(req.guildId));
+});
+// 解除封鎖（保留紀錄，只是允許他重新填一次）
+router.put('/underage/:userId', (req, res) => {
+  const blocked = req.body && req.body.blocked ? 1 : 0;
+  db.prepare('UPDATE verify_underage SET blocked = ?, updated_at = datetime(\'now\',\'localtime\') WHERE guild_id = ? AND user_id = ?')
+    .run(blocked, req.guildId, req.params.userId);
+  audit(req.user.name, `${blocked ? '重新封鎖' : '解除'}未成年攔截 ${req.params.userId}`);
+  res.json({ ok: true });
+});
+router.delete('/underage/:userId', (req, res) => {
+  db.prepare('DELETE FROM verify_underage WHERE guild_id = ? AND user_id = ?').run(req.guildId, req.params.userId);
+  audit(req.user.name, `刪除未成年攔截紀錄 ${req.params.userId}`);
+  res.json({ ok: true });
 });
 
 // ---- 生日名單 ----
