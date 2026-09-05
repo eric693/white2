@@ -5,3 +5,7 @@ uploads/
 *.log
 npm-debug.log*
 .DS_Store
+
+# yt-dlp 抓 HLS 分段時留下的暫存檔（已改成寫進 data/tmp，這行是保險）
+--Frag*
+data/tmp/

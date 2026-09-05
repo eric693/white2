@@ -1,6 +1,11 @@
 // yt-dlp 音源引擎：搜尋、取 metadata、開音訊串流
 // YouTube 對機房 IP 常要求登入驗證，將 cookie 檔路徑填入 .env 的 YT_COOKIES 即可繞過。
 const { spawn } = require('child_process');
+// yt-dlp 抓 HLS 分段時（即使 -o - 輸出到 stdout）仍會把 --FragN 暫存檔寫在「工作目錄」。
+// 子行程預設繼承機器人的工作目錄＝專案根目錄，於是垃圾檔一直長在 repo 裡，
+// 還會被 git add -A 掃進版控。改成統一在 data/tmp 底下跑。
+const TMP_DIR = require('path').join(__dirname, '..', '..', 'data', 'tmp');
+try { require('fs').mkdirSync(TMP_DIR, { recursive: true }); } catch { /* 已存在就好 */ }
 const path = require('path');
 const fs = require('fs');
 
@@ -21,7 +26,7 @@ function cookieArgs() { return baseArgs(); }
 // 執行 yt-dlp 並收集 stdout（JSON 或直連網址）
 function run(args, { timeout = 60000 } = {}) {
   return new Promise((resolve, reject) => {
-    const p = spawn(BIN, [...baseArgs(), ...args], { stdio: ['ignore', 'pipe', 'pipe'] });
+    const p = spawn(BIN, [...baseArgs(), ...args], { stdio: ['ignore', 'pipe', 'pipe'], cwd: TMP_DIR });
     let out = '', err = '';
     const t = setTimeout(() => { p.kill('SIGKILL'); reject(new Error('yt-dlp 逾時')); }, timeout);
     p.stdout.on('data', d => out += d);
@@ -145,7 +150,7 @@ function stream(url) {
     '--file-access-retries', '5',
     '--socket-timeout', '15',
     '-o', '-', url
-  ], { stdio: ['ignore', 'pipe', 'ignore'] });
+  ], { stdio: ['ignore', 'pipe', 'ignore'], cwd: TMP_DIR });
   p.on('error', () => {});
   p.stdout.proc = p;
   return p.stdout;
