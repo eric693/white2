@@ -3,6 +3,7 @@ const { EmbedBuilder, AttachmentBuilder, MessageFlags} = require('discord.js');
 const { db, guildConfig, logError } = require('../../db');
 const { brandColor } = require('../../util/brand');
 const { makeRankCard } = require('../../util/rankcard');
+const { allowed } = require('../paywall');
 
 const cfg = (gid) => guildConfig('xp_config', gid);
 const csv = (s) => String(s || '').split(/[\n,]/).map(x => x.trim()).filter(Boolean);
@@ -52,6 +53,8 @@ function init(client) {
   client.on('messageCreate', async (msg) => {
     if (msg.author.bot || !msg.guild) return;
     const gid = msg.guild.id;
+    // 訂閱付費牆：沒訂就不再累積經驗值（已累積的資料完全保留，續訂後接著算）
+    if (!allowed(gid, 'xp')) return;
     const c = cfg(gid);
     if (!c.enabled) return;
     if (csv(c.ignore_channels).includes(msg.channel.id)) return;

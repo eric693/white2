@@ -3,6 +3,7 @@ const { db, logError } = require('../../db');
 const { absUrl } = require('../../util/url');
 const { brandColor } = require('../../util/brand');
 const { buildButtonRows } = require('../../util/components');
+const { allowed } = require('../paywall');
 
 const csv = (s) => String(s || '').split(/[\n,]/).map(x => x.trim()).filter(Boolean);
 
@@ -35,6 +36,8 @@ function init(client) {
     const content = msg.content || '';
     if (!content) return;
     const gid = msg.guild.id;
+    // 訂閱付費牆：方案沒含關鍵字回覆就安靜跳過（事件型功能不喊「請續費」，否則會變洗頻）
+    if (!allowed(gid, 'keywords')) return;
 
     // ---- 關鍵字自動回覆 ----
     const kws = db.prepare('SELECT * FROM keywords WHERE guild_id = ? AND enabled = 1').all(gid);

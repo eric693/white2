@@ -4,6 +4,7 @@ const { db, guildConfig, logError } = require('../../db');
 const { buildButtonRows } = require('../../util/components');
 const { makeWelcomeCard } = require('../../util/welcomecard');
 const { absUrl } = require('../../util/url');
+const { allowed } = require('../paywall');
 
 const cfg = (gid) => guildConfig('welcome_config', gid);
 
@@ -97,7 +98,9 @@ function init(client) {
     }
 
     // 6.1 / 6.4 / 6.5 歡迎訊息
-    if (c.join_enabled && c.join_channel) {
+    // 訂閱付費牆只擋「對外發訊息」這件事：入群紀錄照常寫、自動給身分組照常跑，
+    // 否則沒訂閱的伺服器會連新成員拿不到身分組（等於進不了頻道），災情比停用還大。
+    if (allowed(gid, 'welcome') && c.join_enabled && c.join_channel) {
       const ch = await fetchChannel(client, c.join_channel);
       if (ch) {
         try {
@@ -158,6 +161,8 @@ function init(client) {
   client.on('guildMemberRemove', async (member) => {
     const gid = member.guild.id;
     const c = cfg(gid);
+    // 離群「紀錄」照寫（後台要查得到），只有對外的離群通知受訂閱限制 —— 見下方 leaveOk
+    const leaveOk = allowed(gid, 'welcome');
     const joinedAt = lastJoinAt(gid, member.id) || (member.joinedAt ? fmt(member.joinedAt) : '');
     const stayDays = member.joinedAt
       ? Math.max(0, Math.floor((Date.now() - member.joinedAt.getTime()) / 86400000)) : 0;
@@ -170,7 +175,7 @@ function init(client) {
        VALUES (?, ?, ?, 'leave', ?, ?, ?, ?, ?)`
     ).run(gid, member.id, member.user.username, roles, fmt(member.user.createdAt), joinedAt, stayDays, joinCount);
 
-    if (c.leave_enabled && c.leave_channel) {
+    if (leaveOk && c.leave_enabled && c.leave_channel) {
       const ch = await fetchChannel(client, c.leave_channel);
       if (ch) {
         try {

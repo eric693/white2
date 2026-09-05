@@ -2,7 +2,7 @@ const { Client, GatewayIntentBits, Partials, MessageFlags } = require('discord.j
 const path = require('path');
 const fs = require('fs');
 const { getSetting, setSetting, ensureGuild, db } = require('../db');
-const { botRole, roleLabel, featuresFor, commandsFor, commandFeature, isButlerComponent } = require('./roles');
+const { botRole, roleLabel, featuresFor, commandsFor, commandFeature, componentFeature, isButlerComponent } = require('./roles');
 const { hasFeature, lockedMessage } = require('../subscription');
 const { absUrl } = require('../util/url');
 
@@ -219,19 +219,9 @@ async function applyAppearance() {
 // 這個 listener 在功能模組之前註冊（模組是 clientReady 後才 init），而 discord.js
 // 的 emit 是同步的 —— 所以在這裡把 isChatInputCommand()/isButton() 就地改成回 false，
 // 後面每個功能模組的 handler 都會直接略過這筆互動，不會出現「兩邊都回應」的錯誤。
-const BUTTON_FEATURE_HINTS = [
-  ['stock', 'stock'], ['auction', 'auction'], ['loan', 'loans'], ['bank', 'loans'], ['tax', 'tax'],
-  ['charity', 'charity'], ['ranch', 'ranch'], ['aqua', 'aquarium'], ['crop', 'crops'],
-  ['pet', 'pets'], ['kitchen', 'kitchen'], ['furn', 'furniture'], ['home', 'home'],
-  ['trade', 'trades'], ['gift', 'affinity'], ['music', 'music'], ['ticket', 'tickets'],
-  ['wheel', 'wheel'], ['poll', 'poll'], ['giveaway', 'giveaway']
-];
 function interactionFeature(i) {
   if (i.isChatInputCommand?.()) return commandFeature(i.commandName);
-  const id = String(i.customId || '');
-  if (!id) return null;
-  const hit = BUTTON_FEATURE_HINTS.find(([prefix]) => id.startsWith(prefix));
-  return hit ? hit[1] : null;
+  return componentFeature(i.customId);
 }
 
 client.on('interactionCreate', (i) => {
@@ -243,11 +233,14 @@ client.on('interactionCreate', (i) => {
     const role = botRole();
     if (hasFeature(i.guildId, role, key)) return;
 
-    // 讓後面的功能模組完全略過這筆互動
-    i.isChatInputCommand = () => false;
-    i.isButton = () => false;
-    i.isStringSelectMenu = () => false;
-    i.isAutocomplete = () => false;
+    // 讓後面的功能模組完全略過這筆互動。
+    // 用 defineProperty 而不是直接賦值：面板的「常用捷徑」會做一個 Object.create 分身，
+    // 分身上的 isButton 若被定義成唯讀，直接賦值在非嚴格模式下會靜默失敗，
+    // 下游模組就會照常處理已經被擋下的互動（重複回應）。
+    for (const fn of ['isChatInputCommand', 'isButton', 'isStringSelectMenu', 'isAutocomplete']) {
+      try { Object.defineProperty(i, fn, { value: () => false, writable: true, configurable: true }); }
+      catch { i[fn] = () => false; }
+    }
     i.reply({ content: lockedMessage(i.guildId, role, key), flags: MessageFlags.Ephemeral }).catch(() => {});
   } catch (e) { console.error('訂閱檢查失敗：', e.message); }
 });

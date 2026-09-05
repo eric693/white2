@@ -120,7 +120,86 @@ const COMMAND_FEATURE = {
 };
 function commandFeature(name) { return COMMAND_FEATURE[name] || null; }
 
+// ---- 元件（按鈕／下拉）→ 功能鍵對照（付費牆第二層用）----
+// 為什麼不能只比對前綴：冒險面板發出去的按鈕 ID 一律長成 `adv:xxx` / `stk:xxx`，
+// 跟功能模組自己的元件前綴（ranchbuyone、plantpick…）完全不同。只用前綴比對的話，
+// 面板上的「牧場／農地／魚缸／股市／稅單／拍賣」全部都比不到 —— 免費方案的伺服器
+// 只要開 /冒險面板 就能玩到所有付費內容。這裡改成兩張明確的表：
+//   ① PANEL_FEATURE：面板 ID 的第二段（adv:ranch → ranch）
+//   ② COMPONENT_PREFIX_FEATURE：功能模組自己發的元件，用 ':' 前那一段比對
+// 沒列到的一律視為基本功能，不擋（寧可漏擋也不要誤擋，誤擋是玩家直接卡死）。
+const PANEL_FEATURE = {
+  // 採集冒險（免費方案就有，列出來是為了「這顆按鈕屬於誰」一目了然）
+  fish: 'gather', mine: 'gather', wood: 'gather', forage: 'gather', hunt: 'gather', map: 'gather',
+  bag: 'gather', storage: 'gather', wallet: 'gather', ledger: 'gather', sellall: 'gather',
+  sellpick: 'gather', store: 'gather', recipe: 'gather', status: 'gather', craftmake: 'gather',
+  forge: 'gather', repair: 'gather', quest: 'gather', questclaim: 'gather', rich: 'gather',
+  checkin: 'gather',
+  // 農地／牧場／魚缸
+  farm: 'crops', greenhouse: 'crops', reap: 'crops', cropshop: 'crops',
+  ranch: 'ranch', harvest: 'ranch', incubator: 'ranch', ranchshop: 'ranch',
+  aquarium: 'aquarium', aqshop: 'aquarium', feed: 'aquarium', aqcollect: 'aquarium', aqdeposit: 'aquarium',
+  // 家園線
+  home: 'home', buffs: 'home', homeweb: 'home',
+  kitchen: 'kitchen', furniture: 'furniture', pets: 'pets',
+  love: 'affinity', gift: 'affinity', stroll: 'affinity', partner: 'partnerskills',
+  dex: 'dex', titles: 'dex',
+  // 金錢線
+  tax: 'tax', charity: 'charity', auction: 'auction', bank: 'loans', loan: 'loans',
+  trade: 'trades', shop: 'special', facility: 'facility', contest: 'contest'
+};
+
+const COMPONENT_PREFIX_FEATURE = {
+  // ---- 秘書 ----
+  wheel: 'wheel', wpick: 'wheel', wtag: 'wheel', wfav: 'wheel', wfavlist: 'wheel',
+  wfilter: 'wheel', whist: 'wheel', wchat: 'wheel',
+  poll: 'poll', giveaway: 'giveaway', ticket: 'tickets', fi: 'forum',
+  m: 'music', mq: 'music', musicpick: 'music',
+  bday_verify: 'birthday',
+  // ---- 管家 ----
+  // 股市：模組自己的元件全都是 stk:*
+  stk: 'stock',
+  // 各功能模組自己發的元件（取自各檔案的 setCustomId）
+  seedbuy: 'crops', seedqty: 'crops', plantpick: 'crops', plantqty: 'crops',
+  ranchbuyone: 'ranch', ranchbuyqty: 'ranch', ranchsell: 'ranch',
+  hatchput: 'ranch', hatchqty: 'ranch', hatchsell: 'ranch', hatchsellall: 'ranch',
+  aqbuyone: 'aquarium', aqbuyqty: 'aquarium', aqsell: 'aquarium', aqdeposit: 'aquarium',
+  homebuy: 'home', homebuyok: 'home', homecard: 'home', homecheck: 'home', homenav: 'home', homeup: 'home',
+  kbuild: 'kitchen', kbuy: 'kitchen', kbuyok: 'kitchen', kcollect: 'kitchen', keat: 'kitchen',
+  kgift: 'kitchen', ksell: 'kitchen', kup: 'kitchen',
+  furnbuy: 'furniture', furncash: 'furniture', furncat: 'furniture', furnplace: 'furniture',
+  furnqty: 'furniture', furnsell: 'furniture', furnstore: 'furniture',
+  petfeed: 'pets', petfood: 'pets',
+  giftpanel: 'affinity', giftpick: 'affinity', giftqty: 'affinity', giftwho: 'affinity',
+  giftpage: 'affinity', giftnoop: 'affinity', chr: 'affinity',
+  strollgo: 'affinity', strollpanel: 'affinity',
+  partnerin: 'partnerskills', partnerout: 'partnerskills', partnermoveout: 'partnerskills',
+  partnerpanel: 'partnerskills', partnerwork: 'partnerskills',
+  dexcat: 'dex', achall: 'dex', achback: 'dex',
+  tax: 'tax', taxrules: 'tax',
+  aucbid: 'auction', aucbuy: 'auction', aucmodal: 'auction',
+  loan: 'loans', bank: 'loans',
+  trade: 'trades', tradeuser: 'trades', tg: 'trades', tgq: 'trades', tw: 'trades', twq: 'trades',
+  sredeem: 'special', sqty: 'special', shopgiftqty: 'special',
+  facbuy: 'facility', contestme: 'contest'
+};
+
+// 這個元件屬於哪個功能鍵（沒對應就回 null ＝ 基本功能，不擋）
+function componentFeature(customId) {
+  const id = String(customId || '');
+  if (!id) return null;
+  const [head, second] = id.split(':');
+  if ((head === 'adv' || head === 'stk') && second) {
+    // 面板按鈕：先查面板表；stk 的其餘 ID 一律算股市
+    return PANEL_FEATURE[second] || (head === 'stk' ? 'stock' : null);
+  }
+  return COMPONENT_PREFIX_FEATURE[head] || null;
+}
+
 module.exports.COMMAND_FEATURE = COMMAND_FEATURE;
 module.exports.commandFeature = commandFeature;
+module.exports.componentFeature = componentFeature;
+module.exports.PANEL_FEATURE = PANEL_FEATURE;
+module.exports.COMPONENT_PREFIX_FEATURE = COMPONENT_PREFIX_FEATURE;
 module.exports.isButlerComponent = isButlerComponent;
 module.exports.BUTLER_COMPONENT_PREFIXES = BUTLER_COMPONENT_PREFIXES;

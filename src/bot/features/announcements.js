@@ -8,6 +8,7 @@ const { localNowMinute, parts } = require('../../util/time');
 const { buildButtonRows } = require('../../util/components');
 const { postToChannel } = require('../../util/post');
 const reactionRoles = require('./reactionroles');
+const { allowed } = require('../paywall');
 
 const csv = (s) => String(s || '').split(/[\n,]/).map(x => x.trim()).filter(Boolean);
 
@@ -253,11 +254,15 @@ function init(client) {
     const due = db.prepare(
       "SELECT * FROM announcements WHERE status='scheduled' AND scheduled_at != '' AND scheduled_at <= ?"
     ).all(nowMinute);
-    for (const ann of due) await sendOnce(client, ann, '排程公告發送失敗：', true);
+    for (const ann of due) {
+      if (!allowed(ann.guild_id, 'announcements')) continue;   // 訂閱付費牆（公告本身保留，續訂後照排程發）
+      await sendOnce(client, ann, '排程公告發送失敗：', true);
+    }
 
     // 7.4 循環公告
     const repeating = db.prepare("SELECT * FROM announcements WHERE status='repeating'").all();
     for (const ann of repeating) {
+      if (!allowed(ann.guild_id, 'announcements')) continue;   // 訂閱付費牆
       if (!repeatDue(ann, now)) continue;
       await sendOnce(client, ann, '循環公告發送失敗：');
     }

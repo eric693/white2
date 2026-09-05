@@ -6,6 +6,7 @@ const { buildButtonRows } = require('../../util/components');
 const { absUrl } = require('../../util/url');
 const { parts } = require('../../util/time');
 const { postToChannel } = require('../../util/post');
+const { allowed } = require('../paywall');
 
 const csv = (s) => String(s || '').split(',').map(x => x.trim()).filter(Boolean);
 
@@ -74,6 +75,7 @@ function init(client) {
     const nowKey = `${p.y}-${p.mo}-${p.d}T${p.hh}:${p.mm}`;
     const rems = db.prepare('SELECT * FROM reminders WHERE enabled=1').all();
     for (const r of rems) {
+      if (!allowed(r.guild_id, 'reminder')) continue;   // 訂閱付費牆（提醒設定保留，續訂後照常發）
       if (r.last_run === nowKey) continue;
       if (!shouldFire(r, p)) continue;
       await fire(client, r);

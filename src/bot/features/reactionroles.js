@@ -1,5 +1,6 @@
 // 表情身分組：訊息（通常是公告）加上表情符號，玩家按表情自動取得對應身分組、取消表情移除
 const { db, logError } = require('../../db');
+const { allowed } = require('../paywall');
 
 // '<:name:123>' / '<a:name:123>' → '123'；unicode emoji 原樣
 function emojiKey(raw) {
@@ -41,6 +42,7 @@ function init(client) {
       if (!map) return;
       const guild = reaction.message.guild;
       if (!guild) return;
+      if (!allowed(guild.id, 'reactionroles')) return;      // 訂閱付費牆
       const member = await guild.members.fetch(user.id).catch(() => null);
       if (member) await member.roles.add(map.role_id).catch(e =>
         logError(guild.id, '表情給身分組失敗（請確認機器人身分組在目標身分組之上）：', e.message));

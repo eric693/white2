@@ -172,10 +172,13 @@ function init(client) {
         // replied / deferred 要「寫回原本的互動物件」：
         // 用 Object.create 做的分身，下游 i.reply() 只會把 replied 設在分身上，
         // 原本的互動看起來永遠沒被回應過 —— 看門狗就會每次都誤報「互動無回應」。
+        // ⚠️ 這些覆寫一定要 writable：訂閱付費牆攔截時會把 isButton() 就地改成回 false，
+        // 分身若是唯讀屬性，那個賦值在非嚴格模式下會被靜默忽略 —— 結果付費牆回了一則
+        // 「請續費」，下游模組卻還是照常處理同一筆互動，變成重複回應。
         const proxy = Object.create(i, {
-          customId: { value: id },
-          isButton: { value: () => true },
-          isStringSelectMenu: { value: () => false },
+          customId: { value: id, writable: true, configurable: true },
+          isButton: { value: () => true, writable: true, configurable: true },
+          isStringSelectMenu: { value: () => false, writable: true, configurable: true },
           replied: { get: () => i.replied, set: (v) => { i.replied = v; } },
           deferred: { get: () => i.deferred, set: (v) => { i.deferred = v; } },
           ephemeral: { get: () => i.ephemeral, set: (v) => { i.ephemeral = v; } }

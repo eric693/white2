@@ -10,7 +10,9 @@ App.page('subscriptions', {
     ],
     "notes": [
       "到期後只是判定上退回免費版，資料與遊戲進度都保留，續費後原樣恢復。",
-      "方案沒包含的功能，指令會直接不註冊到那台伺服器（玩家看不到也點不到），面板舊按鈕則會被攔下並提示續費。",
+      "方案沒包含的功能，指令會直接不註冊到那台伺服器（玩家看不到也點不到），冒險面板上的按鈕也會被攔下並提示續費。",
+      "關鍵字回覆、歡迎訊息、生日祝賀、表情身分組、排程公告、排程提醒、聊天等級這類「不是用指令觸發」的功能，沒訂閱時會安靜停止動作（不會在頻道喊續費），設定與已累積的資料都保留。",
+      "新成員的自動給予身分組、入群／離群紀錄不受訂閱限制 —— 擋掉會讓新成員直接進不了頻道。",
       "免費版是到期後的退場方案，不能刪除。"
     ],
     "terms": [
@@ -34,7 +36,8 @@ App.page('subscriptions', {
       return `
         <div class="card">
           <h3>${ROLE_LABEL[role]}｜方案</h3>
-          <div class="hint" style="margin-bottom:10px">功能列填 <code>*</code> ＝ 全部開放。免費版是到期後的退場方案，不能刪。</div>
+          <div class="hint" style="margin-bottom:10px">功能列填 <code>*</code> ＝ 全部開放。免費版是到期後的退場方案，不能刪也不能停售。<br>
+            取消「販售中」＝ 不再開放指定給新的伺服器；已經在用這個方案的伺服器不受影響，到期前照常使用。</div>
           ${list.map(p => `
             <div class="card" style="margin:0 0 10px;background:var(--bg2)" data-plan="${role}:${p.code}">
               <div class="form-row">
@@ -44,6 +47,9 @@ App.page('subscriptions', {
                 <div class="field" style="max-width:110px"><label>月費</label><input name="price_month" type="number" min="0" value="${p.price_month}"></div>
                 <div class="field" style="max-width:110px"><label>年費</label><input name="price_year" type="number" min="0" value="${p.price_year}"></div>
                 <div class="field" style="max-width:90px"><label>排序</label><input name="sort" type="number" value="${p.sort}"></div>
+                <div class="field" style="max-width:130px"><label>販售狀態</label>
+                  <label class="switch" style="font-size:13px"><input type="checkbox" name="active"
+                    ${p.active === 0 ? '' : 'checked'} ${p.code === 'free' ? 'disabled' : ''}> 販售中</label></div>
               </div>
               <div class="field"><label>包含的功能</label>
                 <label class="switch" style="margin-bottom:6px"><input type="checkbox" name="all" ${String(p.features).trim() === '*' ? 'checked' : ''}> 全部開放（*）</label>
@@ -68,8 +74,9 @@ App.page('subscriptions', {
     // ---- 各伺服器訂閱 ----
     const subRow = (g, role) => {
       const s = g[role];
-      const opts = plans.filter(p => p.role === role)
-        .map(p => `<option value="${p.code}" ${p.code === s.plan_code ? 'selected' : ''}>${UI.esc(p.name)}</option>`).join('');
+      // 停售的方案不列進來（後端也會擋），但如果這台伺服器現在正在用，還是要顯示得出來
+      const opts = plans.filter(p => p.role === role && (p.active !== 0 || p.code === s.plan_code))
+        .map(p => `<option value="${p.code}" ${p.code === s.plan_code ? 'selected' : ''}>${UI.esc(p.name)}${p.active === 0 ? '（已停售）' : ''}</option>`).join('');
       const state = s.expired
         ? '<span class="tag danger">已到期</span>'
         : (s.expires_at ? '<span class="tag ok">訂閱中</span>' : '<span class="tag ok">永久</span>');
@@ -115,6 +122,8 @@ App.page('subscriptions', {
       const feats2 = [...box.querySelectorAll('[name=feat]:checked')].map(x => x.value);
       return {
         code: box.querySelector('[name=code]').value.trim(),
+        // 停售的方案不會影響已經在用的伺服器，只是不能再指定給新的伺服器
+        active: box.querySelector('[name=active]').checked,
         name: box.querySelector('[name=name]').value.trim(),
         price_month: Number(box.querySelector('[name=price_month]').value) || 0,
         price_year: Number(box.querySelector('[name=price_year]').value) || 0,

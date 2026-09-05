@@ -4,6 +4,7 @@ const { EmbedBuilder, MessageFlags} = require('discord.js');
 const cron = require('node-cron');
 const { db, guildConfig, logError } = require('../../db');
 const { matchAny } = require('./keywords');
+const { allowed } = require('../paywall');
 
 const csv = (s) => String(s || '').split(/[\n,]/).map(x => x.trim()).filter(Boolean);
 const cfg = (gid) => guildConfig('warn_config', gid);
@@ -330,6 +331,8 @@ function init(client) {
     const content = msg.content || '';
     if (!content) return;
     const gid = msg.guild.id;
+    // 訂閱付費牆：關鍵字通知與警告是付費功能（禁言到期解除不受影響，見下面的 cron）
+    if (!allowed(gid, 'alerts')) return;
 
     const rules = db.prepare('SELECT * FROM alert_rules WHERE guild_id = ? AND enabled = 1').all(gid);
     for (const rule of rules) {

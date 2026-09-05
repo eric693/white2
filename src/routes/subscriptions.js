@@ -19,7 +19,9 @@ router.get('/subscriptions/features', requireModule('system'), (req, res) => {
 
 // ---- 方案 ----
 router.get('/subscriptions/plans', requireModule('system'), (req, res) => {
-  res.json(sub.listPlans(okRole(req.query.role) ? req.query.role : null));
+  // active_only=1 → 只列還在販售的方案（指定／續訂的下拉用）
+  res.json(sub.listPlans(okRole(req.query.role) ? req.query.role : null,
+    { activeOnly: String(req.query.active_only || '') === '1' }));
 });
 
 router.post('/subscriptions/plans', requireModule('system'), (req, res) => {
@@ -69,6 +71,10 @@ router.post('/subscriptions/:guildId/:role/extend', requireModule('system'), asy
   const { guildId, role } = req.params;
   if (!okRole(role)) return res.status(400).json({ error: 'role 不正確' });
   const { plan_code, cycle, units, note } = req.body || {};
+  // 停用的方案不能再賣給新的伺服器；已經在用的伺服器不受影響（他們付過錢了）
+  if (plan_code && plan_code !== 'free' && !sub.planSellable(role, plan_code)) {
+    return res.status(400).json({ error: `方案「${plan_code}」已停用或不存在，無法指定` });
+  }
   const out = sub.extendSubscription(guildId, role, plan_code || 'free', cycle === 'year' ? 'year' : 'month', units, note || '');
   audit(req.user?.name, `續訂 ${role}：${plan_code}（${units || 1} 期）`, 'subscriptions', '', guildId);
   await refresh(role, guildId);
@@ -80,6 +86,9 @@ router.post('/subscriptions/:guildId/:role', requireModule('system'), async (req
   const { guildId, role } = req.params;
   if (!okRole(role)) return res.status(400).json({ error: 'role 不正確' });
   const { plan_code, expires_at, note } = req.body || {};
+  if (plan_code && plan_code !== 'free' && !sub.planSellable(role, plan_code)) {
+    return res.status(400).json({ error: `方案「${plan_code}」已停用或不存在，無法指定` });
+  }
   const out = sub.setSubscription(guildId, role, plan_code || 'free', Number(expires_at) || 0, note || '');
   audit(req.user?.name, `設定 ${role} 訂閱為 ${plan_code}`, 'subscriptions', '', guildId);
   await refresh(role, guildId);

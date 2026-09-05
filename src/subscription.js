@@ -92,10 +92,21 @@ for (const p of DEFAULT_PLANS) {
   if (guilds.length) console.log(`ℹ️  訂閱制：${guilds.length} 台既有伺服器已設為永久最高方案`);
 })();
 
-function listPlans(role) {
-  return role
-    ? db.prepare('SELECT * FROM plans WHERE role = ? ORDER BY sort, code').all(role)
-    : db.prepare('SELECT * FROM plans ORDER BY role, sort, code').all();
+// activeOnly＝只列「還在販售」的方案（停用的方案不能再指定給伺服器，
+// 但已經在用的伺服器不受影響——他們付過錢了，見 getPlan 不看 active）
+function listPlans(role, { activeOnly = false } = {}) {
+  const cond = [];
+  const args = [];
+  if (role) { cond.push('role = ?'); args.push(role); }
+  if (activeOnly) cond.push('active = 1');
+  const where = cond.length ? `WHERE ${cond.join(' AND ')}` : '';
+  return db.prepare(`SELECT * FROM plans ${where} ORDER BY role, sort, code`).all(...args);
+}
+
+// 這個方案現在還能不能賣（後台指定／續訂時檢查）
+function planSellable(role, code) {
+  const row = db.prepare('SELECT active FROM plans WHERE role = ? AND code = ?').get(role, code);
+  return !!row && row.active === 1;
 }
 function getPlan(role, code) {
   return db.prepare('SELECT * FROM plans WHERE role = ? AND code = ?').get(role, code || 'free')
@@ -141,23 +152,39 @@ function setSubscription(guildId, role, planCode, expiresAt = 0, note = '') {
   return getSubscription(guildId, role);
 }
 
+// 這個功能鍵屬於哪一隻機器人（訂閱是分開賣的，鍵名不重複）
+function roleOfFeature(featureKey) {
+  if (FEATURE_KEYS.secretary[featureKey]) return 'secretary';
+  if (FEATURE_KEYS.butler[featureKey]) return 'butler';
+  return null;
+}
+
+// 單機器人模式（BOT_ROLE=both）沒有自己的訂閱資料表 —— 直接拿 'both' 去查會查不到
+// 任何方案，結果變成「所有付費功能一律擋掉」。這裡把它換成功能鍵真正所屬的角色，
+// 讓 both 模式沿用秘書／管家各自的訂閱狀態。
+function resolveRole(role, featureKey) {
+  if (role && role !== 'both') return role;
+  return roleOfFeature(featureKey) || role || 'butler';
+}
+
 // 這台伺服器現在能不能用某個功能
 function hasFeature(guildId, role, featureKey) {
   if (!guildId) return true;                       // 私訊／後台情境不擋
-  const feats = String(getSubscription(guildId, role).plan.features || '');
+  const feats = String(getSubscription(guildId, resolveRole(role, featureKey)).plan.features || '');
   if (feats.trim() === '*') return true;
   return feats.split(',').map(s => s.trim()).filter(Boolean).includes(featureKey);
 }
 
 // 被擋時給玩家看的說明（各功能自己決定要不要 reply）
 function lockedMessage(guildId, role, featureKey) {
-  const sub = getSubscription(guildId, role);
-  const name = (FEATURE_KEYS[role] || {})[featureKey] || featureKey;
+  const r = resolveRole(role, featureKey);
+  const sub = getSubscription(guildId, r);
+  const name = (FEATURE_KEYS[r] || {})[featureKey] || featureKey;
   const why = sub.expired ? '訂閱已到期' : `目前方案「${sub.plan.name}」未包含`;
   return `🔒 **${name}** 無法使用：${why}。\n請伺服器管理員到後台續訂或升級方案後即可恢復（資料與進度都會保留）。`;
 }
 
 module.exports = {
-  FEATURE_KEYS, listPlans, getPlan, getSubscription,
-  extendSubscription, setSubscription, hasFeature, lockedMessage
+  FEATURE_KEYS, listPlans, getPlan, planSellable, getSubscription,
+  extendSubscription, setSubscription, hasFeature, lockedMessage, roleOfFeature
 };

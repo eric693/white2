@@ -5,6 +5,7 @@ const {
 const cron = require('node-cron');
 const { db, guildConfig, activeGuildIds, logError } = require('../../db');
 const { parts } = require('../../util/time');
+const { allowed } = require('../paywall');
 
 const verifyCfg = (gid) => guildConfig('verify_config', gid);
 const bdayCfg = (gid) => guildConfig('birthday_config', gid);
@@ -59,6 +60,7 @@ function init(client) {
   // Discord 沒辦法在頻道裡發「只有某一個人看得到」的訊息（ephemeral 只能是互動的回覆），
   // 所以預設改用私訊；私訊被關閉時才退回頻道，並在設定的秒數後自動刪掉，避免累積洗版。
   client.on('guildMemberAdd', async (member) => {
+    if (!allowed(member.guild.id, 'birthday')) return;      // 訂閱付費牆
     const c = verifyCfg(member.guild.id);
     if (!c.enabled) return;
     const mode = c.join_prompt_mode || 'dm';
@@ -149,7 +151,10 @@ function init(client) {
 
 // 10.4 / 10.6 生日祝福（遍歷所有伺服器）。force=true 時略過時間檢查（後台「立即發送」用）
 async function runBirthdayCheck(client, force = false) {
-  for (const gid of activeGuildIds()) await runBirthdayCheckGuild(client, gid, force).catch(() => {});
+  for (const gid of activeGuildIds()) {
+    if (!allowed(gid, 'birthday')) continue;        // 訂閱付費牆：沒訂就不發祝賀（生日資料保留）
+    await runBirthdayCheckGuild(client, gid, force).catch(() => {});
+  }
 }
 async function runBirthdayCheckGuild(client, gid, force = false) {
   const c = bdayCfg(gid);
@@ -203,7 +208,10 @@ async function runBirthdayCheckGuild(client, gid, force = false) {
 
 // 10.2 提醒尚未填寫生日的成員（持續提醒，填完自動停止；遍歷所有伺服器）
 async function remindMissing(client) {
-  for (const gid of activeGuildIds()) await remindMissingGuild(client, gid).catch(() => {});
+  for (const gid of activeGuildIds()) {
+    if (!allowed(gid, 'birthday')) continue;        // 訂閱付費牆
+    await remindMissingGuild(client, gid).catch(() => {});
+  }
 }
 async function remindMissingGuild(client, gid) {
   const c = bdayCfg(gid);
