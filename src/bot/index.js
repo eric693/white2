@@ -102,7 +102,7 @@ function startJobWatch() {
       const fn = client._jobHandlers && client._jobHandlers[job.kind];
       if (!fn) { finishBotJob(job.id, `這隻機器人不認得的工作：${job.kind}`); continue; }
       Promise.resolve().then(() => fn(job.payload))
-        .then(() => finishBotJob(job.id, null))
+        .then(out => finishBotJob(job.id, null, out))
         .catch(e => finishBotJob(job.id, e.message || String(e)));
     }
   }, 1500).unref?.();

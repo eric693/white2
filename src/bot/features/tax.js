@@ -811,6 +811,9 @@ function init(client) {
   }, { timezone: 'Asia/Taipei' });
 
   client._runTax = (gid, opts) => runGuild(client, gid, opts);
+  // 後台跑在秘書的行程，那邊沒有這個模組 → 走 bot_jobs 派工過來
+  client._jobHandlers = client._jobHandlers || {};
+  client._jobHandlers.run_tax = ({ guildId, opts }) => runGuild(client, guildId, opts);
   console.log('  ↳ 稅金模組已載入（農地稅／養殖稅／房屋稅／所得稅，每分鐘檢查結算時間；面板 🧾我的稅單）');
 }
 

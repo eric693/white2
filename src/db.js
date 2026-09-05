@@ -878,8 +878,10 @@ db.exec(`CREATE TABLE IF NOT EXISTS bot_jobs (
   payload TEXT NOT NULL DEFAULT '{}',
   status TEXT NOT NULL DEFAULT 'pending',
   error TEXT NOT NULL DEFAULT '',
+  result TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 )`);
+ensureColumns('bot_jobs', { result: "TEXT NOT NULL DEFAULT ''" });
 db.exec('CREATE INDEX IF NOT EXISTS idx_bot_jobs_pick ON bot_jobs(role, status)');
 
 function enqueueBotJob(role, kind, payload = {}) {
@@ -895,12 +897,28 @@ function claimBotJobs(role, limit = 10) {
     .map(r => ({ ...r, payload: (() => { try { return JSON.parse(r.payload); } catch { return {}; } })() }));
 }
 
-function finishBotJob(id, err) {
-  db.prepare('UPDATE bot_jobs SET status=?, error=? WHERE id=?')
-    .run(err ? 'failed' : 'done', err ? String(err).slice(0, 500) : '', id);
+function finishBotJob(id, err, result) {
+  db.prepare('UPDATE bot_jobs SET status=?, error=?, result=? WHERE id=?')
+    .run(err ? 'failed' : 'done', err ? String(err).slice(0, 500) : '',
+      err || result === undefined ? '' : JSON.stringify(result), id);
 }
 
 function getBotJob(id) { return db.prepare('SELECT * FROM bot_jobs WHERE id=?').get(id); }
+
+// 後台呼叫「只有另一隻機器人做得到」的動作：派工 → 等結果 → 回傳它的回傳值。
+// 等不到就丟錯（工作仍留在佇列，那隻上線後照樣會執行）。
+async function runBotJob(role, kind, payload = {}, { timeoutMs = 10000 } = {}) {
+  const id = enqueueBotJob(role, kind, payload);
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    await new Promise(r => setTimeout(r, 300));
+    const job = getBotJob(id);
+    if (!job) break;
+    if (job.status === 'done') { try { return job.result ? JSON.parse(job.result) : null; } catch { return null; } }
+    if (job.status === 'failed') throw new Error(job.error || '執行失敗');
+  }
+  throw new Error(`${role === 'butler' ? '管家' : '秘書'}沒有回應（可能未上線），工作已排入佇列，上線後會自動執行。`);
+}
 
 // 一週前的完成紀錄沒有查詢價值，開機時順手清掉
 db.prepare("DELETE FROM bot_jobs WHERE status IN ('done','failed') AND created_at < datetime('now','-7 days')").run();
@@ -914,5 +932,5 @@ module.exports = {
   db, SECRET, ensureColumns, getSetting, setSetting, UI_TEXT_KEYS, audit,
   BOT_ROLES, BOT_SECRET_KEYS, BOT_PUBLIC_KEYS, maskSecret, guildCtx, COIN_MAX, COIN_DELTA_MAX,
   HOME_GUILD, guildConfig, ensureGuild, resetGuildData, activeGuildIds, GUILD_TABLES, logError,
-  enqueueBotJob, claimBotJobs, finishBotJob, getBotJob
+  enqueueBotJob, claimBotJobs, finishBotJob, getBotJob, runBotJob
 };

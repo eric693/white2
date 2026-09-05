@@ -1,6 +1,6 @@
 // 物資貸款後台 API：抵押率／期限／利息設定，貸款清單，免除與立即處理到期
 const express = require('express');
-const { db, audit, guildConfig } = require('../db');
+const { db, audit, guildConfig, runBotJob } = require('../db');
 const { requireAuth, guardModule } = require('../auth');
 
 const router = express.Router();
@@ -78,9 +78,10 @@ router.post('/loans-forgive', (req, res) => {
 // 立即處理到期未還的貸款（不用等 10 分鐘的排程）
 router.post('/loans-sweep', async (req, res) => {
   const client = require('../bot').client;
-  if (!client || !client._sweepLoans) return res.status(503).json({ error: '機器人尚未上線' });
   try {
-    const out = await client._sweepLoans(req.guildId);
+    const out = (client && client._sweepLoans)
+      ? await client._sweepLoans(req.guildId)
+      : await runBotJob('butler', 'sweep_loans', { guildId: req.guildId }, { timeoutMs: 30000 });
     audit(req.user.name, '手動處理到期貸款', 'gather', '', req.guildId);
     res.json({ ok: true, count: out.length });
   } catch (e) {

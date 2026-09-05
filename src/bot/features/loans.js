@@ -522,6 +522,8 @@ function init(client) {
   }, { timezone: 'Asia/Taipei' });
 
   client._sweepLoans = (gid) => sweepOverdue(client, gid);
+  client._jobHandlers = client._jobHandlers || {};
+  client._jobHandlers.sweep_loans = ({ guildId }) => sweepOverdue(client, guildId);
   console.log('  ↳ 物資貸款已載入（/貸款、/還款；抵押工具／作物／魚，到期沒收）');
 }
 

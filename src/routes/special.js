@@ -1,6 +1,6 @@
 // 特殊兌換商店後台 API：設定、商品、兌換紀錄
 const express = require('express');
-const { db, audit, guildConfig, enqueueBotJob, getBotJob } = require('../db');
+const { db, audit, guildConfig, runBotJob } = require('../db');
 const { requireAuth, requireModule, guardModule } = require('../auth');
 const bot = require('../bot');
 
@@ -133,17 +133,10 @@ router.post('/special-shops/:id/publish', async (req, res) => {
     try { await bot.client._publishShop(shopId); audit(req.user.name, `發布特殊商店 #${shopId}`); return res.json({ ok: true }); }
     catch (e) { return res.status(500).json({ error: e.message }); }
   }
-  let jobId;
-  try { jobId = enqueueBotJob('butler', 'publish_shop', { shopId }); }
-  catch (e) { return res.status(500).json({ error: e.message }); }
-  // 管家每 1.5 秒撈一次，這裡等它做完再回報結果，後台才能顯示真正的成敗
-  for (let n = 0; n < 20; n++) {
-    await new Promise(r => setTimeout(r, 500));
-    const job = getBotJob(jobId);
-    if (job && job.status === 'done') { audit(req.user.name, `發布特殊商店 #${shopId}（交由管家執行）`); return res.json({ ok: true }); }
-    if (job && job.status === 'failed') return res.status(500).json({ error: job.error || '管家發布失敗' });
-  }
-  res.status(503).json({ error: '管家沒有回應（可能未上線），發布工作已排入佇列，管家上線後會自動執行。' });
+  try { await runBotJob('butler', 'publish_shop', { shopId }); }
+  catch (e) { return res.status(503).json({ error: e.message }); }
+  audit(req.user.name, `發布特殊商店 #${shopId}（交由管家執行）`);
+  res.json({ ok: true });
 });
 
 router.delete('/special-items/:id', (req, res) => {

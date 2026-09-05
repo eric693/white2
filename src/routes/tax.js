@@ -1,6 +1,6 @@
 // 稅金後台 API：三種稅的設定、累進級距、稅收報表、立即試算/課徵
 const express = require('express');
-const { db, audit, guildConfig } = require('../db');
+const { db, audit, guildConfig, runBotJob } = require('../db');
 const { requireAuth, guardModule } = require('../auth');
 
 const router = express.Router();
@@ -156,9 +156,11 @@ router.get('/tax-records', (req, res) => {
 router.post('/tax-run', async (req, res) => {
   const dryRun = String((req.body || {}).dry || '') === '1';
   const client = require('../bot').client;
-  if (!client || !client._runTax) return res.status(503).json({ error: '機器人尚未上線' });
   try {
-    const r = await client._runTax(req.guildId, { force: true, dryRun });
+    const opts = { force: true, dryRun };
+    const r = (client && client._runTax)
+      ? await client._runTax(req.guildId, opts)
+      : await runBotJob('butler', 'run_tax', { guildId: req.guildId, opts }, { timeoutMs: 30000 });
     if (!dryRun) audit(req.user.name, '手動執行稅金結算', 'gather', '', req.guildId);
     res.json({
       ok: true, dryRun, period: r.period, sum: r.sum, people: r.bills.length,
