@@ -18,8 +18,10 @@ router.put('/crops', (req, res) => {
     `UPDATE crop_config SET enabled=@enabled, field_slots=@field_slots, greenhouse_slots=@greenhouse_slots, wither_pct=@wither_pct WHERE guild_id=@guild_id`
   ).run({
     enabled: b.enabled ? 1 : 0,
-    field_slots: int(b.field_slots, 6, 1),
-    greenhouse_slots: int(b.greenhouse_slots, 3, 1),
+    // 下限是 0：設 0＝新玩家一格都沒有，一定要 /製作 或買設施等級才有地可種。
+    // 以前寫成 min=1，後台填 0 會被悄悄改成 1，玩家的總格數就永遠多一格。
+    field_slots: int(b.field_slots, 6, 0),
+    greenhouse_slots: int(b.greenhouse_slots, 3, 0),
     wither_pct: Math.max(0, Math.min(90, int(b.wither_pct, 0, 0))),
     guild_id: req.guildId
   });
