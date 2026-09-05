@@ -1262,7 +1262,10 @@ function init(client) {
             description: `${(g.price * n).toLocaleString('en-US')} ${c.currency_name}｜好感 +${g.gift_aff * n}`.slice(0, 100),
             value: String(n), emoji: g.emoji || '🎁'
           })));
-        return i.reply({ content: `🎁 **${g.name}** 單價 ${g.price.toLocaleString('en-US')} ${c.currency_name}（你買得起 ${afford.toLocaleString('en-US')} 個）`,
+        // 選數量這一步是最後的煞車：買了不能退，一次買 100 個的代價很大
+        const back = Math.max(GIFT_BUYBACK_MIN, Math.floor(g.price * GIFT_BUYBACK_PCT / 100));
+        return i.reply({ content: `🎁 **${g.name}** 單價 ${g.price.toLocaleString('en-US')} ${c.currency_name}（你買得起 ${afford.toLocaleString('en-US')} 個）\n`
+            + `⚠️ **買了無法挽回**：不能退款、不能交易轉贈，賣回系統一個只剩 **${back.toLocaleString('en-US')}** ${c.currency_name}。`,
           components: [new ActionRowBuilder().addComponents(menu)], flags: MessageFlags.Ephemeral });
       }
       return safeMenu(i, '商店購買', () => buyThing(i.guildId, i.user.id, i.user.username, kind, parseInt(rawId, 10)));
@@ -1926,7 +1929,13 @@ function init(client) {
             .setDescription(gifts.map(g =>
               `${g.emoji || ''}**${g.name}**　${money(c, g.price)}　→ 基礎好感 **+${g.gift_aff}**`).join('\n')
               + '\n\n每位角色都有 💖最喜歡（×2）、💕喜歡（×1.5）、💔討厭（×0.5）的禮物 —— **送過才知道是哪些**。'
-              + '\n用 `/好感度` 面板的 🎁 送禮送出去。'));
+              + '\n用 `/好感度` 面板的 🎁 送禮送出去。'
+              // 禮物是全遊戲最貴的消耗品，買錯的代價很大（20 萬的豪華禮盒賣回只剩 400），
+              // 所以在買之前就把「不能退、不能轉、賣回幾乎歸零」寫在同一頁，不要等玩家買完才發現。
+              + `\n\n⚠️ **買了無法挽回**：禮物**不能退款、不能交易或轉贈**，`
+              + `不要的只能用 \`/賣出\` 賣回系統，回收價只有原價的 **${GIFT_BUYBACK_PCT}%**`
+              + `（例如 ${money(c, 20000)} 的禮物只賣得回 ${money(c, Math.max(GIFT_BUYBACK_MIN, Math.floor(20000 * GIFT_BUYBACK_PCT / 100)))}），`
+              + `而且**送出去就收不回來**。買之前請先確認數量與對象。`));
         }
 
         // 設施（農地／溫室／牧場／孵化室／魚缸）只在 `/設施商店` 賣 ——
