@@ -409,6 +409,40 @@ router.get('/home-players', (req, res) => {
        FROM home_users h WHERE h.guild_id=? ORDER BY h.level DESC, achievements DESC LIMIT 200`).all(gid));
 });
 
+// ---------- 同居工作明細 ----------
+// 玩家常回報「同居角色好像沒在工作」，管理員要能查得到那個人的角色到底做了什麼。
+// 明細只保留 7 天（那張表每 5 分鐘就在寫），這裡預設查最近 3 天。
+router.get('/home-partner-logs', (req, res) => {
+  const gid = req.guildId;
+  const days = Math.max(1, Math.min(7, parseInt(req.query.days, 10) || 3));
+  const uid = String(req.query.user_id || '').trim();
+  const rows = db.prepare(
+    `SELECT l.*, COALESCE(w.username, '') AS username
+       FROM partner_logs l
+       LEFT JOIN econ_wallets w ON w.guild_id=l.guild_id AND w.user_id=l.user_id
+      WHERE l.guild_id=? AND l.created_at >= datetime('now','localtime',?)`
+    + (uid ? ' AND l.user_id=?' : '')
+    + ' ORDER BY l.id DESC LIMIT 500'
+  ).all(...(uid ? [gid, `-${days} days`, uid] : [gid, `-${days} days`]));
+  res.json(rows);
+});
+
+// 目前有指派工作區域的人（對照用：有指派卻完全沒有明細＝物資不足或沒東西可做）
+router.get('/home-partner-areas', (req, res) => {
+  const gid = req.guildId;
+  res.json(db.prepare(
+    `SELECT p.user_id, p.work_area, r.name AS role_name,
+            COALESCE(w.username,'') AS username,
+            (SELECT COUNT(*) FROM partner_logs l
+              WHERE l.guild_id=p.guild_id AND l.user_id=p.user_id
+                AND date(l.created_at)=date('now','localtime')) today
+       FROM home_partners p
+       JOIN wheel_roles r ON r.id=p.role_id
+       LEFT JOIN econ_wallets w ON w.guild_id=p.guild_id AND w.user_id=p.user_id
+      WHERE p.guild_id=? AND p.work_area <> ''
+      ORDER BY today ASC, p.user_id`).all(gid));
+});
+
 // ---------- 角色禮物喜好 ----------
 //
 // affinity_prefs（角色 × 物品 → 權重）以前完全沒有後台，只能吃程式裡的預設值，

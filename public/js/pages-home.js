@@ -15,6 +15,7 @@ App.page('home', {
       "工作區域是「一位角色顧一區、把該區完整自動化」：派到農地就收成＋重新播種，派到牧場就照顧＋收產物。一個區域只能派一位，一位角色也只能顧一區。",
       "必要物資不足時該動作自動暫停（沒種子就不播、沒飼料就不餵，收成與領取照常），補足後下一輪自然恢復，不必重新指派。",
       "工作是不間斷的：收成／照顧類（含工作區域）每 5 分鐘自動跑一次，成熟就收、收完就補種，田不會空著；只有「每日配給類」能力是每天早上 8:40 發一次。",
+      "玩家回報「同居角色沒在工作」時，看「📒 同居明細」分頁：先看他有沒有指派工作區域、今天做了幾筆，再往下查明細。完全 0 筆通常是沒指派、或背包沒種子／飼料。",
       "換人不會動到任何資料：指派只是一個欄位，設施、作物、動物與進度都在玩家自己身上。",
       "同居能力由後台決定，玩家沒得選：一位角色建議只勾 1 個，勾多個時會用排序最前面的那一個。",
       "改了某角色的能力，已經住進玩家家裡的也會跟著換，不用請玩家重搬。"
@@ -32,7 +33,7 @@ App.page('home', {
     const TABS = [
       ['config', '⚙️ 總設定'], ['levels', '🏠 小屋階級'], ['furniture', '🛋️ 家具'],
       ['kitchen', '🍳 廚房與料理'], ['pets', '🐾 寵物'], ['ach', '🏅 成就'],
-      ['affinity', '💕 好感度'], ['giftpref', '🎁 角色喜好'], ['partner', '💞 同居能力'], ['roleskill', '🎭 角色能力'], ['stroll', '🛍️ 逛街角色'], ['strollev', '🎲 逛街事件'], ['partnerroles', '🏠 可同居角色'], ['players', '👥 玩家現況']
+      ['affinity', '💕 好感度'], ['giftpref', '🎁 角色喜好'], ['partner', '💞 同居能力'], ['roleskill', '🎭 角色能力'], ['stroll', '🛍️ 逛街角色'], ['strollev', '🎲 逛街事件'], ['partnerroles', '🏠 可同居角色'], ['partnerlog', '📒 同居明細'], ['players', '👥 玩家現況']
     ];
     let tab = sessionStorage.getItem('w2_home_tab') || 'config';
     if (!TABS.some(t => t[0] === tab)) tab = 'config';
@@ -968,6 +969,60 @@ App.page('home', {
           UI.ok('已排除'); draw();
         };
         bind();
+        return;
+      }
+
+      if (tab === 'partnerlog') {
+        // 玩家回報「同居角色沒在工作」時就看這頁：先看誰有指派、今天做了幾筆，再看明細。
+        const [areas, logs] = await Promise.all([GET('/home-partner-areas'), GET('/home-partner-logs?days=3')]);
+        const AREA = { farm: '🌾 農地', greenhouse: '🏡 溫室', ranch: '🐄 牧場', hatchery: '🥚 孵化室', aquarium: '🐠 魚缸' };
+        body.innerHTML = `
+          <div class="hint" style="margin-bottom:10px">
+            收成／照顧類的工作每 <strong>5 分鐘</strong>自動跑一次，<strong>有事可做才會留下紀錄</strong>——
+            作物還沒成熟、沒種子可播、沒飼料可餵時本來就會是空的。明細保留 7 天。
+          </div>
+          <h4 style="margin:6px 0">目前有指派工作區域的人</h4>
+          <div class="table-wrap"><table class="list">
+            <thead><tr><th>玩家</th><th>角色</th><th>工作區域</th><th>今天筆數</th><th></th></tr></thead>
+            <tbody>${areas.length ? areas.map(a => `<tr>
+              <td>${H.who(a.user_id, a.username)}</td><td>${UI.esc(a.role_name || '')}</td>
+              <td>${AREA[a.work_area] || UI.esc(a.work_area)}</td>
+              <td>${a.today ? a.today : '<span class="tag">0</span>'}</td>
+              <td><button class="btn tiny secondary" data-plog="${a.user_id}">看明細</button></td>
+            </tr>`).join('') : '<tr><td colspan="5" class="hint">還沒有人指派工作區域。</td></tr>'}
+            </tbody></table></div>
+          <h4 style="margin:14px 0 6px">最近 3 天的工作明細</h4>
+          <div class="toolbar" style="margin-bottom:6px">
+            <input id="plogu" placeholder="只看某位玩家的 user_id（留空＝全部）" style="min-width:260px">
+            <select id="plogd"><option value="1">今天</option><option value="3" selected>最近 3 天</option><option value="7">最近 7 天</option></select>
+            <button class="btn small" id="plogq">查詢</button>
+          </div>
+          <div id="plogbox"></div>`;
+
+        const paint = (rows) => {
+          body.querySelector('#plogbox').innerHTML = `
+            <div class="table-wrap"><table class="list">
+              <thead><tr><th>時間</th><th>玩家</th><th>角色</th><th>工作</th><th>做了什麼</th></tr></thead>
+              <tbody>${rows.length ? rows.map(r => `<tr>
+                <td>${UI.esc((r.created_at || '').slice(5, 16))}</td>
+                <td>${H.who(r.user_id, r.username)}</td>
+                <td>${UI.esc(r.role_name || '')}</td><td>${UI.esc(r.job || '')}</td>
+                <td class="wrap">${UI.esc(r.line || '')}</td>
+              </tr>`).join('') : '<tr><td colspan="5" class="hint">這段期間沒有任何紀錄。</td></tr>'}
+              </tbody></table></div>`;
+          if (H.paintNicks) H.paintNicks(body);
+        };
+        paint(logs);
+        const query = async () => {
+          const uid = body.querySelector('#plogu').value.trim();
+          const d = body.querySelector('#plogd').value;
+          paint(await GET(`/home-partner-logs?days=${d}${uid ? '&user_id=' + encodeURIComponent(uid) : ''}`));
+        };
+        body.querySelector('#plogq').onclick = query;
+        body.querySelectorAll('[data-plog]').forEach(b => b.onclick = () => {
+          body.querySelector('#plogu').value = b.dataset.plog; query();
+        });
+        if (H.paintNicks) H.paintNicks(body);
         return;
       }
 
