@@ -168,4 +168,56 @@ router.post('/charity-relief', (req, res) => {
   res.json({ ok: true, people: list.length, total });
 });
 
+// ---- 捐款達標自動發身分組 ----
+// 門檻看的是「累計捐款總額」，不是本期——身分組是長期身分，用本期算的話
+// 每到新的一期就被降級，玩家會覺得捐的錢憑空消失。
+router.get('/charity-roles', (req, res) => {
+  res.json(db.prepare('SELECT * FROM charity_role_rewards WHERE guild_id=? ORDER BY threshold').all(req.guildId));
+});
+
+router.post('/charity-roles', (req, res) => {
+  const b = req.body || {};
+  const threshold = Math.max(0, parseInt(b.threshold, 10) || 0);
+  const roleId = String(b.role_id || '').trim();
+  if (!roleId) return res.status(400).json({ error: '請選擇要發放的身分組' });
+  const r = db.prepare('INSERT INTO charity_role_rewards (guild_id,threshold,role_id,note,enabled) VALUES (?,?,?,?,?)')
+    .run(req.guildId, threshold, roleId, String(b.note || ''), b.enabled === 0 ? 0 : 1);
+  audit(req.user.name, `新增捐款身分組獎勵：累計 ${threshold} → ${roleId}`, 'charity');
+  res.json({ ok: true, id: r.lastInsertRowid });
+});
+
+router.put('/charity-roles/:id', (req, res) => {
+  const b = req.body || {};
+  const cur = db.prepare('SELECT * FROM charity_role_rewards WHERE id=? AND guild_id=?').get(req.params.id, req.guildId);
+  if (!cur) return res.status(404).json({ error: '找不到這筆設定' });
+  db.prepare('UPDATE charity_role_rewards SET threshold=?, role_id=?, note=?, enabled=? WHERE id=? AND guild_id=?')
+    .run(Math.max(0, parseInt(b.threshold, 10) || 0), String(b.role_id || cur.role_id).trim(),
+      String(b.note ?? cur.note), b.enabled === 0 ? 0 : 1, req.params.id, req.guildId);
+  audit(req.user.name, `修改捐款身分組獎勵 #${req.params.id}`, 'charity');
+  res.json({ ok: true });
+});
+
+router.delete('/charity-roles/:id', (req, res) => {
+  // 只刪「以後不再自動發」的規則，已經發出去的身分組不動——
+  // 自動拔身分組風險太高（管理員可能為了別的用途手動給過同一個身分組）。
+  db.prepare('DELETE FROM charity_role_rewards WHERE id=? AND guild_id=?').run(req.params.id, req.guildId);
+  audit(req.user.name, `刪除捐款身分組獎勵 #${req.params.id}`, 'charity');
+  res.json({ ok: true });
+});
+
+// 回補：規則是後來才加的，先前已經捐到達標的人不會自己拿到，這支幫他們補發。
+router.post('/charity-roles/sync', async (req, res) => {
+  const guild = bot.mainGuild(req.guildId);
+  if (!guild) return res.status(400).json({ error: '機器人不在這個伺服器裡' });
+  const { syncDonorRoles } = require('../bot/features/charity');
+  const donors = db.prepare('SELECT DISTINCT user_id FROM charity_donations WHERE guild_id=?').all(req.guildId);
+  let changed = 0, people = 0;
+  for (const d of donors) {
+    const got = await syncDonorRoles(guild, d.user_id).catch(() => []);
+    if (got.length) { changed += got.length; people++; }
+  }
+  audit(req.user.name, `回補捐款身分組：${people} 人共 ${changed} 個`, 'charity');
+  res.json({ ok: true, donors: donors.length, people, changed });
+});
+
 module.exports = router;

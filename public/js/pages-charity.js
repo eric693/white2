@@ -17,6 +17,7 @@ App.page('charity', {
   async render(el) {
     await H.loadMeta();
     const c = await GET('/charity');
+    const roles = await GET('/charity-roles').catch(() => []);
     const coin = (n) => `🪙 ${Number(n || 0).toLocaleString('en-US')}`;
 
     el.innerHTML = `
@@ -118,7 +119,73 @@ App.page('charity', {
             <td>${UI.esc(p.period)}</td><td>${coin(p.amount)}</td><td>${p.people}</td><td>${UI.esc(p.created_at)}</td></tr>`).join('')
         : '<tr><td colspan="4" class="hint">還沒有撥款。</td></tr>'}</tbody>
         </table></div>
+      </div>
+
+      <div class="card" id="rolewrap">
+        <h3>🎖️ 捐款達標自動發身分組</h3>
+        <div class="hint" style="margin-bottom:10px">
+          玩家<b>累計捐款</b>（不是本期，是歷來總額）達到門檻時，機器人自動給他指定的 Discord 身分組。
+          例如設「累計 100,000 → @贊助者」，之後拍賣會的「參加資格」就能只開放給 @贊助者。<br>
+          ⚠️ 身分組要先在 <b>Discord 伺服器設定 → 身分組</b> 建立，這裡才選得到；
+          而且<b>機器人的身分組必須排在它上面</b>，否則 Discord 不允許機器人發放（發不出去會記在系統錯誤紀錄）。<br>
+          只發不收：達標拿到就永久保留，刪掉規則也不會把已發出去的收回。
+        </div>
+        <div class="table-wrap"><table class="list">
+          <thead><tr><th>累計捐款門檻</th><th>發放身分組</th><th>備註</th><th>狀態</th><th></th></tr></thead>
+          <tbody>${(roles || []).length ? roles.map(r => `<tr data-rid="${r.id}">
+            <td><input name="threshold" type="number" min="0" value="${r.threshold}" style="width:130px"></td>
+            <td>${H.roleSelect('role_id', r.role_id, { emptyLabel: '— 請選擇 —' })}</td>
+            <td><input name="note" value="${UI.esc(r.note || '')}" placeholder="選填"></td>
+            <td>${H.toggle('enabled', r.enabled, '啟用')}</td>
+            <td><button class="btn small" data-rsave="${r.id}">儲存</button>
+                <button class="btn small danger" data-rdel="${r.id}">刪除</button></td></tr>`).join('')
+        : '<tr><td colspan="5" class="hint">還沒有設定任何門檻。</td></tr>'}</tbody>
+        </table></div>
+        <div class="form-row" style="margin-top:12px">
+          <div class="field"><label>新增門檻（累計捐款）</label><input name="nthreshold" type="number" min="0" value="100000"></div>
+          <div class="field"><label>發放身分組</label>${H.roleSelect('nrole', '', { emptyLabel: '— 請選擇 —' })}</div>
+          <div class="field"><label>備註（選填）</label><input name="nnote" placeholder="例如：贊助者"></div>
+        </div>
+        <button class="btn" id="raddbtn">新增門檻</button>
+        <button class="btn secondary" id="rsyncbtn" style="margin-left:8px">🔄 回補既有捐款者</button>
+        <div class="hint" style="margin-top:8px">
+          規則是後來才加的話，先前已經捐到達標的人不會自己拿到 —— 按「回補」幫他們補發一次。
+        </div>
       </div>`;
+
+    // ---- 捐款身分組獎勵 ----
+    const rowOf = (id) => el.querySelector(`[data-rid="${id}"]`);
+    el.querySelectorAll('[data-rsave]').forEach(b => b.onclick = async () => {
+      const tr = rowOf(b.dataset.rsave);
+      const body = H.collect(tr);
+      if (!body.role_id) return UI.err('請先選一個身分組');
+      try { await PUT('/charity-roles/' + b.dataset.rsave, body); UI.ok('已儲存'); App.go('charity'); }
+      catch (e) { UI.err(e.message); }
+    });
+    el.querySelectorAll('[data-rdel]').forEach(b => b.onclick = async () => {
+      if (!await UI.confirm('刪除這個門檻？已經發出去的身分組不會被收回。')) return;
+      try { await DEL('/charity-roles/' + b.dataset.rdel); UI.ok('已刪除'); App.go('charity'); }
+      catch (e) { UI.err(e.message); }
+    });
+    el.querySelector('#raddbtn').onclick = async () => {
+      const w = el.querySelector('#rolewrap');
+      const role_id = w.querySelector('[name=nrole]').value;
+      if (!role_id) return UI.err('請先選一個身分組');
+      try {
+        await POST('/charity-roles', {
+          threshold: w.querySelector('[name=nthreshold]').value,
+          role_id, note: w.querySelector('[name=nnote]').value
+        });
+        UI.ok('已新增'); App.go('charity');
+      } catch (e) { UI.err(e.message); }
+    };
+    el.querySelector('#rsyncbtn').onclick = async () => {
+      if (!await UI.confirm('依現在的門檻，把身分組補發給所有已達標的捐款者？')) return;
+      try {
+        const r = await POST('/charity-roles/sync', {});
+        UI.ok(r.changed ? `已補發 ${r.people} 人共 ${r.changed} 個身分組` : '沒有人需要補發（都已經有了）');
+      } catch (e) { UI.err(e.message); }
+    };
 
     el.querySelector('#savecfg').onclick = async () => {
       await PUT('/charity', H.collect(el.querySelector('#cfgwrap')));

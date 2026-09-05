@@ -85,6 +85,63 @@ function donate(gid, userId, username, amount) {
   return { ok: true, amount: amt, credit, coins: res, pool: after.pool, donated: periodDonated(gid, userId) };
 }
 
+// ---- 捐款達標自動發身分組 ----
+// 規格要的是「捐款達標的人自動拿到指定身分組，之後才能參加限定拍賣」。
+// 門檻看的是**累計捐款總額**（不是單筆、也不是本期），因為身分組是長期身分，
+// 用本期金額會導致每到新的一期就被降級，玩家會覺得捐的錢憑空消失。
+//
+// 只發不收：達標拿到就永久保留。要收回請管理員自己在 Discord 操作——
+// 系統自動拔身分組風險太高（管理員可能為了別的用途手動給了同一個身分組）。
+db.exec(`CREATE TABLE IF NOT EXISTS charity_role_rewards (
+  id        INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id  TEXT NOT NULL,
+  threshold INTEGER NOT NULL DEFAULT 0,      -- 累計捐款達到這個金額
+  role_id   TEXT NOT NULL DEFAULT '',        -- 就給這個 Discord 身分組
+  note      TEXT NOT NULL DEFAULT '',
+  enabled   INTEGER NOT NULL DEFAULT 1
+)`);
+
+/** 某人的累計捐款總額（所有期間加總） */
+function lifetimeDonated(gid, userId) {
+  return db.prepare('SELECT COALESCE(SUM(amount),0) v FROM charity_donations WHERE guild_id=? AND user_id=?')
+    .get(gid, userId).v;
+}
+
+/** 這個伺服器設定的獎勵階梯（門檻由低到高） */
+function roleRewards(gid) {
+  return db.prepare('SELECT * FROM charity_role_rewards WHERE guild_id=? AND enabled=1 AND role_id<>\'\' ORDER BY threshold')
+    .all(gid);
+}
+
+/**
+ * 依累計捐款補發身分組。回傳實際新加到的身分組名稱陣列。
+ * member 拿不到（玩家已退出）或機器人權限不足時安靜略過，不影響捐款本身。
+ */
+async function syncDonorRoles(guild, userId) {
+  if (!guild) return [];
+  const tiers = roleRewards(guild.id);
+  if (!tiers.length) return [];
+  const total = lifetimeDonated(guild.id, userId);
+  const want = tiers.filter(t => total >= t.threshold);
+  if (!want.length) return [];
+  const member = guild.members.cache.get(userId) || await guild.members.fetch(userId).catch(() => null);
+  if (!member) return [];
+  const added = [];
+  for (const t of want) {
+    if (member.roles.cache.has(t.role_id)) continue;
+    const role = guild.roles.cache.get(t.role_id);
+    // 機器人只能給「比自己低」的身分組，給不了就記錄下來讓管理員知道要調順序
+    if (!role) continue;
+    if (role.position >= (guild.members.me?.roles?.highest?.position ?? 0)) {
+      logError(guild.id, '捐款身分組發放失敗：', `身分組「${role.name}」的位階高於機器人，請把機器人的身分組拉到它上面`);
+      continue;
+    }
+    const ok = await member.roles.add(t.role_id, `累計捐款 ${total} 達標`).then(() => true).catch(() => false);
+    if (ok) added.push(role.name);
+  }
+  return added;
+}
+
 // 直接資助特定玩家：星幣直接送到對方錢包（公開透明）。
 // 不進基金池、不折抵稅額、不上捐款榜（避免用小號互送刷抵稅），單純的公開善舉。
 // 送到對方的錢包不計入 total_earned（跟貸款一樣不算收入），所以不會反過來被課所得稅。
@@ -296,6 +353,8 @@ function init(client) {
             { name: '可折抵稅額', value: r.credit > 0 ? money(i.guildId, r.credit) : '—', inline: true },
             { name: '基金會餘額', value: money(i.guildId, r.pool), inline: true })
           .setFooter({ text: '折抵會在下次稅金結算時自動生效' });
+        const got = await syncDonorRoles(i.guild, i.user.id).catch(() => []);
+        if (got.length) emb.addFields({ name: '🎖️ 獲得身分組', value: got.map(n => `**${n}**`).join('、') });
         return await i.reply({ embeds: [emb], flags: MessageFlags.Ephemeral });
       }
       if (i.isChatInputCommand() && i.commandName === '捐款') {
@@ -313,6 +372,8 @@ function init(client) {
             { name: '基金會餘額', value: money(gid, r.pool), inline: true }
           )
           .setFooter({ text: '折抵會在下次稅金結算時自動生效（用 /稅單 看預估）' });
+        const got = await syncDonorRoles(i.guild, i.user.id).catch(() => []);
+        if (got.length) emb.addFields({ name: '🎖️ 獲得身分組', value: got.map(n => `**${n}**`).join('、') });
         return await i.reply({ embeds: [emb], flags: MessageFlags.Ephemeral });
       }
     } catch (e) {
@@ -325,5 +386,6 @@ function init(client) {
 
 module.exports = {
   init, cfg, donate, creditFor, takeFromPool, fundTake, reliefBudget, logPayout, addTax, fundPay, fundGet,
-  periodDonated, periodTop, allTimeTop, infoEmbed, fundName
+  periodDonated, periodTop, allTimeTop, infoEmbed, fundName,
+  lifetimeDonated, roleRewards, syncDonorRoles
 };
