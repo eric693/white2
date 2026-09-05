@@ -1055,15 +1055,50 @@ function init(client) {
           seedAffinity(gid);
           return i.reply({ ...partnerPanel(gid, uid, uname), ...eph }).catch(() => {});
         }
-        if (i.isStringSelectMenu() && i.customId === 'partnermoveout') {
-          const out = moveOut(gid, uid, parseInt(i.values[0], 10));
-          if (out.error) return i.reply({ content: out.error, ...eph }).catch(() => {});
-          await i.update(partnerPanel(gid, uid, uname)).catch(() => {});
-          return i.followUp({
-            content: `**${out.role.name}** 收拾東西搬走了。\n`
-              + `💔 **好感度已歸零**（原本 ${out.lostPoints.toLocaleString('en-US')} 點）——只剩「相遇過」的紀錄，`
-              + '想再請他住進來要從頭培養感情。',
-            ...eph }).catch(() => {});
+        // 搬走是不可逆的（好感度直接歸零），所以先跳一次確認 —— 手滑點到就分手太傷了
+        if ((i.isStringSelectMenu() && i.customId === 'partnermoveout')
+            || (i.isButton() && i.customId.startsWith('partnerout:'))) {
+          const rid = i.isStringSelectMenu() ? parseInt(i.values[0], 10) : parseInt(i.customId.split(':')[1], 10);
+          const role = roleOf(gid, rid);
+          if (!role) return i.reply({ content: '找不到這位角色。', ...eph }).catch(() => {});
+          const a = db.prepare('SELECT points FROM affinity WHERE guild_id=? AND user_id=? AND role_id=?')
+            .get(gid, uid, rid) || { points: 0 };
+          const e = new EmbedBuilder().setColor(0xed4245)
+            .setTitle('💔 真的要跟他分手嗎？')
+            .setDescription(
+              `你正要請 **${role.name}** 搬出去。\n\n`
+              + `這一走，你們之間累積的 **${(a.points || 0).toLocaleString('en-US')} 點好感**會**全部歸零**，\n`
+              + '關係退回「只是見過面的陌生人」——他不會記得你送過的禮物、一起走過的路。\n'
+              + '他的能力、工作區域也會一併卸下。\n\n'
+              + '✅ 之後還能再邀請他，但**要從零開始重新追**。\n'
+              + '❗ 這個動作**沒有辦法復原**，想清楚再按。');
+          if (role.image_url) e.setThumbnail(absUrl(role.image_url));
+          return i.reply({
+            embeds: [e],
+            components: [new ActionRowBuilder().addComponents(
+              new ButtonBuilder().setCustomId(`partnerbye:${rid}`).setLabel('💔 確定分手，請他搬走').setStyle(ButtonStyle.Danger),
+              new ButtonBuilder().setCustomId('partnerstay').setLabel('❤️ 算了，讓他留下').setStyle(ButtonStyle.Secondary))],
+            ...eph
+          }).catch(() => {});
+        }
+        if (i.isButton() && i.customId === 'partnerstay') {
+          return i.update({
+            content: '❤️ 你把話吞了回去 —— 他還住在你家，什麼都沒有改變。',
+            embeds: [], components: []
+          }).catch(() => {});
+        }
+        if (i.isButton() && i.customId.startsWith('partnerbye:')) {
+          const out = moveOut(gid, uid, parseInt(i.customId.split(':')[1], 10));
+          if (out.error) return i.update({ content: out.error, embeds: [], components: [] }).catch(() => {});
+          const e = new EmbedBuilder().setColor(0x4f545c)
+            .setTitle('💔 你們分開了')
+            .setDescription(
+              `**${out.role.name}** 收拾好行李，在門口停了一下，還是走了。\n\n`
+              + `累積的 **${out.lostPoints.toLocaleString('en-US')} 點好感**已經歸零，`
+              + '你們之間只剩下「曾經相遇過」的紀錄。\n'
+              + '他帶走的能力與工作也一起卸下了。\n\n'
+              + '想再讓他住進來，就得從第一次送禮重新開始。');
+          return i.update({ embeds: [e], components: [], content: '' }).catch(() => {});
         }
         if ((i.isButton() && i.customId === 'partnerin') || (i.isStringSelectMenu() && isSelect(i.customId, 'partnerpick'))) {
           const out = moveIn(gid, uid, uname, i.isStringSelectMenu() ? parseInt(i.values[0], 10) : 0);
@@ -1079,18 +1114,7 @@ function init(client) {
           return i.followUp({ embeds: [e], ...eph }).catch(() => {});
         }
         // （同居能力改由後台指定，玩家端的選／換能力選單已移除）
-        if (i.isButton() && i.customId.startsWith('partnerout:')) {
-          const rid = parseInt(i.customId.split(':')[1], 10);
-          const out = moveOut(gid, uid, rid);
-          if (out.error) return i.reply({ content: out.error, ...eph }).catch(() => {});
-          await i.update(partnerPanel(gid, uid, uname)).catch(() => {});
-          return i.followUp({
-            content: `**${out.role.name}** 收拾東西搬走了。\n`
-              + `💔 **好感度已歸零**（原本 ${out.lostPoints.toLocaleString('en-US')} 點）——只剩「相遇過」的紀錄，`
-              + '想再請他住進來要從頭培養感情。',
-            ...eph
-          }).catch(() => {});
-        }
+
         // 送禮的物品選單
         // 選好禮物 → 先問要送幾個（一次可以送一疊，受「每日送禮次數」與持有量夾住）
         if (i.isStringSelectMenu() && i.customId.startsWith('giftpick:')) {
