@@ -170,7 +170,27 @@ function init(client) {
           const ch = await inter.client.channels.fetch(t.channel_id);
           const msg = await ch.messages.fetch(t.message_id);
           await msg.edit({ ...payload, content: payload.content ?? '' });
-        } catch { /* 訊息被刪掉就算了，交易本身已經結束 */ }
+        } catch (e) {
+          // 訊息被刪掉是正常的（交易本身已經結束，不必補救）。
+          // 但「權限不足」不是——那代表機器人進不去那個頻道，公開提案會一直
+          // 停在「接受交易」可以再按一次，玩家只會看到「已經處理過了」。
+          // 這種失敗以前是完全靜默的，只能等玩家回報，所以一定要留下紀錄。
+          const code = e && e.code;
+          const missingAccess = code === 50001 || code === 50013;   // Missing Access / Missing Permissions
+          if (code !== 10008) {   // 10008 ＝ Unknown Message，訊息已刪，略過
+            logError(t.guild_id || '', '交易收尾失敗：',
+              `交易 #${t.id} 的公開提案訊息改不動（頻道 ${t.channel_id}）`
+              + `${missingAccess ? '——機器人對該頻道沒有「檢視頻道／讀取訊息記錄」權限，請到伺服器設定補上' : ''}`
+              + `｜${e.message}`);
+          }
+          // 備援：至少在頻道補一則結果，別讓玩家以為交易沒成功。
+          if (!missingAccess) {
+            try {
+              const ch2 = await inter.client.channels.fetch(t.channel_id);
+              await ch2.send({ content: payload.content ?? '', embeds: payload.embeds || [] });
+            } catch { /* 連補發都失敗就真的沒辦法了，紀錄已經留下 */ }
+          }
+        }
       };
 
       // ---- 二次確認 ----
