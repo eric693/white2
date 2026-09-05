@@ -29,6 +29,7 @@ const ABILITIES = {
   greenhouse_harvest: { kind: 'produce',   name: '🏡 溫室收成',     unit: 'none',  desc: '每天自動收成已成熟的溫室產物' },
   hatch_collect:      { kind: 'produce',   name: '🥚 孵化室收成',   unit: 'none',  desc: '每天自動領走孵好的動物，牧場滿了就直接賣掉換星幣' },
   ranch_tend:         { kind: 'produce',   name: '🐄 牧場照顧',     unit: 'none',  desc: '自動照顧動物並把蛋／奶收進背包' },
+  kitchen_cook:       { kind: 'care',      name: '🍳 廚房做飯',     unit: 'none',  desc: '用背包現有的材料自動下廚，煮好也自動收進料理櫃（材料不夠就跳過）' },
   thief_guard:        { kind: 'produce',   name: '🛡️ 擊退小偷',     unit: 'coins', desc: '協助擊退小偷，成功時額外拿到星幣' },
   // 冒險類
   mine_helper:        { kind: 'adventure', name: '⛏️ 挖礦助手',     unit: 'count', kindKey: 'mine',   desc: '每天額外帶回隨機礦物' },
@@ -58,6 +59,7 @@ const DEFAULT_SKILLS = [
   { code: 'greenhouse_harvest', tiers: [] },
   { code: 'hatch_collect',      tiers: [] },
   { code: 'ranch_tend',         tiers: [] },
+  { code: 'kitchen_cook',       tiers: [] },
   { code: 'thief_guard',        val_min: 100, val_max: 5000, tiers: [{ lv: 8, min: 200, max: 8000 }, { lv: 10, min: 500, max: 12000 }] },
   { code: 'mine_helper',        val_min: 5, val_max: 5, tiers: [{ lv: 8, min: 7, max: 7 }, { lv: 10, min: 10, max: 10 }] },
   { code: 'wood_helper',        val_min: 5, val_max: 5, tiers: [{ lv: 8, min: 7, max: 7 }, { lv: 10, min: 10, max: 10 }] },
@@ -312,8 +314,38 @@ const WORK_AREAS = {
   aquarium: {
     name: '🐠 魚缸', desc: '自動餵魚 ＋ 把累積的星幣領進錢包',
     need: '買飼料的星幣（不夠就暫停餵食，領取照常）'
+  },
+  kitchen: {
+    name: '🍳 廚房', desc: '自動領走煮好的料理 ＋ 用背包現有的材料繼續下廚（爐子有幾格就煮幾鍋）',
+    need: '食譜要的材料（不夠就只領取、不開新鍋）'
   }
 };
+
+/** 廚房：先領走煮好的，再用背包現有的材料把空爐子填滿 */
+function tendKitchen(gid, uid, uname) {
+  const K = require('./kitchen');
+  const lines = [];
+  const got = K.collectCooked(gid, uid);
+  if (got && got.got && got.got.length) {
+    const names = got.got.map(x => `${x.r.emoji || ''}${x.r.name}`);
+    lines.push(`領取 ${names.join('、')}`);
+  }
+  // 材料夠的食譜就繼續煮：由便宜（min_kitchen 低）到貴，避免一次把高級材料用光。
+  // startCook 自己會檢查廚房等級、爐子數與材料，煮不了就回 error，直接換下一道。
+  const recipes = db.prepare(
+    'SELECT id, name, emoji FROM cook_recipes WHERE guild_id=? AND enabled=1 ORDER BY min_kitchen, id').all(gid);
+  const started = [];
+  for (let n = 0; n < 5; n++) {                 // 最多補 5 鍋，避免一輪把材料全部吃掉
+    let ok = false;
+    for (const r of recipes) {
+      const res = K.startCook(gid, uid, uname, r.id);
+      if (res && res.started) { started.push(`${r.emoji || ''}${r.name}`); ok = true; break; }
+    }
+    if (!ok) break;                             // 沒有任何一道煮得起來（沒材料或爐子滿了）
+  }
+  if (started.length) lines.push(`下鍋 ${started.join('、')}`);
+  return lines;
+}
 
 /** 牧場：照顧動物並把成熟的產物收進背包 */
 function tendRanch(gid, uid) {
@@ -338,6 +370,9 @@ function runArea(gid, uid, uname, area) {
       break;
     case 'ranch':
       push(tendRanch(gid, uid), '收取 ');
+      break;
+    case 'kitchen':
+      push(tendKitchen(gid, uid, uname), '');
       break;
     case 'hatchery':
       push(autoIncubate(gid, uid), '放蛋 ');
@@ -383,6 +418,7 @@ const AREA_SKILLS = {
   farm:       ['farm_harvest', 'farm_plant'],
   greenhouse: ['greenhouse_harvest', 'greenhouse_plant'],
   ranch:      ['ranch_tend', 'thief_guard'],
+  kitchen:    ['kitchen_cook'],
   hatchery:   ['hatch_collect', 'hatch_put'],
   aquarium:   ['aqua_collect', 'aqua_feed']
 };
@@ -434,6 +470,7 @@ function runOne(gid, p, skill) {
   switch (skill.code) {
     case 'farm_harvest':       { const l = harvestPlots(gid, uid, 'field');      return l.length ? l : null; }
     case 'ranch_tend':         { const l = tendRanch(gid, uid);                  return l.length ? l : null; }
+    case 'kitchen_cook':       { const l = tendKitchen(gid, uid, uname);         return l.length ? l : null; }
     case 'greenhouse_harvest': { const l = harvestPlots(gid, uid, 'greenhouse'); return l.length ? l : null; }
     case 'aqua_collect': {
       const { accrue } = require('./aquarium');
@@ -484,7 +521,7 @@ function runOne(gid, p, skill) {
 // 所以重複跑是安全的，不需要用 last_run 擋。
 const HOURLY_SKILLS = new Set([
   'farm_harvest', 'greenhouse_harvest', 'aqua_collect', 'hatch_collect', 'ranch_tend',
-  'farm_plant', 'greenhouse_plant', 'hatch_put', 'aqua_feed'
+  'farm_plant', 'greenhouse_plant', 'hatch_put', 'aqua_feed', 'kitchen_cook'
 ]);
 
 /** 把這一輪做的事寫進明細（玩家用 💞同居 面板的「📒 同居明細」查得到） */
@@ -548,13 +585,28 @@ function runDaily(gid, mode = 'daily') {
   // 全部都是收成／照顧類，所以只在 5 分鐘那一輪跑（每日那輪跑會讓作物卡半天）。
   if (mode === 'hourly') {
     const areas = db.prepare(
-      `SELECT p.user_id, p.work_area, r.name AS role_name, w.username AS user_name
+      `SELECT p.user_id, p.role_id, p.work_area, r.name AS role_name, w.username AS user_name
          FROM home_partners p
          JOIN wheel_roles r ON r.id = p.role_id
          LEFT JOIN econ_wallets w ON w.guild_id=p.guild_id AND w.user_id=p.user_id
         WHERE p.guild_id=? AND p.work_area <> ''`).all(gid);
     for (const p of areas) {
       try {
+        // 能力對不上就直接罷工：後台把他的能力改成別的（或本來就不是這一區的能力）時，
+        // 這個人不做事，也不會偷偷幫你顧 —— 面板與明細都看得到「罷工中」。
+        const can = areaOfRole(gid, p.role_id);
+        if (can !== p.work_area) {
+          // 每 5 分鐘記一次會把明細洗滿，同一位一小時內只記一筆就夠了
+          const recent = db.prepare(
+            `SELECT 1 FROM partner_logs WHERE guild_id=? AND user_id=? AND line LIKE '🚫 罷工中%'
+              AND created_at >= datetime('now','localtime','-1 hours') LIMIT 1`).get(gid, p.user_id);
+          if (!recent) {
+            const sk = designatedSkill(gid, p.role_id);
+            logWork(gid, p.user_id, p.role_name, (WORK_AREAS[p.work_area] || {}).name || p.work_area,
+              [`🚫 罷工中：他的能力是「${sk ? sk.name : '（沒有能力）'}」，顧不了這一區`]);
+          }
+          continue;
+        }
         const lines = runArea(gid, p.user_id, p.user_name || '', p.work_area);
         if (lines.length) {
           const job = (WORK_AREAS[p.work_area] || {}).name || p.work_area;

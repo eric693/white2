@@ -628,4 +628,4 @@ function init(client) {
   console.log('  ↳ 廚房模組已載入（15 級廚房／36 道食譜／5 種品質）');
 }
 
-module.exports = { init, seedKitchen, kitchenPanel, QUALITY, qLabel };
+module.exports = { init, seedKitchen, kitchenPanel, QUALITY, qLabel, startCook, collectCooked };

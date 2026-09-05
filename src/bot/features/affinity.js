@@ -365,13 +365,26 @@ function moveIn(gid, uid, uname, roleId = 0) {
   return { moved: true, role, level: pick.level, slots, used: cur.length + 1, skill: sk };
 }
 
-/** 請同居對象搬走（好感度不會歸零，但要等冷卻才能再抽） */
+/**
+ * 請同居對象搬走 —— **好感度全部歸零，只保留「相遇過」的紀錄**。
+ *
+ * 以前搬走完全沒有代價（好感度原封不動），玩家就把同居當成可以隨時開關的加成：
+ * 要繳同居稅之前先請人搬走，繳完再請回來，稅金與養成完全被繞過。
+ * 改成歸零之後，「放棄同居」是真的要重新培養感情，決定前請三思。
+ * 只留 points=0 的那一列（不刪），角色仍在「相遇過」的名單裡，圖鑑與紀錄不會消失。
+ */
 function moveOut(gid, uid, roleId) {
   const p = db.prepare('SELECT * FROM home_partners WHERE guild_id=? AND user_id=? AND role_id=?').get(gid, uid, roleId);
   if (!p) return { error: '這位角色沒有住在你家。' };
   const role = roleOf(gid, roleId);
-  db.prepare('DELETE FROM home_partners WHERE guild_id=? AND user_id=? AND role_id=?').run(gid, uid, roleId);
-  return { role, paid: p.paid_total };
+  const before = db.prepare('SELECT points, level FROM affinity WHERE guild_id=? AND user_id=? AND role_id=?')
+    .get(gid, uid, roleId) || { points: 0, level: 0 };
+  db.transaction(() => {
+    db.prepare('DELETE FROM home_partners WHERE guild_id=? AND user_id=? AND role_id=?').run(gid, uid, roleId);
+    // 相遇紀錄留著（points=0、level=0），其餘數值歸零
+    db.prepare('UPDATE affinity SET points=0, level=0 WHERE guild_id=? AND user_id=? AND role_id=?').run(gid, uid, roleId);
+  })();
+  return { role, paid: p.paid_total, lostPoints: before.points || 0, lostLevel: before.level || 0 };
 }
 
 function partnerPanel(gid, uid, uname) {
@@ -397,10 +410,13 @@ function partnerPanel(gid, uid, uname) {
       + `第 2 位 ×${step}、第 3 位 ×${step * step}…　住越多位，每一位的稅都比前一位貴一倍。`)
     .addFields({ name: `目前同居（每期同居稅合計 ${totalTax.toLocaleString('en-US')}）`, value: list.length
       ? list.map((p, idx) => {
+        const { areaOfRole } = require('./partnerskills');
         const area = p.work_area ? (WORK_AREAS[p.work_area] || {}).name : '';
+        // 能力跟區域對不上＝罷工中，面板要講清楚，不然玩家會以為系統壞了
+        const striking = p.work_area && areaOfRole(gid, p.role_id) !== p.work_area;
         return `💕 **${p.name}**　${levelName(gid, p.level)}（Lv.${p.level}）\n`
           + `　能力：${partnerSkillText(p, gid)}\n`
-          + `　工作：${area || '沒有指派'}\n`
+          + `　工作：${area || '沒有指派'}${striking ? '　🚫 **罷工中**（能力跟這一區對不上，換人或改能力才會做事）' : ''}\n`
           + `　這一位每期 ${taxAt(idx + 1).toLocaleString('en-US')}`
           + (p.paid_total ? `　已繳 ${p.paid_total.toLocaleString('en-US')}` : '');
       }).join('\n')
@@ -1043,7 +1059,11 @@ function init(client) {
           const out = moveOut(gid, uid, parseInt(i.values[0], 10));
           if (out.error) return i.reply({ content: out.error, ...eph }).catch(() => {});
           await i.update(partnerPanel(gid, uid, uname)).catch(() => {});
-          return i.followUp({ content: `**${out.role.name}** 收拾東西搬走了。好感度不會消失，之後想請他回來再邀請一次就好。`, ...eph }).catch(() => {});
+          return i.followUp({
+            content: `**${out.role.name}** 收拾東西搬走了。\n`
+              + `💔 **好感度已歸零**（原本 ${out.lostPoints.toLocaleString('en-US')} 點）——只剩「相遇過」的紀錄，`
+              + '想再請他住進來要從頭培養感情。',
+            ...eph }).catch(() => {});
         }
         if ((i.isButton() && i.customId === 'partnerin') || (i.isStringSelectMenu() && isSelect(i.customId, 'partnerpick'))) {
           const out = moveIn(gid, uid, uname, i.isStringSelectMenu() ? parseInt(i.values[0], 10) : 0);
@@ -1065,7 +1085,9 @@ function init(client) {
           if (out.error) return i.reply({ content: out.error, ...eph }).catch(() => {});
           await i.update(partnerPanel(gid, uid, uname)).catch(() => {});
           return i.followUp({
-            content: `**${out.role.name}** 收拾東西搬走了。好感度不會消失，之後還可以再請人搬進來（一樣是隨機的）。`,
+            content: `**${out.role.name}** 收拾東西搬走了。\n`
+              + `💔 **好感度已歸零**（原本 ${out.lostPoints.toLocaleString('en-US')} 點）——只剩「相遇過」的紀錄，`
+              + '想再請他住進來要從頭培養感情。',
             ...eph
           }).catch(() => {});
         }
