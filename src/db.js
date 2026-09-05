@@ -867,6 +867,44 @@ function logError(guildId, ...args) {
   writeError(fmt(args), guildId);
 }
 
+// ---- 跨行程工作佇列（拆成秘書／管家兩隻之後的橋）----
+// 後台網站只跑在其中一個行程（預設秘書），但有些動作只有另一隻做得到 ——
+// 例如「發布神秘商店面板」：面板的下拉選單互動只會送到「發訊息的那個應用程式」，
+// 秘書發的面板管家接不到，反之亦然。所以後台把工作寫進這張表，由該角色的行程撈走執行。
+db.exec(`CREATE TABLE IF NOT EXISTS bot_jobs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  role TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  payload TEXT NOT NULL DEFAULT '{}',
+  status TEXT NOT NULL DEFAULT 'pending',
+  error TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+)`);
+db.exec('CREATE INDEX IF NOT EXISTS idx_bot_jobs_pick ON bot_jobs(role, status)');
+
+function enqueueBotJob(role, kind, payload = {}) {
+  return db.prepare('INSERT INTO bot_jobs (role, kind, payload) VALUES (?, ?, ?)')
+    .run(role, kind, JSON.stringify(payload)).lastInsertRowid;
+}
+
+// 撈出屬於這個角色的工作並就地標記 running，避免同一筆被撈兩次
+function claimBotJobs(role, limit = 10) {
+  const rows = db.prepare("SELECT * FROM bot_jobs WHERE role=? AND status='pending' ORDER BY id LIMIT ?").all(role, limit);
+  const mark = db.prepare("UPDATE bot_jobs SET status='running' WHERE id=? AND status='pending'");
+  return rows.filter(r => mark.run(r.id).changes === 1)
+    .map(r => ({ ...r, payload: (() => { try { return JSON.parse(r.payload); } catch { return {}; } })() }));
+}
+
+function finishBotJob(id, err) {
+  db.prepare('UPDATE bot_jobs SET status=?, error=? WHERE id=?')
+    .run(err ? 'failed' : 'done', err ? String(err).slice(0, 500) : '', id);
+}
+
+function getBotJob(id) { return db.prepare('SELECT * FROM bot_jobs WHERE id=?').get(id); }
+
+// 一週前的完成紀錄沒有查詢價值，開機時順手清掉
+db.prepare("DELETE FROM bot_jobs WHERE status IN ('done','failed') AND created_at < datetime('now','-7 days')").run();
+
 // 目前啟用中的伺服器 id 清單（排程模組遍歷用）
 function activeGuildIds() {
   return db.prepare('SELECT guild_id FROM guilds WHERE active = 1').all().map(r => r.guild_id);
@@ -875,5 +913,6 @@ function activeGuildIds() {
 module.exports = {
   db, SECRET, ensureColumns, getSetting, setSetting, UI_TEXT_KEYS, audit,
   BOT_ROLES, BOT_SECRET_KEYS, BOT_PUBLIC_KEYS, maskSecret, guildCtx, COIN_MAX, COIN_DELTA_MAX,
-  HOME_GUILD, guildConfig, ensureGuild, resetGuildData, activeGuildIds, GUILD_TABLES, logError
+  HOME_GUILD, guildConfig, ensureGuild, resetGuildData, activeGuildIds, GUILD_TABLES, logError,
+  enqueueBotJob, claimBotJobs, finishBotJob, getBotJob
 };

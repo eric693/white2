@@ -1,6 +1,6 @@
 // 特殊兌換商店後台 API：設定、商品、兌換紀錄
 const express = require('express');
-const { db, audit, guildConfig } = require('../db');
+const { db, audit, guildConfig, enqueueBotJob, getBotJob } = require('../db');
 const { requireAuth, requireModule, guardModule } = require('../auth');
 const bot = require('../bot');
 
@@ -125,10 +125,25 @@ router.delete('/special-shops/:id', (req, res) => {
   audit(req.user.name, `刪除特殊商店 #${req.params.id}`);
   res.json({ ok: true });
 });
+// 面板一定要由「管家」發：面板上的下拉選單，Discord 只會把互動送給發訊息的那個應用程式。
+// 後台網站跑在秘書的行程裡，這裡沒有商店模組，所以改成把工作丟進 bot_jobs 讓管家去執行。
 router.post('/special-shops/:id/publish', async (req, res) => {
-  if (!bot.client._publishShop) return res.status(503).json({ error: '機器人尚未上線' });
-  try { await bot.client._publishShop(parseInt(req.params.id, 10)); audit(req.user.name, `發布特殊商店 #${req.params.id}`); res.json({ ok: true }); }
-  catch (e) { res.status(500).json({ error: e.message }); }
+  const shopId = parseInt(req.params.id, 10);
+  if (bot.client._publishShop) {
+    try { await bot.client._publishShop(shopId); audit(req.user.name, `發布特殊商店 #${shopId}`); return res.json({ ok: true }); }
+    catch (e) { return res.status(500).json({ error: e.message }); }
+  }
+  let jobId;
+  try { jobId = enqueueBotJob('butler', 'publish_shop', { shopId }); }
+  catch (e) { return res.status(500).json({ error: e.message }); }
+  // 管家每 1.5 秒撈一次，這裡等它做完再回報結果，後台才能顯示真正的成敗
+  for (let n = 0; n < 20; n++) {
+    await new Promise(r => setTimeout(r, 500));
+    const job = getBotJob(jobId);
+    if (job && job.status === 'done') { audit(req.user.name, `發布特殊商店 #${shopId}（交由管家執行）`); return res.json({ ok: true }); }
+    if (job && job.status === 'failed') return res.status(500).json({ error: job.error || '管家發布失敗' });
+  }
+  res.status(503).json({ error: '管家沒有回應（可能未上線），發布工作已排入佇列，管家上線後會自動執行。' });
 });
 
 router.delete('/special-items/:id', (req, res) => {

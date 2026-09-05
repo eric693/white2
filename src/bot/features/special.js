@@ -302,10 +302,16 @@ async function publishShop(client, shopId) {
   const ch = client.channels.cache.get(shop.channel_id) || await client.channels.fetch(shop.channel_id).catch(() => null);
   if (!ch) throw new Error('找不到發布頻道');
   const payload = shopPanel(shop.guild_id, shop);
-  // 已發布過就編輯原訊息，否則發新的
+  // 已發布過就編輯原訊息，否則發新的。
+  // 例外：拆成秘書／管家兩隻之後，舊面板是「另一隻」發的 —— 別人的訊息編輯不動
+  //（Discord 只允許作者本人編輯），而且那則面板的下拉選單互動也只會送到原作者那隻，
+  // 玩家點了根本沒人接。所以編輯失敗就把舊的刪掉、由現在這隻重發一則。
   if (shop.message_id) {
     const msg = await ch.messages.fetch(shop.message_id).catch(() => null);
-    if (msg) { await msg.edit(payload); return; }
+    if (msg) {
+      if (msg.author?.id === client.user?.id) { await msg.edit(payload); return; }
+      await msg.delete().catch(() => {});   // 沒有刪除權限也沒關係，下面照樣重發一則新的
+    }
   }
   const sent = await ch.send(payload);
   db.prepare('UPDATE special_shops SET message_id=? WHERE id=?').run(sent.id, shopId);
@@ -313,6 +319,9 @@ async function publishShop(client, shopId) {
 
 function init(client) {
   client._publishShop = (shopId) => publishShop(client, shopId);
+  // 後台網站跑在秘書的行程裡，那邊沒有這個模組，只能把工作丟進 bot_jobs 由這裡執行
+  client._jobHandlers = client._jobHandlers || {};
+  client._jobHandlers.publish_shop = ({ shopId }) => publishShop(client, shopId);
 
   // 兌換收尾：扣款 → 回覆玩家 → 刷新面板庫存。
   // 從份數選單來的是自己的暫時訊息（可 update）；直接從商品選單來的是公開面板（只能另外私訊回覆）

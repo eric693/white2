@@ -1,7 +1,7 @@
 const { Client, GatewayIntentBits, Partials, MessageFlags } = require('discord.js');
 const path = require('path');
 const fs = require('fs');
-const { getSetting, setSetting, ensureGuild, db } = require('../db');
+const { getSetting, setSetting, ensureGuild, db, claimBotJobs, finishBotJob } = require('../db');
 const { botRole, roleLabel, featuresFor, commandsFor, commandFeature, componentFeature, isButlerComponent } = require('./roles');
 const { hasFeature, lockedMessage } = require('../subscription');
 const { absUrl } = require('../util/url');
@@ -86,7 +86,27 @@ client.once('clientReady', async () => {
   for (const [, g] of client.guilds.cache) await registerGuildCommands(g.id, g.name);
   applyAppearance().catch(() => {});
   startExpiryWatch();
+  startJobWatch();
 });
+
+// ---- 跨行程工作佇列：後台（跑在另一隻的行程裡）交代給我做的事 ----
+// 例：發布神秘商店面板。面板的下拉選單只有「發訊息的那個應用程式」收得到互動，
+// 所以一定要由管家自己發，後台不能拿秘書的 client 代發。
+// 功能模組用 client._jobHandlers[kind] = fn(payload) 登記自己接哪種工作。
+function startJobWatch() {
+  const role = botRole();
+  setInterval(() => {
+    let jobs;
+    try { jobs = claimBotJobs(role); } catch { return; }
+    for (const job of jobs) {
+      const fn = client._jobHandlers && client._jobHandlers[job.kind];
+      if (!fn) { finishBotJob(job.id, `這隻機器人不認得的工作：${job.kind}`); continue; }
+      Promise.resolve().then(() => fn(job.payload))
+        .then(() => finishBotJob(job.id, null))
+        .catch(e => finishBotJob(job.id, e.message || String(e)));
+    }
+  }, 1500).unref?.();
+}
 
 // 訂閱到期自動限制：每天凌晨重新整理各伺服器的指令清單。
 // 到期當下不需要做任何資料處理（判定端一律看 expires_at），這裡只是把
@@ -355,9 +375,15 @@ client.on('interactionCreate', async (i) => {
   if (botRole() !== 'secretary') return;
   if (!i.isButton() && !i.isStringSelectMenu()) return;
   if (!isButlerComponent(i.customId)) return;
+  // 神秘商店的面板是常駐在頻道裡的公開訊息，玩家自己重開沒有意義 —— 要請管理員到後台重新發布
+  const shopPanel = ['sredeem', 'sqty'].includes(String(i.customId).split(':')[0]);
   try {
     await i.reply({
-      content: '🔄 **這個面板是舊版的，已經不能用了。**\n\n'
+      content: shopPanel
+        ? '🔄 **這個商店面板是舊版的，已經不能用了。**\n\n'
+          + '神秘商店已經交給 **璃白Yu光管家** 負責，這則面板是舊機器人發的，選單接不到新的系統。\n'
+          + '請改輸入 `/特殊商店` 直接兌換；也請管理員到後台把商店面板**重新發布**一次。'
+        : '🔄 **這個面板是舊版的，已經不能用了。**\n\n'
         + '冒險遊戲已經交給 **璃白Yu光管家** 負責，這則訊息是舊機器人發的，按鈕接不到新的系統。\n'
         + '請改輸入 `/冒險面板` 重新開一個（面板是私人的，只有你看得到）。\n\n'
         + '－ 如果找不到指令，代表管家還沒被邀請進這個伺服器，請告訴管理員。',
