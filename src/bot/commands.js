@@ -54,7 +54,7 @@ const builders = [
       )),
   new SlashCommandBuilder().setName('貼文轉盤').setDescription('（管理員）從指定貼文的留言者中隨機抽選')
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild)
-    .addStringOption(o => o.setName('貼文').setDescription('訊息連結（訊息上按「⋯」→ 複製訊息連結），或訊息 ID').setRequired(true))
+    .addStringOption(o => o.setName('貼文').setDescription('留空＝自動抓這個頻道最近的那則貼文；也可貼訊息連結或訊息 ID'))
     .addIntegerOption(o => o.setName('抽出人數').setDescription('要抽幾位（預設 1，最多 50）').setMinValue(1).setMaxValue(50))
     .addBooleanOption(o => o.setName('允許重複中獎').setDescription('同一人可被抽中多次（預設否）'))
     .addBooleanOption(o => o.setName('每則留言算一次資格').setDescription('留越多則機率越高（預設否：一人一票）'))

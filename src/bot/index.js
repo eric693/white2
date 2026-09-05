@@ -245,6 +245,84 @@ client.on('interactionCreate', (i) => {
   } catch (e) { console.error('訂閱檢查失敗：', e.message); }
 });
 
+// ---- 互動回應診斷（INTERACTION_TRACE=1 開啟）----
+// 症狀：玩家看到「應用程式沒有回應」，但 event loop 沒卡頓、Discord 也沒限流。
+// 日誌裡同時出現 Unknown interaction 與 Interaction has already been acknowledged，
+// 後者代表有兩處回應了同一筆互動 —— 但看不出是哪兩處。
+//
+// 這裡把每筆互動的 reply/update/defer/editReply 都包一層，記下呼叫來源（stack 上
+// 第一個 features/*.js），第二次以後的回應就把「先前是誰回的、現在是誰要回」一起
+// 寫進錯誤紀錄。查完把環境變數拿掉即可，平常完全不執行。
+if (process.env.INTERACTION_TRACE === '1') {
+  const RESPOND = ['reply', 'update', 'deferReply', 'deferUpdate', 'editReply', 'followUp', 'showModal'];
+  const whoCalled = () => {
+    const st = (new Error().stack || '').split('\n').slice(2);
+    const hit = st.find(l => l.includes('/features/')) || st.find(l => l.includes('/bot/')) || st[0] || '';
+    return hit.trim().replace(/^at\s+/, '').slice(0, 120);
+  };
+  // 送達延遲：互動由 Discord 建立（snowflake 時間）到這裡收到差多久。
+  // 這是關鍵指標 —— 如果這個數字就已經接近 3 秒，那不管處理多快都來不及回應，
+  // 問題在 gateway 送達，不在程式。
+  const deliver = [];
+  setInterval(() => {
+    if (!deliver.length) return;
+    deliver.sort((x, y) => x - y);
+    const p50 = deliver[Math.floor(deliver.length / 2)];
+    const p95 = deliver[Math.floor(deliver.length * 0.95)];
+    const over = deliver.filter(x => x > 2500).length;
+    require('../db').logError('', '互動送達延遲：',
+      `${deliver.length} 筆｜中位 ${p50}ms｜p95 ${p95}ms｜最大 ${deliver[deliver.length - 1]}ms｜超過 2.5 秒 ${over} 筆`);
+    deliver.length = 0;
+  }, 60000).unref?.();
+
+  client.on('interactionCreate', (i) => {
+    if (i.__traced) return;                       // 面板的 Object.create 分身會繼承這個旗標
+    try { Object.defineProperty(i, '__traced', { value: true, configurable: true }); } catch { return; }
+    try { deliver.push(Math.max(0, Date.now() - i.createdTimestamp)); } catch {}
+    const recvAt = Date.now();
+    const calls = [];
+    for (const fn of RESPOND) {
+      const orig = typeof i[fn] === 'function' ? i[fn].bind(i) : null;
+      if (!orig) continue;
+      try {
+        Object.defineProperty(i, fn, {
+          value: async (...args) => {
+            const from = whoCalled();
+            calls.push(`${fn}@${from}`);
+            // 從「收到互動」到「開始回應」花了多久：這段是我們自己的處理時間
+            const since = Date.now() - recvAt;
+            const what = i.isChatInputCommand?.() ? '/' + i.commandName : i.customId;
+            if (calls.length === 1) {
+              const t0 = Date.now();
+              try {
+                const out = await orig(...args);
+                const spent = Date.now() - t0;
+                if (since > 1500 || spent > 1500) {
+                  require('../db').logError(i.guildId || '', '互動回應偏慢：',
+                    `${what}｜收到→開始回應 ${since}ms｜回應呼叫耗時 ${spent}ms｜來源 ${from}`);
+                }
+                return out;
+              } catch (err) {
+                require('../db').logError(i.guildId || '', '互動回應失敗：',
+                  `${what}｜收到→開始回應 ${since}ms｜呼叫耗時 ${Date.now() - t0}ms｜`
+                  + `錯誤 ${err && err.code ? err.code : ''} ${err && err.message}｜來源 ${from}`);
+                throw err;
+              }
+            }
+            if (calls.length > 1) {
+              require('../db').logError(i.guildId || '', '互動重複回應：',
+                `${i.isChatInputCommand?.() ? '/' + i.commandName : i.customId}｜第 ${calls.length} 次：${calls.join('  ←  ')}`);
+            }
+            return orig(...args);
+          },
+          writable: true, configurable: true
+        });
+      } catch { /* 屬性鎖住就跳過這個方法 */ }
+    }
+  });
+  console.log('  ↳ ⚠️  互動回應診斷已開啟（INTERACTION_TRACE=1），查完記得關掉');
+}
+
 // ---- 卡頓偵測 ----
 // 「互動無回應」常常不是那個功能壞掉，而是整個 event loop 被別的同步工作卡住幾秒
 // （SQLite 是同步的，結算／稅務／股市跑大批資料時會這樣）。這裡每 200ms 量一次延遲，

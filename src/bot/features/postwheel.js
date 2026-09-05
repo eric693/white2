@@ -95,24 +95,46 @@ async function handle(i) {
   const includeReactions = i.options.getBoolean('表情也算留言') || false;
   const perMessage = i.options.getBoolean('每則留言算一次資格') || false;
 
-  const target = parseTarget(input);
-  if (!target) {
+  const target = input ? parseTarget(input) : null;
+  if (input && !target) {
     return i.reply({
-      content: '看不懂這則貼文。請貼「訊息連結」（在訊息上按「⋯」→ 複製訊息連結），或直接給訊息 ID。',
+      content: '看不懂這則貼文。請貼「訊息連結」（在訊息上按「⋯」→ 複製訊息連結），或直接給訊息 ID。\n'
+        + '（其實也可以**完全不填**，直接在活動貼文底下打 `/貼文轉盤`，我會自動抓上面那則。）',
       flags: MessageFlags.Ephemeral
     });
   }
 
   await i.deferReply();
 
-  // 有連結就用連結指定的頻道，只給 ID 就當作在目前頻道
-  const channel = target.channelId
-    ? await i.client.channels.fetch(target.channelId).catch(() => null)
-    : i.channel;
-  if (!channel || !channel.messages) return i.editReply('找不到那則貼文所在的頻道，或機器人看不到該頻道。');
-
-  const msg = await channel.messages.fetch(target.messageId).catch(() => null);
-  if (!msg) return i.editReply('找不到那則貼文（可能已被刪除，或機器人沒有讀取該頻道歷史訊息的權限）。');
+  let channel, msg;
+  if (target) {
+    // 有連結就用連結指定的頻道，只給 ID 就當作在目前頻道
+    channel = target.channelId
+      ? await i.client.channels.fetch(target.channelId).catch(() => null)
+      : i.channel;
+    if (!channel || !channel.messages) return i.editReply('找不到那則貼文所在的頻道，或機器人看不到該頻道。');
+    msg = await channel.messages.fetch(target.messageId).catch(() => null);
+    if (!msg) return i.editReply('找不到那則貼文（可能已被刪除，或機器人沒有讀取該頻道歷史訊息的權限）。');
+  } else {
+    // 沒填貼文：直接抓「這個頻道的活動貼文」，省掉複製連結那一步。
+    //   ・在論壇貼文／討論串裡執行 → 就是這串的開頭那則
+    //   ・一般頻道 → 往回找最近一則「有人留言過」的貼文（有討論串、有人回覆、或有表情），
+    //     都沒有的話就用最近一則非機器人訊息
+    channel = i.channel;
+    if (!channel || !channel.messages) return i.editReply('這個頻道我讀不到訊息，請改用訊息連結指定貼文。');
+    if (channel.isThread?.()) {
+      msg = await channel.fetchStarterMessage().catch(() => null);
+      if (!msg) return i.editReply('抓不到這個討論串的開頭貼文，請改用訊息連結指定。');
+    } else {
+      const recent = await channel.messages.fetch({ limit: 50 }).catch(() => null);
+      if (!recent || !recent.size) return i.editReply('這個頻道沒有可以抽的貼文，請改用訊息連結指定。');
+      const list = [...recent.values()].filter(m => m.id !== i.id && !m.author?.bot);
+      const replied = new Set(list.map(m => m.reference?.messageId).filter(Boolean));
+      msg = list.find(m => m.thread || replied.has(m.id) || (m.reactions?.cache?.size > 0))
+         || list[0];
+      if (!msg) return i.editReply('這個頻道沒有可以抽的貼文，請改用訊息連結指定。');
+    }
+  }
 
   let people;
   try { people = await collectCommenters(msg, { includeReactions }); }
@@ -134,7 +156,8 @@ async function handle(i) {
     .setColor(brandColor())
     .setTitle('🎯 貼文轉盤抽選結果')
     .setDescription(
-      `**抽選來源**：[前往貼文](${msg.url})\n` +
+      `**抽選來源**：[前往貼文](${msg.url})${input ? '' : '　←　*自動抓的，請確認是不是這則*'}\n` +
+      `**貼文作者**：${msg.author ? `<@${msg.author.id}>` : '—'}\n` +
       `**留言者**：${people.length} 人${perMessage ? `（共 ${people.reduce((a, p) => a + p.count, 0)} 則留言）` : ''}\n` +
       `**抽出**：${winners.length} 位${allowRepeat ? '（允許重複中獎）' : ''}\n\n` +
       winners.map((w, n) => `${n + 1}. <@${w.id}>`).join('\n')

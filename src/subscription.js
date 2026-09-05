@@ -39,7 +39,9 @@ const FEATURE_KEYS = {
     keywords: '關鍵字回覆', alerts: '通知提醒', forum: '論壇整理', reactionroles: '表情身分組',
     welcome: '歡迎訊息', birthday: '生日祝賀', announcements: '公告發布', poll: '投票',
     giveaway: '抽獎', wheel: '轉盤（角色轉盤／貼文轉盤）', reminder: '排程提醒', music: '音樂播放',
-    tickets: '客服單', xp: '聊天等級'
+    tickets: '客服單', xp: '聊天等級',
+    // 跨模組的能力鍵：不是某個功能模組，而是「這台伺服器可不可以自訂機器人外觀」
+    branding: '自訂機器人暱稱／外觀'
   },
   butler: {
     // 基礎遊戲
@@ -48,7 +50,8 @@ const FEATURE_KEYS = {
     // 進階遊戲
     stock: '股市', tax: '稅務系統', loans: '銀行信貸', auction: '拍賣會', charity: '慈善基金會',
     contest: '大賽', aquarium: '魚缸', pets: '寵物', affinity: '角色好感度',
-    partnerskills: '同居角色技能', special: '特殊兌換商店', facility: '設施擴充'
+    partnerskills: '同居角色技能', special: '特殊兌換商店', facility: '設施擴充',
+    branding: '自訂機器人暱稱／外觀'
   }
 };
 
