@@ -264,15 +264,19 @@ function collectHatched(gid, uid, uname) {
 /** 背包有蛋就放進孵化室 */
 function autoIncubate(gid, uid) {
   const { hatchEgg } = require('./ranch');
+  // egg_name 不是 ranch_hatch_defs 的欄位（那是 ranch.js 查詢時 JOIN 物品表取的別名），
+  // 直接寫在這裡會整句 SQL 失敗 → 放蛋能力／孵化室工作區域一直靜靜地壞著。
   const eggs = db.prepare(
-    `SELECT d.id, d.egg_item_id, d.egg_name, v.count FROM ranch_hatch_defs d
-       JOIN gather_inventory v ON v.item_id = d.egg_item_id AND v.guild_id=d.guild_id
+    `SELECT d.id, d.egg_item_id, it.name AS egg_name, it.emoji AS egg_emoji, v.count
+       FROM ranch_hatch_defs d
+       JOIN gather_items it ON it.id = d.egg_item_id
+       JOIN gather_inventory v ON v.item_id = d.egg_item_id AND v.guild_id = d.guild_id
       WHERE d.guild_id=? AND d.enabled=1 AND v.user_id=? AND v.count > 0`).all(gid, uid);
   const lines = [];
   for (const e of eggs) {
     const r = hatchEgg(gid, uid, '', e.id, e.count);
     if (r && r.error) continue;
-    lines.push(`${e.egg_name} ×${e.count}`);
+    lines.push(`${e.egg_emoji || '🥚'}${e.egg_name} ×${e.count}`);
   }
   return lines;
 }
