@@ -443,7 +443,9 @@ function runOne(gid, p, skill) {
 }
 
 // 「收成類」能力：東西成熟了就該收，一天只跑一次會讓作物（90~480 分就成熟）
-// 卡在田裡大半天，玩家會覺得自動收成根本沒作用。這類改成每小時跑。
+// 卡在田裡大半天，玩家會覺得自動收成根本沒作用。這類改成每 5 分鐘跑一次 ——
+// 同居角色是「住在你家幫你顧」的設定，工作本來就該不間斷，整點才動的話
+// 10:06 成熟的作物要躺到 11:05 才收，中間近一小時田是空的、沒有再播種。
 // 這些動作本身都有自然上限（沒成熟就收不到、沒空格就種不了、魚飽了就不餵），
 // 所以重複跑是安全的，不需要用 last_run 擋。
 const HOURLY_SKILLS = new Set([
@@ -461,7 +463,7 @@ function runDaily(gid, mode = 'daily') {
        LEFT JOIN affinity a ON a.guild_id=p.guild_id AND a.user_id=p.user_id AND a.role_id=p.role_id
        LEFT JOIN econ_wallets w ON w.guild_id=p.guild_id AND w.user_id=p.user_id
       WHERE p.guild_id=? AND p.skill_id > 0`
-    + (mode === 'daily' ? ' AND p.last_run <> ?' : '')   // 收成類每小時都要能跑，不受今天已結算影響
+    + (mode === 'daily' ? ' AND p.last_run <> ?' : '')   // 收成類每輪都要能跑，不受今天已結算影響
   ).all(...(mode === 'daily' ? [gid, day] : [gid]));
   const out = [];
   for (const p of rows) {
@@ -483,7 +485,7 @@ function runDaily(gid, mode = 'daily') {
   // ---- 工作區域（規格 5）----
   // 跟「能力」是兩條獨立的線：能力由管理端指定、一位角色一個；
   // 區域由玩家自己指派，一位角色包辦那個區域的完整流程。
-  // 全部都是收成／照顧類，所以只在每小時那一輪跑（每日那輪跑會讓作物卡半天）。
+  // 全部都是收成／照顧類，所以只在 5 分鐘那一輪跑（每日那輪跑會讓作物卡半天）。
   if (mode === 'hourly') {
     const areas = db.prepare(
       `SELECT p.user_id, p.work_area, r.name AS role_name, w.username AS user_name
@@ -527,16 +529,22 @@ function init(client) {
     }
   }, { timezone: 'Asia/Taipei' });
 
-  // 收成類每小時跑一次：作物 90~480 分就成熟，等到隔天早上才收等於自動收成沒作用。
-  // 不發通知（一天 24 次會洗版），東西直接進背包／錢包，玩家自己看得到。
-  cron.schedule('5 * * * *', () => {
-    for (const gid of activeGuildIds()) {
-      try { runDaily(gid, 'hourly'); }
-      catch (e) { logError(gid, '同居能力每小時收成失敗：', e.message); }
-    }
+  // 收成／照顧類每 5 分鐘跑一次，等於全天不間斷工作：成熟就收、收完就補種，
+  // 田不會空著。這些動作都自帶上限（沒成熟收不到、沒空格種不了、魚飽了不餵），
+  // 重複跑是安全的。一樣不發通知（會洗版），東西直接進背包／錢包。
+  let busy = false;
+  cron.schedule('*/5 * * * *', () => {
+    if (busy) return;          // 上一輪還沒跑完就跳過這一輪，不讓結算疊在一起
+    busy = true;
+    try {
+      for (const gid of activeGuildIds()) {
+        try { runDaily(gid, 'hourly'); }
+        catch (e) { logError(gid, '同居能力收成結算失敗：', e.message); }
+      }
+    } finally { busy = false; }
   }, { timezone: 'Asia/Taipei' });
 
-  console.log('  ↳ 同居能力模組已載入（18 種能力：收成類每小時、配給類每天 8:40）');
+  console.log('  ↳ 同居能力模組已載入（18 種能力：收成／照顧類每 5 分鐘不間斷、配給類每天 8:40）');
 }
 
 /** 通知頻道：沿用採集系統設定的頻道，沒設就不發 */
