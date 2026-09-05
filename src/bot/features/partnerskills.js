@@ -453,6 +453,29 @@ const HOURLY_SKILLS = new Set([
   'farm_plant', 'greenhouse_plant', 'hatch_put', 'aqua_feed'
 ]);
 
+/** 把這一輪做的事寫進明細（玩家用 💞同居 面板的「📒 同居明細」查得到） */
+function logWork(gid, uid, roleName, job, lines) {
+  try {
+    const ins = db.prepare('INSERT INTO partner_logs (guild_id, user_id, role_name, job, line) VALUES (?,?,?,?,?)');
+    for (const line of lines) ins.run(gid, uid, roleName || '', job || '', String(line).slice(0, 300));
+  } catch (e) { logError(gid, '同居明細寫入失敗：', e.message); }
+}
+
+/** 某位玩家最近的同居工作明細（預設今天） */
+function workLog(gid, uid, { days = 1, limit = 30 } = {}) {
+  return db.prepare(
+    `SELECT * FROM partner_logs
+      WHERE guild_id=? AND user_id=? AND created_at >= datetime('now','localtime',?)
+      ORDER BY id DESC LIMIT ?`).all(gid, uid, `-${Math.max(1, days)} days`, limit);
+}
+
+/** 今天做了幾件事（面板上顯示用） */
+function workCountToday(gid, uid) {
+  return db.prepare(
+    `SELECT COUNT(*) n FROM partner_logs
+      WHERE guild_id=? AND user_id=? AND date(created_at)=date('now','localtime')`).get(gid, uid).n;
+}
+
 /** 整個伺服器跑一次結算。mode='daily' 每日配給類；mode='hourly' 收成類。 */
 function runDaily(gid, mode = 'daily') {
   const day = today();
@@ -478,7 +501,10 @@ function runDaily(gid, mode = 'daily') {
           .run(day, gid, p.user_id, p.role_id);
       }
       const lines = runOne(gid, p, skill);
-      if (lines && lines.length) out.push({ user_id: p.user_id, role: p.role_name, skill: skill.name, lines });
+      if (lines && lines.length) {
+        out.push({ user_id: p.user_id, role: p.role_name, skill: skill.name, lines });
+        logWork(gid, p.user_id, p.role_name, skill.name, lines);
+      }
     } catch (e) { logError(gid, `同居能力執行失敗（${p.user_id}）：`, e.message); }
   }
 
@@ -497,7 +523,9 @@ function runDaily(gid, mode = 'daily') {
       try {
         const lines = runArea(gid, p.user_id, p.user_name || '', p.work_area);
         if (lines.length) {
-          out.push({ user_id: p.user_id, role: p.role_name, skill: (WORK_AREAS[p.work_area] || {}).name || p.work_area, lines });
+          const job = (WORK_AREAS[p.work_area] || {}).name || p.work_area;
+          out.push({ user_id: p.user_id, role: p.role_name, skill: job, lines });
+          logWork(gid, p.user_id, p.role_name, job, lines);
         }
       } catch (e) { logError(gid, `工作區域執行失敗（${p.user_id}／${p.work_area}）：`, e.message); }
     }
@@ -554,7 +582,7 @@ function notifyChannel(client, gid) {
   return null;
 }
 
-module.exports = { WORK_AREAS, runArea, areaAssignments, assignArea, designatedSkill,
+module.exports = { WORK_AREAS, runArea, areaAssignments, assignArea, designatedSkill, workLog, workCountToday,
   init, ABILITIES, KIND_LABEL, seedSkills, valueFor, skillText,
   skillsForRole, skillById, activeSkill, passivePct, runDaily, DEFAULT_SKILLS
 };

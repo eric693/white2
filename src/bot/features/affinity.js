@@ -417,8 +417,14 @@ function partnerPanel(gid, uid, uname) {
 
   const rows = [NAV('love')];
   if (list.length) {
+    // 同居明細：自動收成／播種都是靜悄悄完成的，玩家只看到數字變了，
+    // 會懷疑角色根本沒在工作 —— 給一個「他今天做了什麼」的入口。
+    const { workCountToday } = require('./partnerskills');
+    let doneToday = 0;
+    try { doneToday = workCountToday(gid, uid); } catch {}
     rows.push(new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId('partnerwork').setLabel('🛠️ 指派工作區域').setStyle(ButtonStyle.Primary)));
+      new ButtonBuilder().setCustomId('partnerwork').setLabel('🛠️ 指派工作區域').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId('partnerlog').setLabel(`📒 同居明細${doneToday ? `（今天 ${doneToday} 筆）` : ''}`).setStyle(ButtonStyle.Secondary)));
   }
   const cands = partnerCandidates(gid, uid);
   const full = slots <= 0;   // 沒有數量上限了，只剩「房屋等級不夠」這一種不能邀請的情況
@@ -904,6 +910,40 @@ function init(client) {
         // ---- 工作區域指派（規格 5）----
         // 兩段式：先選區域 → 再選要派誰。反過來（先選人再選區域）的話，
         // 玩家得先記住哪個區域已經有人顧，操作起來比較費神。
+        // ---- 同居明細：角色今天／這幾天幫你做了什麼 ----
+        if (i.isButton() && (i.customId === 'partnerlog' || i.customId === 'partnerlog:7')) {
+          const days = i.customId === 'partnerlog:7' ? 7 : 1;
+          const { workLog } = require('./partnerskills');
+          const rows2 = workLog(gid, uid, { days, limit: 40 });
+          const e2 = new EmbedBuilder().setColor(0xeb459e)
+            .setTitle(days === 1 ? '📒 同居明細（今天）' : '📒 同居明細（最近 7 天）');
+          if (!rows2.length) {
+            e2.setDescription(days === 1
+              ? '今天還沒有紀錄。\n收成／照顧類的工作每 5 分鐘跑一次，**有東西可以做**才會留下紀錄——'
+                + '作物還沒成熟、動物還沒產出、或沒種子可播的時候，這裡就會是空的。'
+              : '最近 7 天沒有任何紀錄。確認一下有沒有指派工作區域，以及背包裡有沒有種子／飼料。');
+          } else {
+            // 同一分鐘同一位角色的多筆合併成一行，不然一次收成十格會洗掉整頁
+            const groups = new Map();
+            for (const r of rows2) {
+              const key = `${r.created_at.slice(0, 16)}｜${r.role_name}｜${r.job}`;
+              if (!groups.has(key)) groups.set(key, []);
+              groups.get(key).push(r.line);
+            }
+            e2.setDescription([...groups.entries()].slice(0, 20).map(([key, lines]) => {
+              const [time, role, job] = key.split('｜');
+              return `\`${time.slice(5)}\`　💕 **${role}**　${job}\n　${lines.join('\n　')}`;
+            }).join('\n\n').slice(0, 4000));
+          }
+          e2.setFooter({ text: '收成／照顧類每 5 分鐘自動跑一次；每日配給類每天早上 8:40。明細保留 7 天' });
+          return i.reply({
+            embeds: [e2],
+            components: [new ActionRowBuilder().addComponents(
+              new ButtonBuilder().setCustomId(days === 1 ? 'partnerlog:7' : 'partnerlog')
+                .setLabel(days === 1 ? '看最近 7 天' : '只看今天').setStyle(ButtonStyle.Secondary))],
+            ...eph
+          }).catch(() => {});
+        }
         if (i.isButton() && i.customId === 'partnerwork') {
           const assigned = areaAssignments(gid, uid);
           const menu = new StringSelectMenuBuilder().setCustomId('workarea')

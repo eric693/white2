@@ -867,6 +867,22 @@ function logError(guildId, ...args) {
   writeError(fmt(args), guildId);
 }
 
+// 同居角色的工作明細：每 5 分鐘的自動收成／播種都寫一筆，玩家才知道
+// 「他今天到底做了什麼」——以前這些動作是靜悄悄完成的，東西直接進背包，
+// 玩家只看到數字變了，會懷疑同居角色根本沒在工作。
+db.exec(`CREATE TABLE IF NOT EXISTS partner_logs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id TEXT NOT NULL DEFAULT '',
+  user_id TEXT NOT NULL DEFAULT '',
+  role_name TEXT NOT NULL DEFAULT '',
+  job TEXT NOT NULL DEFAULT '',
+  line TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+)`);
+db.exec('CREATE INDEX IF NOT EXISTS idx_partner_logs_user ON partner_logs(guild_id, user_id, id)');
+// 只留 7 天：這張表寫得很密（每人每 5 分鐘可能好幾筆），不清會無限長大
+db.prepare("DELETE FROM partner_logs WHERE created_at < datetime('now','localtime','-7 days')").run();
+
 // 貼文轉盤的抽選紀錄：指令抽完就發結果，沒有存檔的話後台完全查不到誰中過獎，
 // 也沒辦法事後補抽。每抽一次寫一筆，中獎名單存 JSON。
 db.exec(`CREATE TABLE IF NOT EXISTS postwheel_draws (
