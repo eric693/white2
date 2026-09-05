@@ -192,7 +192,7 @@ function assess(gid, userId) {
   // 現在恢復計算：開關關著就是 0，打開就照後台的每格金額課，玩家調得動也看得到。
   // 免稅額度先抵便宜的農地、再抵溫室；再乘上設施等級加成（12 階大農場產量是入門田的
   // 好幾倍，稅不該一樣）。養殖稅（動物／魚）同理。
-  let land = 0, breed = 0;
+  let land = 0, breed = 0, spend = 0, spent = 0, spendTaxed = 0;
   let fieldTaxed = 0, greenTaxed = 0, animalTaxed = 0, fishTaxed = 0;
   let tierMulField = 1, tierMulGreen = 1;
   if (c.land_enabled || c.breed_enabled) {
@@ -216,6 +216,20 @@ function assess(gid, userId) {
       ? Math.floor(fieldTaxed * (c.land_field || 0) * tierMulField + greenTaxed * (c.land_greenhouse || 0) * tierMulGreen)
       : 0;
     breed = c.breed_enabled ? animalTaxed * (c.breed_animal || 0) + fishTaxed * (c.breed_fish || 0) : 0;
+  }
+
+  // ---- 消費稅（兌換稅）----（2026-09 停徵，後台可重新開徵）
+  // 課的是「本期在神秘商店兌換掉的金額」。跟農地稅一樣，之前把計算刪掉了，
+  // 後台開關打開也沒有效果 —— 現在恢復，關著就是 0。
+  if (c.spend_enabled) {
+    const sinceSpend = c.last_run_at || '';
+    spent = sinceSpend
+      ? db.prepare(`SELECT COALESCE(SUM(CASE WHEN paid>0 THEN paid ELSE price*qty END),0) v
+                      FROM special_redeems WHERE guild_id=? AND user_id=? AND created_at > ?`).get(gid, userId, sinceSpend).v
+      : db.prepare(`SELECT COALESCE(SUM(CASE WHEN paid>0 THEN paid ELSE price*qty END),0) v
+                      FROM special_redeems WHERE guild_id=? AND user_id=?`).get(gid, userId).v;
+    spendTaxed = Math.max(0, spent - (c.spend_free || 0));
+    spend = Math.floor(spendTaxed * (c.spend_pct || 0) / 100);
   }
 
   // ---- 房屋稅 ----
@@ -257,11 +271,11 @@ function assess(gid, userId) {
 
   // 單次上限：四稅合計不超過餘額的 income_max_pct %，避免一次被抄家
   const cap = Math.floor(w.coins * Math.max(0, Math.min(100, c.income_max_pct ?? 50)) / 100);
-  let total = income + house + partner + pet + land + breed;
+  let total = income + house + partner + pet + land + breed + spend;
   if (cap > 0 && total > cap) {
     // 超過上限時先砍所得稅（同居／寵物／房屋／農地是固定持有稅，該繳還是要繳）
-    income = Math.max(0, cap - house - partner - pet - land - breed);
-    total = income + house + partner + pet + land + breed;
+    income = Math.max(0, cap - house - partner - pet - land - breed - spend);
+    total = income + house + partner + pet + land + breed + spend;
   }
   // 慈善捐款折抵：本期捐款 × 折抵比例，直接從應繳稅額扣掉（不會扣成負數）
   const gross = total;
@@ -273,12 +287,12 @@ function assess(gid, userId) {
   return {
     wallet: w, balance: w.coins, income, house, partner, pet, partnerCount: partners.length,
     // 農地／養殖稅預設停徵（＝0），後台開了就會有值；證券／消費稅已整套移除
-    land, breed, stock: 0, spend: 0, tierMulField, tierMulGreen,
+    land, breed, spend, stock: 0, tierMulField, tierMulGreen,
     gross, credit, donated, curTax, arrears, total,
     earned: ri.income, stockPnl: ri.stockPnl, incomeBase: base, stockRealizedNow: ri.realizedNow,
     counts: {
       houseLv, houseTaxedLv, placed, petCount, partnerCount: partners.length,
-      fieldTaxed, greenTaxed, animalTaxed, fishTaxed,
+      fieldTaxed, greenTaxed, animalTaxed, fishTaxed, spent, spendTaxed,
       earned: ri.income, stockPnl: ri.stockPnl, taxableIncome: base, donated, credit
     }
   };
@@ -623,6 +637,7 @@ function billEmbed(gid, b, period) {
   if (b.land) lines.push(`🌾 農地稅　${money(gid, b.land)}（農地 ${b.counts.fieldTaxed} 格／溫室 ${b.counts.greenTaxed} 格`
     + `${(b.tierMulField > 1 || b.tierMulGreen > 1) ? `　設施等級加成 ×${Math.max(b.tierMulField, b.tierMulGreen).toFixed(2)}` : ''}）`);
   if (b.breed) lines.push(`🐄 養殖稅　${money(gid, b.breed)}（動物 ${b.counts.animalTaxed} 隻／魚 ${b.counts.fishTaxed} 條）`);
+  if (b.spend) lines.push(`🛍️ 兌換稅　${money(gid, b.spend)}（本期在神秘商店兌換 ${money(gid, b.counts.spent)}）`);
   if (b.credit) lines.push(`❤️ 慈善折抵　**−${money(gid, b.credit)}**（本期捐款 ${Number(b.donated || 0).toLocaleString('en-US')}）`);
   if (b.arrears) lines.push(`🔁 上期未繳補收　${money(gid, b.arrears)}（延過來一起收）`);
   const emb = new EmbedBuilder()
@@ -692,6 +707,8 @@ function infoEmbed(gid, userId, username) {
     + `（前 ${c.land_free || 0} 格免稅；設施等級每高一階再加 ${c.land_tier_pct || 0}%）`);
   if (c.breed_enabled) lines.push(`🐄 **養殖稅**　每隻動物 ${money(gid, c.breed_animal || 0)}、每條魚 ${money(gid, c.breed_fish || 0)}`
     + `（前 ${c.breed_free || 0} 隻免稅）`);
+  if (c.spend_enabled) lines.push(`🛍️ **兌換稅**　本期在神秘商店兌換的金額課 ${c.spend_pct || 0}%`
+    + `（免稅額 ${money(gid, c.spend_free || 0)}）`);
   lines.push('_四種稅各自獨立計算：所得稅看實際獲利、同居稅看角色數量、寵物稅看寵物數量、房屋稅看房屋持有。_');
   if (!lines.length) lines.push('目前沒有開徵稅金。');
   emb.setDescription(lines.join('\n'));

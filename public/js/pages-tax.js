@@ -175,10 +175,12 @@ App.page('tax', {
 
 
         <hr style="border:none;border-top:1px solid var(--border);margin:16px 0">
-        <h3>🗄️ 消費稅（2026-09 已停徵）</h3>
-        <div class="hint" style="margin-bottom:10px"><b>已停徵，設定值不影響結算。</b>
-          新制只課「實際賺到的錢」，把錢花掉本來就不是收入，再課一次等於重複課稅。欄位保留給舊資料。</div>
-        <div class="field">${H.toggle('spend_enabled', c.spend_enabled, '開徵消費稅（已停用）')}</div>
+        <h3>🛍️ 兌換稅／消費稅（預設停徵，可重新開徵）</h3>
+        <div class="hint" style="margin-bottom:10px"><b>預設關閉，開了就會照下面的稅率課。</b>
+          課的是「本期在神秘商店兌換掉的金額」。⚠️ 想清楚再開：兌換本來就已經把星幣<b>直接銷毀</b>了
+          （那是目前最大的回收管道），再課一次等於同一筆錢收兩次稅，玩家會變得更不敢兌換。
+          要壓通膨，優先調所得稅級距或持有稅（同居／寵物／房屋／農地）。</div>
+        <div class="field">${H.toggle('spend_enabled', c.spend_enabled, '開徵兌換稅（課神秘商店的兌換金額）')}</div>
         <div class="form-row">
           <div class="field"><label>稅率 %（本期兌換金額）</label><input name="spend_pct" type="number" min="0" max="100" step="0.5" value="${c.spend_pct ?? 20}">
             <div class="hint">例如 20%：這期兌換花了 20,000 → 課 4,000。</div></div>
