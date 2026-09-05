@@ -1,5 +1,6 @@
 // 種植系統：農地種作物、溫室種花卉。買種子→種下→等成熟→採收（產物進背包可 /賣出）。
 const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, MessageFlags } = require('discord.js');
+const { nameOf } = require('../../util/names');
 const { db, guildConfig, logError } = require('../../db');
 const { brandColor } = require('../../util/brand');
 // 產物賣價會受財經新聞影響（新聞關閉時等於基準價）
@@ -357,7 +358,7 @@ function init(client) {
         const now = Date.now();
         const uT = unlockedOf(gid, target.id);
         const max = slotsOf(c, type, uT, gid, target.id);
-        const title = type === 'greenhouse' ? `🏡 ${target.username} 的溫室` : `🌾 ${target.username} 的農地`;
+        const title = type === 'greenhouse' ? `🏡 ${nameOf(i, target)} 的溫室` : `🌾 ${nameOf(i, target)} 的農地`;
         const embed = new EmbedBuilder().setColor(brandColor()).setTitle(title);
         if (max <= 0) {
           embed.setDescription(`你還沒有${PLOT[type]}！用 \`/製作 ${type === 'greenhouse' ? '搭建溫室' : '開闢農地'}\` 開一格才能種。`);

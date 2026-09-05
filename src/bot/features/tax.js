@@ -15,6 +15,7 @@
 //
 // 設計重點：只從錢包扣，不動背包/資產；扣到 0 為止不會變負數，缺繳的部分記在稅單上。
 const { EmbedBuilder, MessageFlags, ActionRowBuilder, ButtonBuilder, ButtonStyle } = require('discord.js');
+const { nameOf } = require('../../util/names');
 const cron = require('node-cron');
 const { db, guildConfig, activeGuildIds, logError } = require('../../db');
 const { brandColor } = require('../../util/brand');
@@ -751,7 +752,7 @@ function init(client) {
       if (!a) return await i.reply({ content: '找不到錢包資料（先玩一下再來看稅單吧）。', flags: MessageFlags.Ephemeral });
       const last = db.prepare("SELECT * FROM tax_records WHERE guild_id=? AND user_id=? AND period NOT LIKE '%-補繳' ORDER BY id DESC LIMIT 1").get(gid, i.user.id);
       const emb = billEmbed(gid, a, null)
-        .setTitle(`🧾 ${i.member?.displayName || i.user.username} 的稅單預估`)
+        .setTitle(`🧾 ${nameOf(i)} 的稅單預估`)
         .setFooter({
           text: last
             ? `上期（${last.period}）實繳 ${last.paid.toLocaleString('en-US')}　·　下次結算：${nextRunText(c)}`
@@ -779,7 +780,7 @@ function init(client) {
       if (t.denied) return i.reply({ content: t.denied, flags: MessageFlags.Ephemeral });
       const target = t.user;
       if (isExempt(gid, target.id, i.guild && i.guild.members.cache.get(target.id))) {
-        return i.reply({ content: `✅ ${target.username} 在免稅名單內，不會被課稅。`, flags: MessageFlags.Ephemeral });
+        return i.reply({ content: `✅ ${nameOf(i, target)} 在免稅名單內，不會被課稅。`, flags: MessageFlags.Ephemeral });
       }
       const a = assess(gid, target.id);
       if (!a) return i.reply({ content: '找不到錢包資料（先玩一下再來看稅單吧）。', flags: MessageFlags.Ephemeral });
@@ -787,7 +788,7 @@ function init(client) {
         "SELECT * FROM tax_records WHERE guild_id=? AND user_id=? AND period NOT LIKE '%-補繳' ORDER BY id DESC LIMIT 1"
       ).get(gid, target.id);
       const emb = billEmbed(gid, a, null)
-        .setTitle(`🧾 ${target.username} 的稅單預估`)
+        .setTitle(`🧾 ${nameOf(i, target)} 的稅單預估`)
         .setFooter({
           text: last
             ? `上期（${last.period}）實繳 ${last.paid.toLocaleString('en-US')}　·　下次結算：${nextRunText(c)}`

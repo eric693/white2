@@ -5,6 +5,7 @@
 //   2. 每條魚要定期花星幣買飼料；沒餵會餓，餓太久就死掉（魚沒了，錢也拿不回來）。
 //   3. 未領取的星幣可以被 /偷魚，運氣好連整條魚都會被撈走。
 const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
+const { nameOf } = require('../../util/names');
 const { selectRows, isSelect } = require('../../util/menu');
 const { db, guildConfig, logError } = require('../../db');
 const { bump: bumpAch } = require('../../util/achievements');
@@ -453,7 +454,7 @@ function init(client) {
           aqShown++;
         }
         if (aqShown < lines.length) aqDesc += `\n…還有 **${lines.length - aqShown}** 格沒列出來（格子太多，訊息長度有限）。`;
-        const embed = new EmbedBuilder().setColor(0x3498db).setTitle(`🐠 ${target.username} 的魚缸`)
+        const embed = new EmbedBuilder().setColor(0x3498db).setTitle(`🐠 ${nameOf(i, target)} 的魚缸`)
           .setDescription(aqDesc +
             (died.length ? `\n\n💀 **${died.map(f => (f.emoji || '') + f.name).join('、')}** 餓死了…（缸裡的星幣也一起沒了）` : '') +
             (hungry ? `\n\n⚠️ 有 ${hungry} 條魚餓著，快 \`/餵魚\`！` : '') +
@@ -493,7 +494,7 @@ function init(client) {
           return await reply({ content: `你今天的偷魚次數已用完（每日上限 ${c.steal_daily_limit} 次），明天再來吧！` });
         }
         const { slots } = accrue(gid, to.id);
-        if (!slots.length) return await reply({ content: `${to.username} 的魚缸是空的，沒東西可偷。` });
+        if (!slots.length) return await reply({ content: `${nameOf(i, to)} 的魚缸是空的，沒東西可偷。` });
 
         bumpSteal(gid, uid);
         const tag = `（今日 ${usedToday + 1}/${c.steal_daily_limit}）`;
@@ -511,7 +512,7 @@ function init(client) {
           const fine = Math.max(0, (require('../../db').guildConfig('ranch_config', gid) || {}).steal_fine ?? 1000);
           if (fine > 0) {
             addCoins(gid, uid, uname, -fine, '偷魚被抓罰款', `被 ${to.username} 抓到`);
-            let note = `\n\n💸 你被 ${to.username} 逮個正著，罰了 **${money(gc, fine)}**`;
+            let note = `\n\n💸 你被 ${nameOf(i, to)} 逮個正著，罰了 **${money(gc, fine)}**`;
             if (c.steal_penalty_to_victim) {
               addCoins(gid, to.id, to.username, fine, '抓到小偷賠償', '有人偷魚被你抓到');
               note += `，全額賠給了對方。`;
@@ -530,11 +531,11 @@ function init(client) {
             }
             logSteal({ guildId: gid, kind: 'aquarium', thiefId: uid, thiefName: uname,
               victimId: to.id, victimName: to.username, result: 'caught', penalty: fine, channelId: i.channelId });
-            return await reply({ content: `你把手伸進 ${to.username} 的魚缸，結果打翻了水，還被當場抓到！${resist ? `（對方防護 -${resist}%${petResist ? `，寵物擋了 ${petResist}%` : ''}）` : ''}${note}${tag}` });
+            return await reply({ content: `你把手伸進 ${nameOf(i, to)} 的魚缸，結果打翻了水，還被當場抓到！${resist ? `（對方防護 -${resist}%${petResist ? `，寵物擋了 ${petResist}%` : ''}）` : ''}${note}${tag}` });
           }
           logSteal({ guildId: gid, kind: 'aquarium', thiefId: uid, thiefName: uname,
             victimId: to.id, victimName: to.username, result: 'miss', channelId: i.channelId });
-          return await reply({ content: `你把手伸進 ${to.username} 的魚缸，結果打翻了水，只好落跑！${resist ? `（對方防護 -${resist}%）` : ''}${tag}` });
+          return await reply({ content: `你把手伸進 ${nameOf(i, to)} 的魚缸，結果打翻了水，只好落跑！${resist ? `（對方防護 -${resist}%）` : ''}${tag}` });
         }
 
         bumpAch(gid, uid, 'steal_success', 1);
@@ -580,10 +581,10 @@ function init(client) {
         if (!got && !stolenFish) {
           logSteal({ guildId: gid, kind: 'aquarium', thiefId: uid, thiefName: uname,
             victimId: to.id, victimName: to.username, result: 'miss', channelId: i.channelId });
-          return await reply({ content: `你摸進 ${to.username} 的魚缸，但星幣都被領走了、魚也沒撈到，撲空！${tag}` });
+          return await reply({ content: `你摸進 ${nameOf(i, to)} 的魚缸，但星幣都被領走了、魚也沒撈到，撲空！${tag}` });
         }
         const embed = new EmbedBuilder().setColor(0xed4245).setTitle('🕵️ 偷魚成功！')
-          .setDescription((got ? `你從 ${to.username} 的魚缸撈走了 **${money(gc, got)}**（已入你的錢包）。` : `${to.username} 的星幣都被領走了，但你不是空手而歸——`) + fishNote)
+          .setDescription((got ? `你從 ${nameOf(i, to)} 的魚缸撈走了 **${money(gc, got)}**（已入你的錢包）。` : `${nameOf(i, to)} 的星幣都被領走了，但你不是空手而歸——`) + fishNote)
           .setFooter({ text: `今日 ${usedToday + 1}/${c.steal_daily_limit}` });
 
         logSteal({ guildId: gid, kind: 'aquarium', thiefId: uid, thiefName: uname,

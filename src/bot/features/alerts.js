@@ -1,6 +1,7 @@
 // 關鍵字通知與警告系統（規格 5.1～5.18）
 // 監聽訊息 → 命中規則 → 通知管理員（頻道/私訊）→ 視設定給警告 → 當日達門檻自動禁言
 const { EmbedBuilder, MessageFlags} = require('discord.js');
+const { nameOf } = require('../../util/names');
 const cron = require('node-cron');
 const { db, guildConfig, logError } = require('../../db');
 const { matchAny } = require('./keywords');
@@ -307,7 +308,7 @@ function init(client) {
         ).all(gid, user.id);
         const today = todayCount(gid, user.id), total = totalCount(gid, user.id);
         const embed = new EmbedBuilder().setColor(0xfaa61a)
-          .setTitle(`${user.username} 的警告紀錄`)
+          .setTitle(`${nameOf(i, user)} 的警告紀錄`)
           .setDescription(rows.length
             ? rows.map(w => `\`${w.created_at}\` ${w.reason}${w.active ? '' : '（已撤銷）'}${w.source === 'manual' ? `｜${w.operator}` : ''}`).join('\n')
             : '（沒有警告紀錄）')

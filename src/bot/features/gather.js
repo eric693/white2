@@ -5,6 +5,7 @@ const { EmbedBuilder, MessageFlags, ActionRowBuilder, StringSelectMenuBuilder, B
 const { selectRows, isSelect } = require('../../util/menu');
 const { db, guildConfig, logError } = require('../../db');
 const { brandColor } = require('../../util/brand');
+const { nameOf, displayName } = require('../../util/names');
 // 行情倍率：財經新聞會改變「賣價」（買價不受影響）。新聞系統關閉時 livePrice 就等於基準價。
 const { livePrice, priceTag } = require('../../util/market');
 const { userBuffs, itemBoost } = require('../../util/buffs');
@@ -71,7 +72,7 @@ function addCoins(gid, userId, username, delta, reason, detail) {
 }
 // 明細面板：一頁 10 筆，按鈕翻頁。玩家最常問「我的錢怎麼變少／哪來的」，這裡一次講清楚。
 const LEDGER_PAGE = 10;
-function ledgerView(gid, target, page = 0) {
+function ledgerView(gid, target, page = 0, shownName = '') {
   const c = cfg(gid);
   const total = db.prepare('SELECT COUNT(*) n FROM econ_ledger WHERE guild_id=? AND user_id=?').get(gid, target.id).n;
   const pages = Math.max(1, Math.ceil(total / LEDGER_PAGE));
@@ -80,7 +81,7 @@ function ledgerView(gid, target, page = 0) {
     .all(gid, target.id, LEDGER_PAGE, page * LEDGER_PAGE);
   const w = wallet(gid, target.id, target.username);
   const embed = new EmbedBuilder().setColor(brandColor())
-    .setTitle(`📜 ${target.username} 的星幣明細`)
+    .setTitle(`📜 ${shownName || target.username} 的星幣明細`)
     .setDescription(rows.length
       ? rows.map(r => {
           const t = String(r.created_at || '').slice(5, 16);   // 只留 MM-DD HH:MM
@@ -1496,7 +1497,7 @@ function init(client) {
         return i.reply({ content: deniedMessage('ledger'), flags: MessageFlags.Ephemeral }).catch(() => {});
       }
       const u = await i.client.users.fetch(tid).catch(() => null);
-      const view = ledgerView(gid2, u || { id: tid, username: '玩家' }, parseInt(pg, 10) || 0);
+      const view = ledgerView(gid2, u || { id: tid, username: '玩家' }, parseInt(pg, 10) || 0, u ? displayName(i.guild, u) : '玩家');
       return i.update(view).catch(() => {});
     }
 
@@ -1690,7 +1691,7 @@ function init(client) {
         const target = t.user;
         const w = wallet(gid, target.id, target.username);
         const embed = new EmbedBuilder().setColor(brandColor())
-          .setTitle(`${target.username} 的錢包`)
+          .setTitle(`${nameOf(i, target)} 的錢包`)
           .setDescription(`目前持有　**${money(c, w.coins)}**\n累計賺取　${money(c, w.total_earned)}`)
           .setThumbnail(target.displayAvatarURL());
         // 玩家常問「錢什麼時候進來的」→ 錢包直接附最近 5 筆，要看更多再開 /明細
@@ -1711,7 +1712,7 @@ function init(client) {
 
       // ---- 明細 ----
       if (name === '明細') {
-        return await reply(ledgerView(gid, i.user, 0));
+        return await reply(ledgerView(gid, i.user, 0, nameOf(i)));
       }
 
       // ---- 背包 ----
@@ -1723,13 +1724,13 @@ function init(client) {
           `SELECT v.count, it.* FROM gather_inventory v JOIN gather_items it ON it.id = v.item_id
             WHERE v.guild_id=? AND v.user_id=? AND v.count > 0 ORDER BY it.kind, it.price DESC`
         ).all(gid, target.id);
-        if (!rows.length) return i.reply({ content: `${target.username} 的背包是空的，先去 \`/釣魚\` 或 \`/挖礦\` 吧！`, flags: MessageFlags.Ephemeral });
+        if (!rows.length) return i.reply({ content: `${nameOf(i, target)} 的背包是空的，先去 \`/釣魚\` 或 \`/挖礦\` 吧！`, flags: MessageFlags.Ephemeral });
         const total = rows.reduce((a, r) => a + r.count * livePrice(gid, r), 0);
         const uses = itemUses(gid);
         const stored = storageRows(gid, target.id);
         const storedTotal = stored.reduce((a, r) => a + r.count * livePrice(gid, r), 0);
         const embed = new EmbedBuilder().setColor(brandColor())
-          .setTitle(`${target.username} 的背包`)
+          .setTitle(`${nameOf(i, target)} 的背包`)
           .setDescription(`🎒 **背包 ${rows.length} 種**　全賣可得 ${total.toLocaleString('en-US')}\n`
             + `📦 **倉庫 ${stored.length} 種**（價值 ${storedTotal.toLocaleString('en-US')}）　\`/賣出\` 完全碰不到，要賣要用都得先取回背包\n`
             + '兩邊都可以 `/交易`；做好的 🍽️ 料理列在最下面（放在廚房，用 `/廚房` 吃掉或賣掉）。用 `/倉庫` 看完整倉庫內容。')
@@ -1796,7 +1797,7 @@ function init(client) {
         const nBag = db.prepare('SELECT COUNT(*) n FROM gather_inventory WHERE guild_id=? AND user_id=? AND count>0').get(gid, target.id).n;
         const total = stored.reduce((a, r) => a + r.count * livePrice(gid, r), 0);
         const embed = new EmbedBuilder().setColor(brandColor())
-          .setTitle(`📦 ${target.username} 的倉庫`)
+          .setTitle(`📦 ${nameOf(i, target)} 的倉庫`)
           .setDescription(stored.length
             ? `收藏 **${stored.length} 種**（價值 ${total.toLocaleString('en-US')} ${c.currency_name}）\n`
               + '倉庫裡的東西 **不會被 `/賣出` 動到**，也不能直接賣——要賣、要製作或料理，先取回背包。'
@@ -2026,7 +2027,7 @@ function init(client) {
         const got = new Map(db.prepare('SELECT item_id, total_caught FROM gather_inventory WHERE guild_id=? AND user_id=?')
           .all(gid, target.id).map(r => [r.item_id, r.total_caught]));
         const embed = new EmbedBuilder().setColor(brandColor())
-          .setTitle(`📖 ${target.username} 的${KIND_NAME[kind]}圖鑑`)
+          .setTitle(`📖 ${nameOf(i, target)} 的${KIND_NAME[kind]}圖鑑`)
           .setFooter({ text: `收錄 ${[...got.keys()].filter(id => all.some(a => a.id === id)).length} / ${all.length} 種` });
         for (const r of RARITY) {
           const list = all.filter(a => a.rarity === r);
@@ -2349,7 +2350,7 @@ function init(client) {
         // 持股
         const mkC = guildConfig('market_config', gid);
         const hold = db.prepare('SELECT COALESCE(SUM(h.shares),0) sh, COALESCE(SUM(h.shares*s.price),0) val, COUNT(*) c FROM stock_holdings h JOIN stock_symbols s ON s.id=h.symbol_id WHERE h.guild_id=? AND h.user_id=? AND h.shares>0').get(gid, tid);
-        const embed = new EmbedBuilder().setColor(brandColor()).setTitle(`📊 ${target.username} 的冒險狀態`)
+        const embed = new EmbedBuilder().setColor(brandColor()).setTitle(`📊 ${nameOf(i, target)} 的冒險狀態`)
           .setThumbnail(target.displayAvatarURL())
           .addFields(
             { name: '💰 星幣', value: `${w.coins.toLocaleString('en-US')}　累計賺 ${w.total_earned.toLocaleString('en-US')}`, inline: false },

@@ -2,6 +2,7 @@
 // 產物直接寫進 gather_items（kind='farm'）→ 玩家用現成的 /背包 看、/賣出 賣給 NPC。
 // 動物用金幣在 /畜牧商店 購買，最多養 max_slots 隻（預設 6）。
 const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
+const { nameOf } = require('../../util/names');
 const { db, guildConfig, logError } = require('../../db');
 
 // 偷竊失敗罰金：2026-09 起全遊戲統一為固定金額（原本是「看守動物的 guard_penalty
@@ -606,7 +607,7 @@ function init(client) {
           desc += `\n…還有 **${lines.length - shownLines}** 格沒列出來（格子太多，訊息長度有限）。`;
         }
         const embed = new EmbedBuilder().setColor(brandColor())
-          .setTitle(`🏡 ${target.username} 的牧場`)
+          .setTitle(`🏡 ${nameOf(i, target)} 的牧場`)
           .setDescription(desc + TAIL)
           .setFooter({ text: `待收成總值約 ${pendingValue.toLocaleString('en-US')} ${gc.currency_name}｜/收成 收取、/畜牧商店 買動物` });
         // 只在看自己的牧場、且有動物時，給「賣掉」下拉（點一下就賣，不用打格子號碼）
@@ -672,7 +673,7 @@ function init(client) {
 
         accrue(gid, to.id);
         const victimSlots = db.prepare('SELECT * FROM ranch_slots WHERE guild_id=? AND user_id=?').all(gid, to.id);
-        if (!victimSlots.length) return await reply({ content: `${to.username} 還沒有牧場，沒東西可偷。` });
+        if (!victimSlots.length) return await reply({ content: `${nameOf(i, to)} 還沒有牧場，沒東西可偷。` });
         // 產物被收光時不再直接撲空 —— 還是要擲一次成功率與動物搶奪，
         // 否則只要對方勤收成，就永遠不可能被牽走動物。
         const totalPending = victimSlots.reduce((a, s) => a + s.pending, 0);
@@ -690,7 +691,7 @@ function init(client) {
           bumpAch(gid, to.id, 'defend_success', 1);     // 被偷者成功守住（守衛寵物／牧場等級的功勞）
           logSteal({ guildId: gid, kind: 'ranch', thiefId: uid, thiefName: uname,
             victimId: to.id, victimName: to.username, result: 'miss', channelId: i.channelId });
-          return await reply({ content: `你正要下手，卻被 ${to.username} 的守衛發現，只好空手逃走！${resist ? `（對方防護讓成功率 -${resist}%${petResist ? `，其中寵物擋了 ${petResist}%` : ''}）` : ''}（今日 ${usedToday + 1}/${c.steal_daily_limit}）` });
+          return await reply({ content: `你正要下手，卻被 ${nameOf(i, to)} 的守衛發現，只好空手逃走！${resist ? `（對方防護讓成功率 -${resist}%${petResist ? `，其中寵物擋了 ${petResist}%` : ''}）` : ''}（今日 ${usedToday + 1}/${c.steal_daily_limit}）` });
         }
 
         // 看門動物反擊：被偷者若養了看門狗/貓，有機率讓小偷掉星幣（賠給被偷者）。
@@ -718,7 +719,7 @@ function init(client) {
             gtx();
             guardPenalty = pen; guardAnimal = best;
             const debt = before - pen < 0 ? `（你現在欠 ${money(gc, pen - before)}，快去賺回來！）` : '';
-            guardNote = `\n\n🐕 但被 ${to.username} 的 ${best.emoji || ''}${best.name} 逮到，你掉了 ${money(gc, pen)}（賠給對方）！${debt}`;
+            guardNote = `\n\n🐕 但被 ${nameOf(i, to)} 的 ${best.emoji || ''}${best.name} 逮到，你掉了 ${money(gc, pen)}（賠給對方）！${debt}`;
           }
         }
 
@@ -751,7 +752,7 @@ function init(client) {
           });
           atx();
           animalNote = a.guard_pct > 0
-            ? `\n\n🐕💨 你連 ${to.username} 的看門${a.emoji || ''}**${a.name}** 都一起拐走了，牠現在替你看門（第 ${freeSlot + 1} 格）！`
+            ? `\n\n🐕💨 你連 ${nameOf(i, to)} 的看門${a.emoji || ''}**${a.name}** 都一起拐走了，牠現在替你看門（第 ${freeSlot + 1} 格）！`
             : `\n\n🐄💨 你牽走了一隻 ${a.emoji || ''}**${a.name}**，已進你的牧場第 ${freeSlot + 1} 格！`;
           animalStolen = true;
         }
@@ -794,8 +795,8 @@ function init(client) {
             result: guardPenalty > 0 ? 'caught' : 'miss', penalty: guardPenalty, channelId: i.channelId });
           return await reply({
             content: totalPending > 0
-              ? `你摸進了 ${to.username} 的牧場，但什麼都沒帶走！（今日 ${usedToday + 1}/${c.steal_daily_limit}）${guardNote}`
-              : `你摸進了 ${to.username} 的牧場，產物都被收成光了，動物也沒牽成，撲空！（今日 ${usedToday + 1}/${c.steal_daily_limit}）${guardNote}`
+              ? `你摸進了 ${nameOf(i, to)} 的牧場，但什麼都沒帶走！（今日 ${usedToday + 1}/${c.steal_daily_limit}）${guardNote}`
+              : `你摸進了 ${nameOf(i, to)} 的牧場，產物都被收成光了，動物也沒牽成，撲空！（今日 ${usedToday + 1}/${c.steal_daily_limit}）${guardNote}`
           });
         }
 
@@ -804,8 +805,8 @@ function init(client) {
           const p = productOf(itemId); if (p) value += n * livePrice(gid, p);
           return `${p ? (p.emoji || '') + p.name : '產物'} ×${n}`;
         });
-        const loot = lines.length ? `你從 ${to.username} 的牧場偷走了：\n${lines.join('\n')}\n\n已放進你的背包，用 \`/賣出\` 換 ${gc.currency_name}。`
-          : `${to.username} 的產物都被收光了，但你不是空手而歸——`;
+        const loot = lines.length ? `你從 ${nameOf(i, to)} 的牧場偷走了：\n${lines.join('\n')}\n\n已放進你的背包，用 \`/賣出\` 換 ${gc.currency_name}。`
+          : `${nameOf(i, to)} 的產物都被收光了，但你不是空手而歸——`;
         const embed = new EmbedBuilder().setColor(0xed4245).setTitle('🕵️ 偷取成功！')
           .setDescription(`${loot}${guardNote}${animalNote}`)
           .setFooter({ text: `約值 ${value.toLocaleString('en-US')} ${gc.currency_name}｜今日 ${usedToday + 1}/${c.steal_daily_limit}` });

@@ -1,5 +1,6 @@
 // 聊天經驗值系統：發言得 XP → 升級 → 自動給對應身分組
 const { EmbedBuilder, AttachmentBuilder, MessageFlags} = require('discord.js');
+const { nameOf } = require('../../util/names');
 const { db, guildConfig, logError } = require('../../db');
 const { brandColor } = require('../../util/brand');
 const { makeRankCard } = require('../../util/rankcard');
@@ -104,7 +105,7 @@ function init(client) {
     if (i.commandName === '等級') {
       const target = i.options.getUser('玩家') || i.user;
       const row = db.prepare('SELECT * FROM user_xp WHERE guild_id = ? AND user_id = ?').get(gid, target.id);
-      if (!row) return i.reply({ content: `${target.username} 還沒有任何經驗值，快去聊天吧！`, flags: MessageFlags.Ephemeral });
+      if (!row) return i.reply({ content: `${nameOf(i, target)} 還沒有任何經驗值，快去聊天吧！`, flags: MessageFlags.Ephemeral });
       const { level, into, need } = levelOf(row.xp);
       const rank = rankOf(gid, target.id);
       await i.deferReply();
@@ -125,7 +126,7 @@ function init(client) {
         logError(gid, '等級卡產生失敗：', e.message);
         const bar = '█'.repeat(Math.round(into / need * 12)).padEnd(12, '░');
         const embed = new EmbedBuilder().setColor(brandColor())
-          .setTitle(`${target.username} 的等級`)
+          .setTitle(`${nameOf(i, target)} 的等級`)
           .setDescription(`**等級 ${level}**　排名 #${rank}\n\`${bar}\` ${into}/${need} XP\n總經驗值 ${row.xp}｜累計發言 ${row.msg_count} 則`)
           .setThumbnail(target.displayAvatarURL());
         return i.editReply({ embeds: [embed] });
