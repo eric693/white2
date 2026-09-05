@@ -515,9 +515,16 @@ function init(client) {
             if (c.steal_penalty_to_victim) {
               addCoins(gid, to.id, to.username, fine, '抓到小偷賠償', '有人偷魚被你抓到');
               note += `，全額賠給了對方。`;
-              const dm = new EmbedBuilder().setColor(0x2ecc71).setTitle('🛡️ 抓到偷魚賊！')
-                .setDescription(`**${i.member?.displayName || uname}** 想偷你的魚缸但被逮到，賠了你 **${money(gc, fine)}**！`);
-              to.send({ embeds: [dm] }).catch(() => {});
+              // 一樣不私訊、不點名：改用公告頻道匿名宣布，並 tag 被偷的人，
+              // 讓他知道自己拿到賠償，但不知道是誰動的手。
+              stealChannel(i, gid).then(ch => {
+                if (!ch) return;
+                const pub = new EmbedBuilder().setColor(0x2ecc71).setTitle('🛡️ 有人偷魚被抓了！')
+                  .setDescription(`**不知名人士**想偷 <@${to.id}> 的魚缸，結果被當場逮到，`
+                    + `賠了 **${money(gc, fine)}** 給 <@${to.id}>！`)
+                  .setFooter({ text: '到底是誰做的？想討回來就去 /偷魚 反擊！' });
+                ch.send({ content: `<@${to.id}>`, embeds: [pub], allowedMentions: { users: [to.id] } }).catch(() => {});
+              }).catch(() => {});
             } else {
               note += `（充公沒收）。`;
             }
@@ -579,16 +586,13 @@ function init(client) {
           .setDescription((got ? `你從 ${to.username} 的魚缸撈走了 **${money(gc, got)}**（已入你的錢包）。` : `${to.username} 的星幣都被領走了，但你不是空手而歸——`) + fishNote)
           .setFooter({ text: `今日 ${usedToday + 1}/${c.steal_daily_limit}` });
 
-        const thief = i.member?.displayName || uname;
         logSteal({ guildId: gid, kind: 'aquarium', thiefId: uid, thiefName: uname,
           victimId: to.id, victimName: to.username, result: 'success',
           loot: stolenFish ? `整條 ${stolenFish.name}` : '', coins: got, channelId: i.channelId });
-        const dm = new EmbedBuilder().setColor(0xed4245).setTitle('🚨 你的魚缸被偷了！')
-          .setDescription(`**${thief}** ${got ? `從你的魚缸撈走了 ${money(gc, got)}` : '摸進了你的魚缸'}` +
-            (stolenFish ? `\n😱 連整條 ${stolenFish.emoji || ''}**${stolenFish.name}** 都被撈走了！` : '') +
-            `\n\n下次記得早點 \`/撈金\`，或去 \`/偷魚\` 討回來！`)
-          .setFooter({ text: `發生在 ${i.guild.name}` });
-        const dmOk = await to.send({ embeds: [dm] }).then(() => true).catch(() => false);
+        // 不私訊被偷的人：私訊裡會寫出小偷是誰，等於直接破功。
+        // 偷竊的樂趣就在「知道自己被偷了，但不知道是誰」，所以一律只留
+        // 公告頻道那則匿名的，並在公告裡 tag 被偷的人讓他一定收得到通知。
+        const dmOk = false;
 
         // 跟牧場共用同一個公告頻道設定，兩套偷竊事件集中在同一個地方看
         const ch = await stealChannel(i, gid);

@@ -822,18 +822,10 @@ function init(client) {
           loot: [...lines, animalStolen ? '（整隻動物被牽走）' : ''].filter(Boolean).join('、'),
           coins: value, penalty: guardPenalty, channelId: i.channelId });
 
-        // 私訊通知被偷的人（對方關私訊會失敗，改在公告裡 @ 他，見下方 dmOk）
-        const thief = i.member?.displayName || uname;
-        let dmOk = false;
-        if (stolen.size || animalStolen) {
-          const guardDm = guardPenalty > 0 ? `\n\n🐕 你的 ${guardAnimal.emoji || ''}${guardAnimal.name} 咬了小偷，追回 ${money(gc, guardPenalty)}！` : '';
-          const animalDm = animalStolen ? `\n\n😱 你的一隻動物被整隻牽走了！` : '';
-          const lootDm = lines.length ? `從你的牧場偷走了：\n${lines.join('\n')}` : '摸進了你的牧場——';
-          const dm = new EmbedBuilder().setColor(0xed4245).setTitle('🚨 你的牧場被偷了！')
-            .setDescription(`**${thief}** ${lootDm}${guardDm}${animalDm}\n\n下次記得早點用 \`/收成\` 收，或去 \`/偷\` 討回來！`)
-            .setFooter({ text: `發生在 ${i.guild.name}` });
-          dmOk = await to.send({ embeds: [dm] }).then(() => true).catch(() => false);
-        }
+        // 不私訊被偷的人：私訊裡會寫出小偷是誰，等於直接破功。
+        // 偷竊的樂趣就在「知道自己被偷了，但不知道是誰」，所以一律只留
+        // 公告頻道那則匿名的，並在公告裡 tag 被偷的人讓他一定收得到通知。
+        const dmOk = false;
         // 公開公告：優先發到後台設定的固定公告頻道（ranch_config.steal_channel）。
         // 沒設定才退回小偷所在頻道 —— 舊行為會讓公告散落在各個冒險區頻道，
         // 被偷的人常常整天都不知道自己被偷了。
@@ -841,7 +833,7 @@ function init(client) {
           const ch = await stealChannel(i, gid);
           if (ch) {
             // 公告不寫小偷是誰：留白讓大家互相猜、互相指控，比直接點名有趣得多。
-            // （被偷的人仍會收到私訊，私訊裡才有小偷名字）
+            // 這是唯一的通知管道 —— 沒有任何地方會告訴被偷的人小偷是誰。
             const pub = new EmbedBuilder().setColor(0xed4245).setTitle('🕵️ 牧場偷竊事件')
               .setDescription((lines.length
                 ? `<@${to.id}> 的東西被**不知名人士**偷走了：\n${lines.join('\n')}`
