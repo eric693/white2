@@ -330,7 +330,8 @@ router.delete('/stroll-events/:id', (req, res) => {
 // 由管理端在這裡自己挑，抽到不等於可以同居。
 router.get('/partner-roles', (req, res) => {
   res.json(db.prepare(
-    'SELECT id, name, author, enabled, partner_ok FROM wheel_roles WHERE guild_id=? ORDER BY author, name').all(req.guildId));
+    `SELECT id, name, author, enabled, partner_ok, stroll_ok, image_url, intro, tags, wheel_id
+       FROM wheel_roles WHERE guild_id=? ORDER BY author, name`).all(req.guildId));
 });
 
 router.post('/partner-roles', (req, res) => {
@@ -348,6 +349,60 @@ router.post('/partner-roles', (req, res) => {
   }
   audit(req.user.name, `${on ? '開放' : '排除'}可同居角色 ${changed} 位`);
   res.json({ ok: true, changed });
+});
+
+// ---------- 角色庫（獨立於角色轉盤）----------
+// 只買「管家」這隻機器人的伺服器沒有角色轉盤，但好感度／送禮／逛街／同居都要有角色可用。
+// 角色資料本來就存在 wheel_roles，只是「新增角色」的介面掛在轉盤那一頁（秘書的功能）——
+// 於是只買管家的人建不出角色。這裡讓角色可以在「小屋與成就 → 可同居角色」直接建立，
+// wheel_id 留 0 代表「不屬於任何轉盤」，好感度／同居／逛街的查詢都不看 wheel_id，照樣能用。
+const roleFields = (b) => ({
+  name: String(b.name || '').trim().slice(0, 60),
+  author: String(b.author || '').trim().slice(0, 60),
+  image_url: String(b.image_url || '').trim(),
+  intro: String(b.intro || '').slice(0, 500),
+  tags: Array.isArray(b.tags) ? b.tags.join(',') : String(b.tags || ''),
+  partner_ok: b.partner_ok ? 1 : 0,
+  stroll_ok: b.stroll_ok ? 1 : 0,
+  enabled: b.enabled === undefined ? 1 : (b.enabled ? 1 : 0)
+});
+
+router.post('/partner-roles/new', (req, res) => {
+  const f = roleFields(req.body || {});
+  if (!f.name) return res.status(400).json({ error: '請填角色名字' });
+  const r = db.prepare(
+    `INSERT INTO wheel_roles (guild_id, wheel_id, name, author, image_url, intro, tags, partner_ok, stroll_ok, enabled, weight, sort)
+     VALUES (@guild_id, 0, @name, @author, @image_url, @intro, @tags, @partner_ok, @stroll_ok, @enabled, 10, 0)`
+  ).run({ ...f, guild_id: req.guildId });
+  audit(req.user.name, `新增角色：${f.name}`);
+  res.json({ id: r.lastInsertRowid });
+});
+
+router.put('/partner-roles/:id', (req, res) => {
+  const cur = db.prepare('SELECT id FROM wheel_roles WHERE id=? AND guild_id=?').get(req.params.id, req.guildId);
+  if (!cur) return res.status(404).json({ error: '找不到這位角色' });
+  const f = roleFields(req.body || {});
+  if (!f.name) return res.status(400).json({ error: '請填角色名字' });
+  db.prepare(
+    `UPDATE wheel_roles SET name=@name, author=@author, image_url=@image_url, intro=@intro,
+       tags=@tags, partner_ok=@partner_ok, stroll_ok=@stroll_ok, enabled=@enabled
+     WHERE id=@id AND guild_id=@guild_id`
+  ).run({ ...f, id: req.params.id, guild_id: req.guildId });
+  audit(req.user.name, `修改角色 #${req.params.id}：${f.name}`);
+  res.json({ ok: true });
+});
+
+// 刪除角色會連同玩家對他的好感度、同居關係一起消失，所以要明確帶 confirm
+router.delete('/partner-roles/:id', (req, res) => {
+  const r = db.prepare('SELECT name FROM wheel_roles WHERE id=? AND guild_id=?').get(req.params.id, req.guildId);
+  if (!r) return res.status(404).json({ error: '找不到這位角色' });
+  db.transaction(() => {
+    db.prepare('DELETE FROM home_partners WHERE guild_id=? AND role_id=?').run(req.guildId, req.params.id);
+    db.prepare('DELETE FROM affinity WHERE guild_id=? AND role_id=?').run(req.guildId, req.params.id);
+    db.prepare('DELETE FROM wheel_roles WHERE id=? AND guild_id=?').run(req.params.id, req.guildId);
+  })();
+  audit(req.user.name, `刪除角色 #${req.params.id}：${r.name}（含玩家好感度與同居關係）`);
+  res.json({ ok: true });
 });
 
 // ---------- 逛街角色名單 ----------

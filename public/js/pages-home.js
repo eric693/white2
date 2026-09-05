@@ -13,6 +13,8 @@ App.page('home', {
     "notes": [
       "寵物與同居的數量上限已於 2026-09 取消。房屋等級只決定玩家「能不能開始養／能不能邀請」，開了之後不限數量——改由寵物稅與同居稅的倍增累進節制（第 1 個基礎、第 2 個 ×2、第 3 個 ×4…），在稅金那一頁設定。",
       "工作區域是「一位角色顧一區、把該區完整自動化」：派到農地就收成＋重新播種，派到牧場就照顧＋收產物。一個區域只能派一位，一位角色也只能顧一區。",
+      "角色庫就在「🏠 可同居角色」分頁：可以直接新增／編輯／刪除角色（名字、作者、圖片、介紹、標籤），不需要「角色轉盤」那個模組。只買管家這隻機器人的伺服器照樣建得起角色，好感度／送禮／逛街／同居都吃這份名單。",
+      "刪除角色會連同玩家對他的好感度與同居關係一起刪掉，無法復原——只是暫時不想讓他出場的話，把「啟用」關掉就好。",
       "能力跟區域對不上的角色會「罷工」——不會偷偷幫忙做事，面板與同居明細都會標示罷工中；把他的能力改成該區的能力，或換人指派即可。",
       "玩家請同居對象搬走時，那位角色的好感度會歸零（只留「相遇過」的紀錄），能力與工作區域一併卸下。這是為了擋掉「繳稅前先請人搬走、繳完再請回來」的規避玩法。玩家端會先跳一次「真的要跟他分手嗎？」的確認，確認後才執行。",
       "工作區域跟角色的能力綁定：🌾農地＝農地收成／農地種植、🏡溫室＝溫室收成／溫室種植、🐄牧場＝牧場照顧／擊退小偷、🥚孵化室＝孵化室收成／放蛋、🐠魚缸＝魚缸收成／餵食、🍳廚房＝廚房做飯。挖礦、釣魚、賣價加成那類能力每天自動生效，不能（也不需要）指派區域。要讓某位角色能顧某一區，就在這頁把他的能力改成該區的能力。",
@@ -821,6 +823,8 @@ App.page('home', {
               轉盤裡不是「角色」的項目（模擬器、活動介紹…），或不想讓他參與逛街的作者，可以在這裡排除。
               目前<b>${onCount}</b> 位角色會在逛街時出現。<br>同居對象是另一份名單（見「🏠 可同居角色」），兩者已經完全分開。
             </div>
+            <div class="toolbar" style="margin-bottom:8px"><button class="btn" id="paddrole">＋ 新增角色</button>
+              <span class="hint">沒有買「角色轉盤」也能在這裡建角色 —— 好感度、送禮、逛街、同居都用得到。</span></div>
             <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">
               <div class="field" style="max-width:220px;margin:0"><label>依作者批次設定</label>
                 <select id="author">${authors.map(a => `<option value="${UI.esc(a)}">${UI.esc(a || '（沒有作者）')}（${roles.filter(r => (r.author || '').trim() === a).length}）</option>`).join('')}</select></div>
@@ -934,7 +938,9 @@ App.page('home', {
             <td style="font-size:13px">${UI.esc(r.author || '')}</td>
             <td>${r.enabled ? '✅' : '<span class="hint">停用</span>'}</td>
             <td><label class="switch"><input type="checkbox" data-prole="${r.id}" ${r.partner_ok ? 'checked' : ''}> ${r.partner_ok ? '可同居' : '不可'}</label></td>
-          </tr>`).join('') || '<tr><td colspan="4" class="hint">找不到符合的角色</td></tr>';
+            <td><button class="btn tiny secondary" data-pedit="${r.id}">編輯</button>
+                <button class="btn tiny danger" data-pdel="${r.id}">刪除</button></td>
+          </tr>`).join('') || '<tr><td colspan="5" class="hint">找不到符合的角色</td></tr>';
         const bind = () => body.querySelectorAll('[data-prole]').forEach(cb => cb.onchange = async () => {
           try {
             await POST('/partner-roles', { ids: [Number(cb.dataset.prole)], partner_ok: cb.checked });
@@ -947,6 +953,8 @@ App.page('home', {
             <div class="hint" style="margin-bottom:10px">
               轉盤與同居已經完全分開：轉盤可以放其他創作者的角色，但<b>抽到不會自動變成同居對象</b>。
               誰能被娶回家由這裡決定。目前 <b>${onCount}</b> 位角色可同居。<br>
+              <b>沒有買「角色轉盤」的伺服器也能用</b>：直接在這裡「＋ 新增角色」建自己的角色庫，
+              好感度、送禮、逛街、同居都吃這份名單，跟轉盤完全無關。<br>
               同居人數沒有上限，改由<b>同居稅</b>倍增累進節制（第 1 位基礎、第 2 位 ×2、第 3 位 ×4…）。
             </div>
             <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:flex-end;margin-bottom:10px">
@@ -958,11 +966,49 @@ App.page('home', {
               <input id="pkw" placeholder="搜尋角色或作者" style="max-width:180px">
             </div>
             <div class="table-wrap" style="max-height:480px;overflow:auto"><table class="list">
-              <thead><tr><th>角色</th><th>作者</th><th>轉盤啟用</th><th>可否同居</th></tr></thead>
+              <thead><tr><th>角色</th><th>作者</th><th>啟用</th><th>可否同居</th><th></th></tr></thead>
               <tbody id="prlist">${rows(roles, '')}</tbody>
             </table></div>
           </div>`;
-        body.querySelector('#pkw').oninput = (e) => { body.querySelector('#prlist').innerHTML = rows(roles, e.target.value.trim()); bind(); };
+        const roleForm = (r = {}) => `
+          <div class="field"><label>角色名字</label><input name="name" value="${UI.esc(r.name || '')}"></div>
+          <div class="field"><label>作者（可空，用來批次開放／排除）</label><input name="author" value="${UI.esc(r.author || '')}"></div>
+          <div class="field"><label>角色圖片</label>${H.uploadField('image_url', r.image_url || '', { label: '角色圖' })}</div>
+          <div class="field"><label>介紹（可空）</label><textarea name="intro" rows="2">${UI.esc(r.intro || '')}</textarea></div>
+          <div class="field"><label>標籤（逗號分隔，可空）</label><input name="tags" value="${UI.esc(r.tags || '')}"></div>
+          <div class="form-row">
+            <div class="field">${H.toggle('partner_ok', r.partner_ok ?? 1, '可以被邀請同居')}</div>
+            <div class="field">${H.toggle('stroll_ok', r.stroll_ok ?? 1, '會出現在逛街事件')}</div>
+            <div class="field">${H.toggle('enabled', r.enabled ?? 1, '啟用')}</div>
+          </div>
+          <div class="hint">這裡建立的角色不屬於任何轉盤，好感度／送禮／逛街／同居照樣可以用。
+            有買角色轉盤的話，要把他放進轉盤請到「角色轉盤」頁設定。</div>`;
+        const openRole = (r) => {
+          const m = UI.modal({
+            title: r ? `編輯角色：${r.name}` : '新增角色',
+            bodyHTML: roleForm(r || {}),
+            onOk: async (back) => {
+              const b = H.collect(back);
+              if (!b.name) { UI.err('請填角色名字'); return false; }
+              if (r) await PUT('/partner-roles/' + r.id, b); else await POST('/partner-roles/new', b);
+              UI.ok(r ? '已儲存' : '已新增'); draw();
+            }
+          });
+          H.bindUploads(m.back);
+          H.bindCropButtons(m.back);
+        };
+        body.querySelector('#paddrole').onclick = () => openRole(null);
+        const bindRow = () => {
+          body.querySelectorAll('[data-pedit]').forEach(b2 => b2.onclick = () =>
+            openRole(roles.find(x => x.id == b2.dataset.pedit)));
+          body.querySelectorAll('[data-pdel]').forEach(b2 => b2.onclick = async () => {
+            const r = roles.find(x => x.id == b2.dataset.pdel);
+            if (!await UI.confirm(`刪除角色「${r.name}」？\n玩家對他的好感度與同居關係也會一併刪除，無法復原。`)) return;
+            await DEL('/partner-roles/' + r.id); UI.ok('已刪除'); draw();
+          });
+        };
+        bindRow();
+        body.querySelector('#pkw').oninput = (e) => { body.querySelector('#prlist').innerHTML = rows(roles, e.target.value.trim()); bind(); bindRow(); };
         body.querySelector('#pon').onclick = async () => {
           await POST('/partner-roles', { author: body.querySelector('#pauthor').value, partner_ok: true });
           UI.ok('已開放'); draw();
