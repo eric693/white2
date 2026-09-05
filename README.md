@@ -1,7 +1,15 @@
 # White2 — Discord 多功能機器人 + 網頁後台
 
-單一 Node 程序同時執行 **Discord 機器人**與**管理後台網站**。技術棧沿用 kidcare：
-Express + better-sqlite3 + 原生 JS SPA + cookie-JWT 帳密登入。
+**兩隻 Discord 機器人＋一套管理後台**，同一份程式碼、同一個資料庫。用 `BOT_ROLE`
+決定每個行程扮演哪一隻，各自只載入自己那一半的功能與 slash 指令：
+
+- **璃白Yu光秘書**（`secretary`）＝功能型：音樂、抽獎、投票、客服單、論壇、歡迎、等級…（27 個指令）
+- **璃白Yu光管家**（`butler`）＝遊戲型：冒險、農牧、家園、股市、稅務、拍賣…（76 個指令）
+
+拆成兩隻的主因是**單一機器人最多只能註冊 100 個 slash 指令**，而全部功能加起來已達 103 個。
+順帶的好處是秘書不會跑遊戲排程、管家不會佔著語音頻道。
+
+技術棧沿用 kidcare：Express + better-sqlite3 + 原生 JS SPA + cookie-JWT 帳密登入。
 
 ## 快速開始
 
@@ -9,17 +17,23 @@ Express + better-sqlite3 + 原生 JS SPA + cookie-JWT 帳密登入。
 npm install              # 安裝套件
 cp .env.example .env     # 建立設定檔，填入 Discord Token 等
 npm run seed             # 建立初始管理員帳號（讀 .env 的 ADMIN_*）
-npm start                # 啟動機器人 + 後台網站
+npm run start:secretary  # 秘書 + 後台網站
+npm run start:butler     # 管家（WEB=0，只跑機器人）
 ```
 
-後台網址：`http://localhost:3999`（可用 .env 的 `PORT` 調整）
+兩個行程都要開。第二隻一定要帶 `WEB=0`，否則會搶同一個埠（EADDRINUSE）。
+
+後台網址：`http://localhost:3999`（可用 .env 的 `PORT` 調整），掛在秘書那個行程上。
 
 ## .env 設定
 
 | 變數 | 說明 |
 |------|------|
-| `DISCORD_TOKEN` | 機器人 Token（Developer Portal → Bot） |
-| `DISCORD_CLIENT_ID` | 應用程式的 Client/Application ID |
+| `BOT_ROLE` | 這個行程扮演誰：`secretary` / `butler`；不設＝`both`（舊的單機器人模式，會超過指令上限） |
+| `WEB` | `0` ＝這個行程不啟動後台網站。兩隻裡的第二隻必須設 |
+| `DISCORD_TOKEN` | 秘書的 Bot Token（Developer Portal → Bot） |
+| `DISCORD_TOKEN_BUTLER` | 管家的 Bot Token（另一個 Application） |
+| `DISCORD_CLIENT_ID` | 秘書應用程式的 Client/Application ID |
 | `GUILD_ID` | 主要服務的伺服器 ID |
 | `PORT` | 後台網站埠號（預設 3999） |
 | `JWT_SECRET` | 登入 JWT 密鑰，請用 `openssl rand -hex 32` 產生 |
@@ -41,9 +55,11 @@ white2/
 │   ├── server.js      Express 入口（掛 API + 靜態網站 + 啟動機器人）
 │   ├── db.js          better-sqlite3 連線、per-guild 設定存取
 │   ├── auth.js        cookie-JWT 登入、模組權限、限流
+│   ├── subscription.js  每台伺服器 × 每隻機器人的訂閱方案與付費牆
 │   ├── bot/
 │   │   ├── index.js   discord.js 機器人核心（載入所有 features）
-│   │   ├── commands.js  79 個 slash 指令定義
+│   │   ├── commands.js  103 個 slash 指令定義（秘書 27 ＋ 管家 76）
+│   │   ├── roles.js   BOT_ROLE 角色拆分：誰載入哪些模組、註冊哪些指令
 │   │   ├── perm.js    指令權限判定
 │   │   └── features/  各功能模組（見下方功能總覽）
 │   ├── routes/        各功能後台 API（與 features 一一對應）
@@ -68,6 +84,9 @@ white2/
 每個功能都是「機器人模組 `src/bot/features/*.js` ＋ 後台 API `src/routes/*.js` ＋ 後台頁面
 `public/js/pages-*.js`」三件一組，全部依 `guild_id` 分家，同一隻機器人可服務多個伺服器。
 
+下面兩張表也就是**秘書／管家的分工界線**：社群管理歸秘書，冒險生活歸管家。
+哪個模組歸誰定義在 `src/bot/roles.js`。
+
 ### 社群管理
 
 | 模組 | 功能 |
@@ -83,6 +102,7 @@ white2/
 | `tickets` | 客服單：開單、專屬頻道、關單、紀錄 |
 | `reactionroles` | 表情身分組：按表情取得／移除身分組 |
 | `wheel` | 角色轉盤：標籤篩選、收藏、權重、不重複、每日限制、統計 |
+| `postwheel` | 貼文轉盤：從指定貼文的留言者中隨機抽選 |
 | `forum` | 論壇整理：貼文同步、目錄自動更新（依玩家／標籤／留言數／活動排序） |
 | `xp` | 經驗值：聊天得 XP、升級身分組、排行榜圖卡 |
 | `music` | 音樂：歌單、控制面板、音量、常駐語音、權限、播放紀錄 |
@@ -93,22 +113,22 @@ white2/
 
 | 模組 | 功能 |
 |------|------|
-| `gather` | 採集本體：`/釣魚` `/挖礦` `/伐木` `/採集` `/狩獵`，冷卻、稀有掉落、地圖每日次數、工具耐久與修理、商店購買、製作／鍛造配方、圖鑑、每日抽籤、任務與限量懸賞、賣出與富豪榜 |
+| `gather` | 採集本體：`/釣魚` `/挖礦` `/伐木` `/採集` `/狩獵`，冷卻、稀有掉落、地圖每日次數、工具耐久與修理、商店購買、製作／鍛造配方（依分類選擇）、圖鑑、任務與限量懸賞、賣出。**每日抽籤已於 2026-09 下架**，簽到成為唯一的每日免費星幣來源；**富豪榜改管理端專用** |
 | `facility` | 設施商店：農地／溫室／牧場／孵化室分 3 階購買，與 `/製作` 蓋的格子相加 |
 | `ranch` | 牧場：飼養動物、各自計時產出、收成、放生、看門動物防竊、孵化室孵蛋 |
 | `crops` | 種植：農地種作物、溫室種花卉、成熟倒數、採收 |
 | `aquarium` | 魚缸：固定 8 格只養 SSR 魚，自動產星幣、定期餵食（餓 48 小時會死）、撈金、賣魚、偷魚 |
-| `trades` | 物易物：玩家一對一以物換物，公開提案與成交公告，完全不涉及星幣 |
+| `trades` | 物易物與轉帳：玩家一對一以物換物，公開提案與成交公告。**轉帳手續費 200 星幣＋二次確認**；禮物**禁止交易**，只能低價賣回 |
 | `special` | 特殊兌換商店：多分店、面板發布、兌換後通知管理員處理 |
-| `stock` | 財經新聞／星幣股市：掛牌股票、K 棒 tick、漲跌停、新聞衝擊、買賣手續費（銷毀回收星幣）、持股與股神榜。**預設關閉，後台開啟**。設計文件見 `docs/stock-design.md` |
+| `stock` | 世界動態／星幣股市：掛牌股票、K 棒 tick、漲跌停、新聞衝擊、買賣手續費 1.5%（銷毀回收星幣）、持股。原「財經新聞」已擴充為**世界動態**（整合遊戲公告）；**股神榜改管理端專用**，玩家只看得到自己的損益。持股上限 500（所有股票加總）、禁當沖。**預設關閉，後台開啟**。設計文件見 `docs/stock-design.md` |
 | `home` | 家園：小屋 15 階、小屋簽到、家具、廚房與料理（36 道食譜／5 種品質／可複選多道與份數）、寵物、成就（59 個）、好感度與同居 |
-| `affinity` | 角色：逛街隨機偶遇、送禮（喜好倍率、角色多時自動翻頁）、同居與同居能力 |
+| `affinity` | 角色：逛街**隨機事件制**（遇到角色的機率已大幅降低）、送禮（喜好倍率、角色多時自動翻頁）、同居與同居能力。同居與寵物**沒有數量上限**，轉盤名單與同居名單完全分離；同居角色可指派「工作區域」，一位角色即可包辦該區完整自動化 |
 | `dex` | 圖鑑與成就：圖鑑由各系統資料自動長出，成就可裝備 3 個吃加成 |
-| `tax` | 稅金：所得稅（累進）／農地稅／養殖稅、強制清算、普發救濟金 |
+| `tax` | 稅金：**四稅各自獨立計算**——所得稅（只課本期實際賺到的錢，含股票已實現損益）／同居稅（依同居角色數倍增累進）／寵物稅（依寵物數倍增累進）／房屋稅（依房屋等級）。只從錢包扣、扣到 0 為止不會變負數，缺繳記在稅單上。**依資產課稅的農地稅／養殖稅／證券稅／消費稅已於 2026-09 整套移除** |
 | `charity` | 慈善基金會：捐款抵稅、帳目公開、基金池是普發與大賽獎金的財源 |
-| `auction` | 拍賣會：限時競標、出價鎖款、防狙擊延長、拍賣限定標的（稱號／寵物／素材／農地等格子）、手續費進基金會 |
+| `auction` | 拍賣會：限時競標、出價鎖款、防狙擊延長、拍賣限定標的（稱號／寵物／素材／農地等格子）、手續費進基金會、**可設定參加資格身分組** |
 | `contest` | 大賽：週賽月賽比成長量、前三名獎金（優先從基金會撥）、冠軍拿大賽限定稱號 |
-| `loans` | 物資貸款：抵押工具／作物／魚、信用貸款、到期沒收 |
+| `loans` / `bank` | 銀行：**存款**（錢包↔銀行自由存提、按日生息，存提款不算收入不課稅）＋**信用貸款**（免抵押、利息較高）。**物資貸款／物資抵押已於 2026-09 停辦**，既有未還清的仍可 `/還款` 並贖回抵押品 |
 | `panel` | 冒險面板：管理員發布的一鍵按鈕面板，自動釘選；6 大分類＋常用捷徑下拉 |
 | `help` | `/幫助` 冒險生活指令總表（僅本人可見） |
 
@@ -131,23 +151,63 @@ white2/
 - **時間欄位**：財經快報與拍賣的開始時間只給選到「整點」（日期＋小時），因為兩者都是整點結算。
 - **前端改動要升版**：`public/sw.js` 的 `SHELL` 版本號沒改，PWA 會繼續吃舊快取。
 
+## 訂閱制度
+
+每台伺服器、**每隻機器人各自一份**訂閱狀態（秘書買了不代表管家也能用），存在
+`guild_subscriptions`，方案內容存在 `plans`，全部可在後台「訂閱管理」頁改，不寫死在程式裡。
+
+- 付費牆做在**指令註冊層**：方案沒包含的功能，指令直接不註冊到那台伺服器——
+  玩家看不到也點不到，比「點了才說要付費」乾淨（見 `bot/index.js` 的 `allowedCommands()`）
+- 到期自動降級成 `free`，**不刪任何資料**，續費後原樣恢復、進度不重置
+- 續費／升降級／到期後呼叫 `refreshGuildCommands()` 即時生效，不必重啟
+- 功能鍵（付費牆的最小顆粒）定義在 `subscription.js` 的 `FEATURE_KEYS`，
+  指令對應到哪個功能鍵見 `roles.js` 的 `COMMAND_FEATURE`；沒列到的指令視為
+  基本功能，任何方案都能用（例如 `/幫助`、`/錢包`、`/簽到`）
+
+內建方案：秘書 `free` / `standard` / `pro`，管家 `free` / `basic` / `advanced`。
+
 ## 部署（已上線）
 
 - 後台網址：**https://white.crownai.ink**（nginx 反向代理 → 127.0.0.1:3999，已配 Let's Encrypt 憑證）
-- 以 pm2 常駐：`pm2 start src/server.js --name white2`
-- 更新程式後：`pm2 restart white2`
+- 以 pm2 常駐**兩個行程**：
+
+  ```bash
+  BOT_ROLE=secretary pm2 start src/server.js --name white2-secretary --cwd /root/discord/white2 --update-env
+  BOT_ROLE=butler WEB=0 pm2 start src/server.js --name white2-butler --cwd /root/discord/white2 --update-env
+  ```
+
+- 更新程式後：`pm2 restart white2-secretary white2-butler`
+- 只改了其中一隻的 Token／功能時，也可以只重啟那一隻
 
 ## 加新伺服器的流程
 
-1. 用下方邀請連結把機器人加進去
+1. 用下方邀請連結把機器人加進去——**兩隻要各邀一次**，秘書和管家是不同的 Discord 應用程式
 2. 陌生伺服器會被**白名單**擋下（機器人自動退出並通知你），到後台核准後再邀一次
-3. 機器人上線時會**即時註冊 79 個 slash 指令**到每個已核准的伺服器，不必手動跑 `npm run register`
+3. 機器人上線／被邀請時會**即時註冊** slash 指令到該伺服器（秘書 27 個、管家 76 個，
+   實際數量再依該台的訂閱方案過濾），不必手動跑 `npm run register`
 
 邀請連結（權限含禁言、踢出、管理身分組、語音）：
 
 ```
+# 璃白Yu光秘書
 https://discord.com/oauth2/authorize?client_id=1528399550006689882&scope=bot%20applications.commands&permissions=1099783466050
+
+# 璃白Yu光管家
+https://discord.com/oauth2/authorize?client_id=1545612660656185344&scope=bot%20applications.commands&permissions=1099783466050
 ```
+
+⚠️ 授權頁的伺服器下拉選單要選對，選錯就會把機器人加進不相干的伺服器。
+
+## 憑證放哪裡
+
+兩隻的 Token / Client ID / Client Secret 都可以在後台**「機器人帳號」頁**設定，
+不必 SSH 上機器改 `.env`。優先序：**後台設定 → 角色專屬環境變數 → 舊的 `DISCORD_TOKEN`**。
+
+- Token 與 Client Secret 存檔後只顯示末 4 碼，原文不會回到瀏覽器；欄位留空＝不變更
+- 名稱／頭像／狀態存檔即時套用；**Token 改了要重啟該行程**才生效
+- 管家的 Client ID／Secret 另外用於 `/play` 玩家 App 的 Discord 登入
+  （`routes/play.js`），Developer Portal 要把
+  `https://white.crownai.ink/play/auth/callback` 加進該應用程式的 OAuth2 Redirects
 
 ## 多伺服器架構（已完成）
 
@@ -161,7 +221,8 @@ https://discord.com/oauth2/authorize?client_id=1528399550006689882&scope=bot%20a
   - 改造前備份：`backups/white2-before-multiguild-*.db`
 - [x] **階段 2：機器人各模組讀寫依 guild**（全部模組完成）
 - [x] **階段 3：後台伺服器切換器 + API 依 guild scope**（X-Guild-Id header + 所有路由 scope）
-- [x] **階段 4：slash 指令全域註冊**（79 個指令，所有伺服器通用；機器人上線時即時註冊）
+- [x] **階段 4：slash 指令即時註冊**（機器人上線／被邀請時直接註冊到該伺服器，立即生效）
+- [x] **階段 5：秘書／管家拆成兩隻機器人**（解除 100 指令上限）＋**每台伺服器的訂閱制度**
 - [x] **伺服器白名單**：陌生伺服器邀請後機器人自動退出並通知你，核准後才可用
 
 ### 穩定性設定
@@ -169,3 +230,4 @@ https://discord.com/oauth2/authorize?client_id=1528399550006689882&scope=bot%20a
 - `unhandledRejection` / `uncaughtException` 攔截，不讓單一錯誤拖垮整個機器人
 - Discord 斷線 / 重連 / 恢復都會記錄
 - pm2：`--max-memory-restart 500M`、指數退避重啟、`pm2 startup` 開機自動啟動
+- Discord 連不上超過一定時間會主動 `process.exit(1)`，讓 pm2 重新拉起（見 `bot/index.js`）

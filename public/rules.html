@@ -188,7 +188,7 @@
     <a href="#stock">股市</a>
     <a href="#tax">稅金</a>
     <a href="#charity">基金會</a>
-    <a href="#loan">物資貸款</a>
+    <a href="#loan">銀行</a>
     <a href="#home">小屋</a>
     <a href="#love">角色</a>
     <a href="#ach">成就大賽</a>
@@ -260,7 +260,7 @@
   </table></div>
   <ul>
     <li><strong>一階工具每人第一把免費送</strong>，用壞後再要一把（或 <code>/修理</code>）要 100 星幣。</li>
-    <li>⚠️ <strong>徒手不能採集</strong>：工具壞掉、還沒買、或被抵押給物資貸款時，釣魚／挖礦／伐木／採集／狩獵都會被擋下，要先 <code>/修理</code>、買一把新的，或 <code>/還款</code> 把工具贖回來。<br><strong>救急</strong>：如果你<strong>餘額是負數（欠債）</strong>又沒工具，系統會<strong>免費補一把最基本的工具</strong>給你，讓你一定能採集、慢慢賺回來還債。</li>
+    <li>⚠️ <strong>徒手不能採集</strong>：工具壞掉、還沒買、時，釣魚／挖礦／伐木／採集／狩獵都會被擋下，要先 <code>/修理</code>、買一把新的，或 <code>/還款</code> 把工具贖回來。<br><strong>救急</strong>：如果你<strong>餘額是負數（欠債）</strong>又沒工具，系統會<strong>免費補一把最基本的工具</strong>給你，讓你一定能採集、慢慢賺回來還債。</li>
     <li>系統會<strong>自動使用你擁有的最高階</strong>，不用手動裝備。</li>
     <li>每採集一次扣 1 點耐久，歸零就壞掉，用 <code>/修理</code> 花星幣修好（費用如上表）。</li>
     <li>五種採集各有各的工具（釣竿／鎬／斧／籃／弓），要分開買。</li>
@@ -272,10 +272,23 @@
   <h2><span class="num">03</span>錢與商店</h2>
   <p class="sub">貨幣是 🪙星幣，所有東西都用它買。</p>
   <ul>
-    <li><strong>賣出</strong>：點 💰賣出 把背包裡的東西賣給 NPC。稀有度越高單價越高。</li>
+    <li><strong>賣出</strong>：點 💰賣出 把<strong>背包</strong>裡的東西賣給 NPC。稀有度越高單價越高。</li>
     <li><strong>買東西</strong>：四家商店都在面板的<strong>綠色那一排</strong>，點進去用下拉選單直接買，可以連續點。第五家「特殊兌換商店」要打 <code>/特殊商店</code>。</li>
     <li><strong>看家底</strong>：📊查看狀態 一次顯示星幣、工具耐久、動物數、作物數。</li>
   </ul>
+
+  <h3>🎒 背包與 📦 倉庫是兩個分開的空間</h3>
+  <p>2026-09 起，<strong>背包</strong>與<strong>倉庫</strong>是<strong>兩個真正分開的空間</strong>（原本的「保管袋」與鎖定／解除鎖定機制整套拿掉了）。</p>
+  <ul>
+    <li>🎒 <strong>背包</strong>（<code>/背包</code>）＝<strong>流通用</strong>。<code>/賣出</code>、交易、送禮都只看背包。</li>
+    <li>📦 <strong>倉庫</strong>（<code>/倉庫</code>）＝<strong>保存用</strong>。<strong>賣出永遠碰不到倉庫</strong>，專門防誤賣。</li>
+    <li>兩邊可以<strong>自由搬來搬去</strong>，但<strong>倉庫裡的東西不能直接賣</strong>——要賣就先搬回背包。</li>
+  </ul>
+  <div class="note">
+    <span class="h">為什麼這樣設計</span>
+    這樣「不小心一鍵賣光」就<strong>不可能誤傷倉庫</strong>。製作材料、種子、要孵的蛋那類捨不得賣的東西，
+    請放倉庫；原本在「保管袋」裡的東西已經自動搬進倉庫，不必自己處理。
+  </div>
   <div class="scroll"><table>
     <thead><tr><th>商店</th><th class="wrap">賣什麼</th></tr></thead>
     <tbody>
@@ -290,13 +303,19 @@
 
 <section id="draw">
   <h2><span class="num">04</span>每日簽到</h2>
-  <p class="sub">每天回小屋簽到領星幣，取代了原本的每日抽籤。</p>
+  <p class="sub">每天回小屋簽到領星幣。<strong>每日抽籤已於 2026-09 下架</strong>，簽到是現在唯一的每日免費星幣來源。</p>
   <ul>
-    <li>基礎 <strong>500</strong> 星幣。</li>
-    <li><strong>連續加碼</strong>：每連續一天 +100，第 7 天封頂；斷一天就從頭算。</li>
+    <li>基礎 <strong>200</strong> 星幣。</li>
+    <li><strong>連續加碼</strong>：每連續一天 +40，第 7 天封頂；斷一天就從頭算。</li>
     <li><strong>房子越大領越多</strong>：房屋每一階 +10%。</li>
-    <li><strong>整週全簽</strong>再送 3,000。</li>
+    <li><strong>整週全簽</strong>再送 1,200。</li>
   </ul>
+  <div class="note">
+    <span class="h">2026-09 獎勵已下修</span>
+    原本是基礎 500ｷ連續 +100ｷ滿週 3,000。每日抽籤下架後，簽到變成唯一的每日免費收入，
+    照舊數字等於<strong>躺著就有穩定收入</strong>，會把物價撐起來，所以一律砍到四成左右。
+    想賺錢請去採集、做生意或投資。
+  </div>
   <p>從 💰 金錢分頁的「📅 每日簽到」或 <code>/簽到</code> 都可以，面板會畫出本週七格，簽過的打勾。</p>
 </section>
 
@@ -408,7 +427,8 @@
   </div>
   <div class="note warn">
     <span class="h">被看門動物逮到會照罰全額</span>
-    小偷被咬到時，罰款是<strong>全額扣、不看你有沒有錢</strong>——沒錢也會<strong>倒扣成負數（欠款）</strong>，得賺回來才回正。所以別故意把錢花光再去偷。
+    小偷被咬到時，罰款是<strong>全額扣、不看你有沒有錢</strong>——沒錢也會<strong>倒扣成負數（欠款）</strong>，得賺回來才回正。所以別故意把錢花光再去偷。<br>
+    <strong>2026-09 起罰金統一為固定 1,000 星幣</strong>（偷產物與偷魚同一個數字）。以前是隨機抽，同一次失敗罰 1 塊或罰 5,000 全看運氣，玩家無法預期，所以改成固定值。
   </div>
 
   <h3>怎麼防？</h3>
@@ -487,13 +507,13 @@
       <tr><td>偷到多少</td><td class="wrap">對方<strong>未領取星幣的 50%</strong>（每一格都抽）</td></tr>
       <tr><td>單次上限</td><td class="wrap"><strong>最多偷 300 星幣</strong>（魚貴時也不會一次被偷爆）</td></tr>
       <tr><td>整條魚被撈走</td><td class="wrap">20%（小偷要有空魚缸才撈得走）</td></tr>
-      <tr><td><strong>偷失敗的下場</strong></td><td class="wrap">被抓 → <strong>罰 500 星幣，全額賠給對方</strong>（罰款可把你的星幣扣成負數，賴不掉）</td></tr>
+      <tr><td><strong>偷失敗的下場</strong></td><td class="wrap">被抓 → <strong>罰 1,000 星幣，全額賠給對方</strong>（罰款可把你的星幣扣成負數，賴不掉）</td></tr>
       <tr><td>通知</td><td class="wrap">公告發在小偷打指令的頻道，被偷的人另外收到私訊</td></tr>
     </tbody>
   </table></div>
   <div class="note warn">
     <span class="h">偷魚有風險，不是穩賺</span>
-    偷魚<strong>失敗（50%）會被當場抓到、罰 500 星幣賠給對方</strong>——偷不到還倒貼。想偷之前先算算划不划算。
+    偷魚<strong>失敗（50%）會被當場抓到、罰 1,000 星幣賠給對方</strong>——偷不到還倒貼。想偷之前先算算划不划算。
   </div>
   <div class="note warn">
     <span class="h">魚被撈走＝那格的星幣也沒了</span>
@@ -505,7 +525,7 @@
 
 <section id="stock">
   <h2><span class="num">10</span>股市</h2>
-  <p class="sub">📈 用星幣買賣股票賺價差。價格每小時自己跳動，也會被財經新聞影響——高風險高報酬。</p>
+  <p class="sub">📈 用星幣買賣股票賺價差。價格每小時自己跳動，也會被<strong>世界動態</strong>影響——高風險高報酬。</p>
 
   <div class="note warn">
     <span class="h">會賠錢，別All in</span>
@@ -517,7 +537,8 @@
     <li><strong>看行情。</strong><code>/股市</code> 看所有股票現價與走勢，<code>/個股 代號</code> 看單支的 K 線和你的損益。</li>
     <li><strong>買進。</strong><code>/買股 代號 股數</code>，用星幣買（收 1.5% 交易稅）。</li>
     <li><strong>賣出。</strong><code>/賣股 代號 股數</code>（或填「全部」）換回星幣（收 1.5% 交易稅）。</li>
-    <li><strong>看排行。</strong><code>/持股</code> 看自己的股票，<code>/股神榜</code> 比誰賺最多。</li>
+    <li><strong>看損益。</strong><code>/持股</code> 看自己的股票與損益。<br>
+      <span class="sub">⚠️ <code>/股神榜</code> 已改為<strong>管理端專用</strong>，一般玩家看不到別人的持股與損益。</span></li>
   </ol>
 
   <h3>掛牌股票（20+ 檔，皆以劇情角色／場景命名）</h3>
@@ -540,7 +561,8 @@
     <li>有 <strong>交易冷卻</strong>（約 5 秒）。</li>
     <li><strong>可以當沖</strong>：當天買進的股票，當天就能賣出。</li>
     <li>每人<strong>所有股票加總最多持有 500 股</strong>，超過會先警告，逾期由系統代為減碼。</li>
-    <li>📰 <strong>財經新聞會影響股價</strong>（也會影響 <code>/賣出</code> 的物價）——留意工程師發的快報，利多搶進、利空快跑。快報是<strong>整點生效</strong>的，寫幾小時就影響幾小時。</li>
+    <li>📰 <strong>世界動態會影響股價</strong>（也會影響 <code>/賣出</code> 的物價）——用 <code>/世界動態</code> 查看，利多搶進、利空快跑。有效果的動態是<strong>整點生效</strong>的，寫幾小時就影響幾小時。<br>
+      <span class="sub">「世界動態」是原本的財經新聞擴充來的，現在官方公告、城市大小事、NPC 與角色動向、活動與世界觀都走同一條時間軸。<strong>不是每則都有遊戲效果</strong>，很多純粹是故事。</span></li>
     <li>💸 <strong>有些快報會發錢</strong>：紓困、年終、慶祝這類的快報生效當下，<strong>全服每個人各拿一筆星幣</strong>直接入帳，公告的「影響」欄會寫清楚每人多少、共發給幾個人。</li>
     <li>💀 <strong>股價可能跌破零變成負數</strong>（工程師把該股的價格下限設成 0 或負值時）。跌到 0 以下的股票<strong>禁止買進</strong>；手上還有的可以用 <code>/賣股</code> 出清，但<strong>賣出會從錢包倒扣</strong>——賣 10 股 ×（−500）就是<strong>倒扣 5,000 星幣</strong>，餘額會變成負數（負股價賣出不另收交易稅）。抱著負股價的股票就是背著債，出場前先看清楚現價。</li>
   </ul>
@@ -556,36 +578,53 @@
     （負數餘額只會來自其他情況，例如賣出負股價的股票、被看門動物罰款。）
   </div>
 
-  <h3>三種稅</h3>
+  <h3>四種稅（各自獨立計算）</h3>
   <div class="scroll"><table>
     <thead><tr><th>稅目</th><th class="wrap">課什麼</th><th class="wrap">預設稅額</th></tr></thead>
     <tbody>
-      <tr><td>💰 所得稅</td><td class="wrap">你目前的<strong>星幣餘額</strong></td><td class="wrap">免稅額（5 萬）以上<strong>累進課稅</strong>（只課超過的部分），3%～23%，見下表</td></tr>
-      <tr><td>📈 證券稅</td><td class="wrap">你的<strong>持股市值</strong></td><td class="wrap"><strong>目前停收</strong>（抱著股票不再被課持股稅；買賣時只收 1.5% 交易稅）</td></tr>
-      <tr><td>🌾 農地稅</td><td class="wrap">正在<strong>種著作物</strong>的格數（空地不課）</td><td class="wrap">農地／溫室各以格計價，前幾格免稅</td></tr>
-      <tr><td>🐄 養殖稅</td><td class="wrap">牧場動物數 ＋ 魚缸的魚數</td><td class="wrap">動物／魚各以隻計價，前幾隻免稅</td></tr>
+      <tr><td>💰 所得稅</td><td class="wrap">這一期<strong>實際賺到的錢</strong>——賣東西、任務、簽到等真正的收入，再加上股票<strong>賣掉之後</strong>的淨損益（含手續費）</td><td class="wrap">免稅額（10 萬）以上<strong>累進課稅</strong>（只課超過的部分），1%～20%，見下表</td></tr>
+      <tr><td>💞 同居稅</td><td class="wrap">你的<strong>同居角色數量</strong></td><td class="wrap"><strong>倍增累進</strong>：第 1 位 5,000，第 2 位 ×2、第 3 位 ×4…</td></tr>
+      <tr><td>🐾 寵物稅</td><td class="wrap">你的<strong>寵物數量</strong></td><td class="wrap"><strong>倍增累進</strong>：第 1 隻 3,000，第 2 隻 ×2、第 3 隻 ×4…</td></tr>
+      <tr><td>🏠 房屋稅</td><td class="wrap">你的<strong>房屋等級</strong></td><td class="wrap">基礎 900，等級越高越重（指數成長）</td></tr>
     </tbody>
   </table></div>
 
+  <div class="note">
+    <span class="h">2026-09 改版：不再對「你有多少錢」課稅</span>
+    舊制是看<strong>錢包餘額</strong>課稅，沒賺錢也會被慢慢刮掉；農地稅、養殖稅、證券稅、消費稅
+    這些<strong>依資產課稅</strong>的項目已<strong>整套移除</strong>。現在只課<strong>這一期實際賺到的</strong>。<br>
+    <strong>不算收入的項目</strong>：轉帳、銀行存提款、信貸本金與還款、各種退款、交易返還、
+    股票<strong>還沒賣掉</strong>的漲跌——這些都只是錢換位置，不是賺到。
+  </div>
+
   <h3>所得稅是「累進課稅」（只課超過的部分）</h3>
-  <p>採<strong>累進級距</strong>：<strong>不是整筆課</strong>，而是每一段各用自己的稅率——跨過門檻，<strong>只有超過的那一段</strong>才適用更高的稅率。所以<strong>不會「多賺一塊整筆爆增」</strong>，越有錢的部分才課越重，中低玩家幾乎沒感覺。</p>
-  <p>免稅額 <strong>5 萬</strong>，超過的部分分段課，最高 23%：</p>
+  <p>採<strong>累進級距</strong>：<strong>不是整筆課</strong>，而是每一段各用自己的稅率——跨過門檻，<strong>只有超過的那一段</strong>才適用更高的稅率。所以<strong>不會「多賺一塊整筆爆增」</strong>，賺越多的那部分才課越重，中低玩家幾乎沒感覺。</p>
+  <p>免稅額 <strong>10 萬</strong>，超過的部分分段課，最高 20%：</p>
   <div class="scroll"><table>
-    <thead><tr><th class="wrap">這一段餘額</th><th class="num">稅率</th></tr></thead>
+    <thead><tr><th class="wrap">這一段收入</th><th class="num">稅率</th></tr></thead>
     <tbody>
-      <tr><td class="wrap">5 萬以下（免稅額）</td><td class="num">0%</td></tr>
-      <tr><td class="wrap">5 萬 ～ 6 萬</td><td class="num">3%</td></tr>
-      <tr><td class="wrap">6 萬 ～ 15 萬</td><td class="num">6%</td></tr>
-      <tr><td class="wrap">15 萬 ～ 50 萬</td><td class="num">10%</td></tr>
-      <tr><td class="wrap">50 萬 ～ 200 萬</td><td class="num">14%</td></tr>
-      <tr><td class="wrap">200 萬 ～ 1000 萬</td><td class="num">18%</td></tr>
-      <tr><td class="wrap">1000 萬以上</td><td class="num">23%</td></tr>
+      <tr><td class="wrap">10 萬以下（免稅額）</td><td class="num">0%</td></tr>
+      <tr><td class="wrap">10 萬 ～ 20 萬</td><td class="num">1%</td></tr>
+      <tr><td class="wrap">20 萬 ～ 40 萬</td><td class="num">2%</td></tr>
+      <tr><td class="wrap">40 萬 ～ 70 萬</td><td class="num">3%</td></tr>
+      <tr><td class="wrap">70 萬 ～ 100 萬</td><td class="num">5%</td></tr>
+      <tr><td class="wrap">100 萬 ～ 200 萬</td><td class="num">7%</td></tr>
+      <tr><td class="wrap">200 萬 ～ 400 萬</td><td class="num">10%</td></tr>
+      <tr><td class="wrap">400 萬 ～ 700 萬</td><td class="num">13%</td></tr>
+      <tr><td class="wrap">700 萬 ～ 1000 萬</td><td class="num">17%</td></tr>
+      <tr><td class="wrap">1000 萬以上</td><td class="num">20%</td></tr>
     </tbody>
   </table></div>
   <div class="note">
     <span class="h">怎麼算的（舉例）</span>
-    餘額 <strong>10 萬</strong>：5～6 萬那段 1 萬 ×3%＝300，加 6～10 萬那段 4 萬 ×6%＝2,400，<strong>合計 2,700</strong>（有效稅率才 2.7%）。<br>
-    餘額 <strong>100 萬</strong>：分段加起來約 <strong>11 萬</strong>（11%）。越往上、超過的部分才課越重。
+    這期賺了 <strong>30 萬</strong>：10～20 萬那段 10 萬 ×1%＝1,000，加 20～30 萬那段 10 萬 ×2%＝2,000，<strong>合計 3,000</strong>（有效稅率才 1%）。<br>
+    這期賺了 <strong>300 萬</strong>：分段加起來約 <strong>15 萬</strong>（5%）。越往上、超過的那一段才課越重。
+  </div>
+  <div class="note">
+    <span class="h">同居稅與寵物稅是「倍增累進」</span>
+    每多一位／一隻，該位的稅額<strong>乘 2</strong>。同居 3 位＝5,000＋10,000＋20,000＝<strong>35,000</strong>；
+    寵物 3 隻＝3,000＋6,000＋12,000＝<strong>21,000</strong>。<br>
+    同居與寵物<strong>沒有數量上限</strong>，但養越多稅金增加得非常快，請自行拿捏。
   </div>
   <p class="sub">級距與免稅額工程師可能會調整，實際以 <code>/稅單</code> 或冒險面板的 🧾稅務 顯示為準。</p>
 
@@ -604,7 +643,6 @@
     <li><strong>預設每週一 09:00</strong> 結算一次（台灣時間），結算後會在公告頻道公布總稅收與納稅大戶，並私訊你自己的稅單。</li>
     <li><strong>錢不夠不會變負債</strong>：這期最多只課到餘額歸零，<strong>沒繳完的會延到下一次結算補收</strong>（累積起來直到繳清；也可用 <code>/稅單</code> 或面板 🧾稅務 的「💸補繳欠稅」按鈕隨時自己補）。（若餘額因為其他原因變成負數，<strong>不能使用神秘商店</strong>，而且系統會自動<strong>變賣你的股票</strong>抵債——只賣股票，農場、魚缸、背包都不會被收。）</li>
     <li>稅額太小就免徵，新手基本上課不到。</li>
-    <li><strong>農地稅只算種著的格子</strong>：成熟了放著不採收＝一直被課稅，收成完的空地不用繳。</li>
     <li>用 <code>/稅單</code>，或冒險面板的 <strong>🧾稅務</strong> 按鈕，隨時查本期預估要繳多少、上期實際繳了多少、上期領了多少普發，以及下次什麼時候結算。</li>
   </ul>
 
@@ -649,44 +687,44 @@
 </section>
 
 <section id="loan">
-  <h2><span class="num">13</span>物資貸款</h2>
-  <p class="sub">🏦 沒錢又急用？拿<strong>工具、農地作物、魚缸的魚</strong>當抵押品借星幣，還得出來就原封不動還你。</p>
+  <h2><span class="num">13</span>銀行</h2>
+  <p class="sub">🏦 銀行只做兩件事：<strong>存款</strong>（把錢放著保管、生一點點利息）與<strong>信用貸款</strong>（免抵押借錢）。</p>
 
-  <h3>怎麼借</h3>
-  <ol class="steps">
-    <li><strong>先查額度。</strong><code>/貸款</code>（不填金額）或面板 <strong>🏦物資貸款</strong>，看你目前最多能借多少。</li>
-    <li><strong>借錢。</strong><code>/貸款 金額</code>，系統會自動挑抵押品——同一類裡面<strong>便宜的先押</strong>，盡量不動到你最貴的東西。</li>
-    <li><strong>還錢。</strong><code>/還款</code>（不填金額＝全部還清）。<strong>全部還清才會贖回抵押品</strong>，部分還款只是減少債務。</li>
-  </ol>
+  <div class="note warn">
+    <span class="h">物資貸款已於 2026-09 停辦</span>
+    以前那套「拿工具／作物／魚當抵押品借錢」<strong>已經整套下架</strong>，不能再借。<br>
+    <strong>已經借出去的舊貸款照常可以 <code>/還款</code></strong>，還清一樣會把抵押品原封不動還你——
+    所以還有抵押品卡著的人請盡快還清贖回。現在所有借貸統一走<strong>信用貸款</strong>。
+  </div>
 
-  <h3>規則</h3>
+  <h3>🏦 存款</h3>
+  <p>錢包與銀行之間可以自由存提，存著會按日生利息。用 <code>/銀行</code> 開啟操作面板。</p>
   <ul>
-    <li>⚠️ <strong>目前只有「餘額是負數（欠稅／負債）」的人可以貸款</strong>——這是給還不出錢的人的救急管道，有正餘額的人請直接花自己的錢。</li>
-    <li><strong>可借金額 ＝ 抵押品估值 × 70%</strong>。估值：工具照售價 ×剩餘耐久比例、作物照收成物的即時賣價、魚照回收半價＋缸裡沒領的星幣。</li>
-    <li><strong>只能抵押這三種</strong>：🔨工具、🌾農地／溫室正在種的作物、🐠魚缸的魚。牧場動物、背包物品、股票<strong>不收</strong>。</li>
-    <li><strong>抵押品由系統代管</strong>，借款期間你用不到：工具押走了<strong>就不能採集</strong>（徒手不能採）、作物<strong>收不到成</strong>、魚<strong>不產星幣</strong>。這就是借錢的代價。</li>
-    <li><strong>期限 7 天、利息 5%</strong>（借出時就算進應還金額）。借 10,000 就要還 10,500。</li>
-    <li><strong>到期沒還 → 沒收抵押品</strong>，同時債務一併結清（不會繼續欠）。到期前會看得到倒數，別忘記。</li>
-    <li>同時最多 <strong>1 筆</strong>未還清的貸款，還清才能再借。</li>
-    <li>還清時如果原本的格子已經被別的東西佔走，那份抵押品會<strong>照估值折現</strong>還你星幣。</li>
-    <li>借來的錢<strong>不算收入</strong>，不會因此被多課所得稅。</li>
+    <li><strong>存提款不算收入</strong>，純粹是錢換位置，<strong>不會因此被課所得稅</strong>。</li>
+    <li><strong>沒有存款上限</strong>，想存多少都可以，隨時可以領回。</li>
+    <li>⚠️ <strong>利率非常低</strong>（年利率預設 0.0001%）。這是刻意的——存款的定位是<strong>保管</strong>而不是投資，
+      真的想賺錢請去股市或做生意。</li>
+    <li>因為利率低，每天的利息常常連 1 星幣都不到，所以<strong>零頭會先累積著，滿 1 星幣才入帳</strong>，不會被無條件捨去吃掉。</li>
   </ul>
 
   <h3>🪪 信用貸款（免抵押）</h3>
-  <p>不想押東西、或急用小額，可以走<strong>信用貸款</strong>：<code>/信用貸款 金額</code>，<strong>不用任何抵押品</strong>直接借。</p>
+  <p>急用錢就走信用貸款：<code>/信用貸款 金額</code>，<strong>不用任何抵押品</strong>直接借。</p>
   <ul>
-    <li>單筆最多 <strong>50,000</strong>，利息 <strong>10%</strong>（比物資貸款高，因為沒抵押），期限 <strong>7 天</strong>。</li>
-    <li>同時最多 <strong>1 筆</strong>未還清的信用貸款；跟物資貸款分開算（可以各借一筆）。</li>
+    <li>單筆最多 <strong>50,000</strong>，利息 <strong>15%</strong>，期限 <strong>7 天</strong>。借 10,000 就要還 11,500。</li>
+    <li>利息比舊制的物資貸款高，是因為<strong>沒有抵押品兜底</strong>，風險改由利息承擔。</li>
+    <li>同時最多 <strong>1 筆</strong>未還清的信用貸款，還清才能再借。</li>
     <li>⚠️ <strong>到期沒還 → 直接從你的餘額扣掉應還金額</strong>（餘額可能因此變負數）。沒有抵押品、<strong>賴不掉</strong>，只能靠賺回來還。</li>
-    <li>⚠️ <strong>餘額是負數（欠著錢）就不能再辦信用貸款</strong>——要先把餘額賺回正數。這是防止「不還又一直借、越借越深」，所以你的信用曝險最多就是單筆上限。</li>
-    <li>還款一樣用 <code>/還款</code>。</li>
+    <li>⚠️ <strong>餘額是負數（欠著錢）就不能再辦</strong>——要先把餘額賺回正數。這是防止「不還又一直借、越借越深」，所以你的信用曝險最多就是單筆上限。</li>
+    <li>借來的錢<strong>不算收入</strong>，本金與還款都不會被課所得稅。</li>
+    <li>還款用 <code>/還款</code>（不填金額＝全部還清）。</li>
   </ul>
 
   <div class="note warn">
     <span class="h">先算清楚再借</span>
-    物資貸款抵押率 70% ＋ 利息 5%：估值 10,000 的物資只借到 7,000，違約等於用 7,000 賣掉 10,000 的東西。信用貸款免抵押但利息 10%、到期直接扣款。<strong>借了就一定要還</strong>，不然是虧的。
+    利息 15%、到期直接從餘額扣款。<strong>借了就一定要還</strong>，而且欠著錢的期間不能再借、
+    也不能使用神秘商店。急用再借，別把它當收入來源。
   </div>
-  <p class="sub">抵押率、期限、利息、可抵押的種類都可由工程師調整；貸款功能也可能整個關閉，實際以 <code>/貸款</code> 顯示為準。</p>
+  <p class="sub">額度、期限、利息與存款利率都可由工程師調整，實際以 <code>/銀行</code>、<code>/信用貸款</code> 顯示為準。</p>
 </section>
 
 <section id="home">
@@ -715,7 +753,9 @@
       <tr><td>Lv.15</td><td>✨ 永恆星域</td><td class="wrap"><strong>房屋最高加成解鎖</strong>、家具上限 +15</td><td class="num">100</td><td class="num">3</td></tr>
     </tbody>
   </table></div>
-  <p class="note"><span class="h">滿級總上限</span>🐾 寵物 3 隻｜❤️ 角色同居 3 位｜🪑 家具 100 件｜🍳 廚房已開啟</p>
+  <p class="note"><span class="h">滿級</span>🪑 家具 100 件｜🍳 廚房已開啟。<br>
+    🐾 寵物與 ❤️ 角色同居<strong>已於 2026-09 取消數量上限</strong>——房屋等級只決定你「能不能開始養／能不能邀請」，
+    開了之後<strong>要養幾隻、住幾位都不限</strong>。改由<strong>寵物稅／同居稅的倍增累進</strong>節制（見稅務章節），養越多稅漲得越兇。</p>
   <div class="note warn">
     <span class="h">材料不夠也可以用錢硬升</span>
     缺的材料會按<strong>市價的 500 倍</strong>折現，按「💸 用金幣硬升」就能跳過採集。
@@ -752,11 +792,21 @@
   <h2><span class="num">15</span>角色：逛街、送禮、同居</h2>
   <p class="sub">這個伺服器有兩百多位角色，全部從 <code>/好感度</code> 面板進去。</p>
 
-  <h3>🛍️ 逛街（隨機遇到角色）</h3>
-  <p>花 <strong>1 點體力</strong>出門，<strong>隨機</strong>遇到一位角色——遇到誰不能挑，這就是逛街的意義。角色會講自己的台詞，好感度自動 +3。</p>
+  <h3>🛍️ 逛街（隨機事件）</h3>
+  <p>花 <strong>1 點體力</strong>出門，會遇到<strong>各式各樣的隨機事件</strong>——撿到東西、遇到路人、發生小插曲，偶爾才會遇到角色。</p>
+  <ul>
+    <li><strong>遇到角色的機率預設只有 25%</strong>（工程師可調）。2026-09 改版把逛街改成隨機事件制後，<strong>遇到角色的機率已大幅降低</strong>——想刷好感度請改用 <code>/送禮</code>，逛街不再是穩定的好感度來源。</li>
+    <li>遇到角色時<strong>遇到誰不能挑</strong>，每位角色機率一樣。角色會講自己的台詞，好感度自動 <strong>+3</strong>。</li>
+    <li>其餘的事件可能給你物品或星幣，也可能只是一段故事。</li>
+  </ul>
 
   <h3>🎁 送禮</h3>
   <p>面板點「🎁 送禮」→ 選角色 → 選禮物。<strong>只有禮物與料理能送</strong>，礦石魚貨那些是材料，不能拿來送人。</p>
+  <div class="note warn">
+    <span class="h">角色禮物不能交易或變現</span>
+    禮物<strong>不能交易、不能轉贈</strong>——要送角色請自己到禮物商店買。
+    不需要的禮物只能用 <code>/賣出</code> <strong>低價賣回系統</strong>清掉（回收價很低，只是清倉用）。
+  </div>
   <p class="note"><span class="h">相遇的角色很多也找得到</span>選角色的清單依<strong>好感度高低</strong>排序，一頁 100 位，超過就用下面的 <code>‹ 上一頁 / 下一頁 ›</code> 翻。想直接找還沒相遇過的角色，用 <code>/送禮 角色:名字</code> 打幾個字就會跳出候選。</p>
   <p>好感度 ＝ <strong>禮物的基礎好感 × 角色喜好倍率</strong>。</p>
   <div class="scroll"><table>
@@ -867,7 +917,8 @@
   <h3>🔄 交易（以物換物）</h3>
   <p><code>/交易</code> 跟其他玩家換東西，提案與成交都會公開在頻道，對方按按鈕接受才會成立。<strong>只能換物品、不能轉星幣</strong>——星幣轉帳目前是關閉的，避免小號刷幣和「先轉我 500 我給你 SSR」這類詐騙。</p>
   <p>物品幾乎都能換，<strong>只有「種子」不能交易</strong>（種子只能自己種、去 <code>/種子商店</code> 買，不列在交易選單裡）。<strong>蛋可以交易</strong>。物品太多時交易選單會分成好幾個下拉（第 1-25 種、26-50 種…），往下找即可；或直接打 <code>/交易</code> 用打字搜尋。</p>
-  <p>⚠️ <strong>成交時買賣雙方各收 100 星幣交易手續費</strong>（直接銷毀，跟所得稅無關）。餘額不足 100 的一方無法成交。提案時就會標明。</p>
+  <p>⚠️ <strong>成交時買賣雙方各收 200 星幣交易手續費</strong>（直接銷毀，跟所得稅無關）。餘額不足 200 的一方無法成交，提案時就會標明。</p>
+  <p class="note"><span class="h">會再確認一次</span>對方按下「接受」後還有一次<strong>最終確認</strong>：付出什麼、拿到什麼、數量與手續費全部攤開，<strong>再按一次才真的換手</strong>。看清楚再按。</p>
 
   <h3>📖 圖鑑</h3>
   <p><code>/圖鑑</code> 看自己收錄了哪些東西。每種掉落物第一次拿到時會標記「🆕 圖鑑新收錄」，全部湊齊是隱藏成就。</p>
@@ -899,12 +950,12 @@
       <tr><td><code>/個股 代號</code></td><td class="wrap">看單支股票 K 線與你的損益</td></tr>
       <tr><td><code>/買股 代號 股數</code></td><td class="wrap">用星幣買股（收 1.5% 交易稅）</td></tr>
       <tr><td><code>/賣股 代號 股數</code></td><td class="wrap">賣股換回星幣，可填「全部」</td></tr>
-      <tr><td><code>/稅單</code></td><td class="wrap">查本期要繳的稅（所得稅／農地稅／養殖稅）與上期實繳</td></tr>
+      <tr><td><code>/稅單</code></td><td class="wrap">查本期要繳的稅（所得稅／同居稅／寵物稅／房屋稅）與上期實繳</td></tr>
       <tr><td><code>/捐款 金額</code></td><td class="wrap">捐進慈善基金會（10% 折抵稅金，帳目公開）</td></tr>
       <tr><td><code>/基金會</code></td><td class="wrap">看基金會餘額、捐款榜與抵稅比例</td></tr>
-      <tr><td><code>/貸款 金額</code></td><td class="wrap">抵押工具／作物／魚借星幣（不填金額＝查額度）</td></tr>
-      <tr><td><code>/還款 金額</code></td><td class="wrap">還貸款（不填＝全部還清並贖回抵押品）</td></tr>
-      <tr><td><code>/持股</code> · <code>/股神榜</code></td><td class="wrap">看自己的持股／看誰賺最多</td></tr>
+      <tr><td><code>/銀行</code></td><td class="wrap">存款面板：存入／提領／查利息</td></tr>
+      <tr><td><code>/還款 金額</code></td><td class="wrap">還貸款（不填＝全部還清；舊的物資貸款還清會一併贖回抵押品）</td></tr>
+      <tr><td><code>/持股</code></td><td class="wrap">看自己的持股與損益（<code>/股神榜</code> 已改管理端專用）</td></tr>
       <tr><td><code>/修理 道具</code></td><td class="wrap">修好耐久歸零的工具</td></tr>
       <tr><td><code>/製作 配方 次數</code></td><td class="wrap">一次做多份（面板選單固定做 1 次）</td></tr>
       <tr><td><code>/圖鑑</code></td><td class="wrap">看自己收錄了哪些東西</td></tr>
@@ -913,7 +964,6 @@
       <tr><td><code>/牧場 玩家</code></td><td class="wrap">看別人的牧場（踩點用）</td></tr>
       <tr><td><code>/放生 格子</code></td><td class="wrap">賣掉動物（回收一半星幣＋產物進背包）；牧場也有「💰賣掉動物」選單</td></tr>
       <tr><td><code>/錢包</code></td><td class="wrap">查自己的星幣餘額與累積收入</td></tr>
-      <tr><td><code>/富豪榜</code></td><td class="wrap">全伺服器星幣排行</td></tr>
       <tr><td><code>/轉帳 對象 金額</code></td><td class="wrap">把星幣轉給其他玩家（目前未開放，需工程師開啟）</td></tr>
       <tr><td><code>/種植 種子</code></td><td class="wrap">直接打種子名種下（不用開商店選單）</td></tr>
       <tr><td><code>/飼養 動物</code></td><td class="wrap">直接打動物名購買（不用開商店選單）</td></tr>
