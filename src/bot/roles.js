@@ -53,6 +53,36 @@ function ownsCommand(name, role = botRole()) {
   return GAME_COMMANDS.has(name) === (role === 'butler');
 }
 
+// ---- 管家專用的元件 ID 前綴 ----
+// 拆成兩隻之前，遊戲面板是「舊的那一隻」（＝現在的秘書）發出去的，那些訊息會
+// 一直留在頻道裡。玩家按下去時，互動送到秘書這個應用程式，但秘書根本沒載入
+// 遊戲模組 —— 沒有任何 handler 回應，玩家只看到「應用程式沒有回應」，
+// 而且要等 3 秒才失敗，比直接說清楚更難受。
+//
+// 這份清單是從 BUTLER_FEATURES 各模組的 setCustomId／startsWith 掃出來的，
+// 與秘書自己的前綴完全沒有重疊，所以拿來判斷「這顆按鈕是管家的」很安全。
+const BUTLER_COMPONENT_PREFIXES = new Set([
+  "achall", "achback", "adv", "amount", "aqbuyone", "aqbuyqty", "aqdeposit", "aqsell",
+  "aucbid", "aucbuy", "aucmodal", "bagall", "bagmove", "bagset", "bank", "chr",
+  "contestme", "craftcat", "craftpick", "dexcat", "facbuy", "furnbuy", "furncash", "furncat",
+  "furnplace", "furnqty", "furnsell", "furnstore", "gathermap", "giftnoop", "giftpage", "giftpanel",
+  "giftpick", "giftqty", "giftwho", "hatchput", "hatchqty", "hatchsell", "hatchsellall", "homebuy",
+  "homebuyok", "homecard", "homecheck", "homenav", "homeup", "kbuild", "kbuy", "kbuyok",
+  "kcollect", "keat", "kgift", "ksell", "kup", "led", "loan", "pan",
+  "partnerin", "partnermoveout", "partnerout", "partnerpanel", "partnerwork", "petfeed", "petfood", "plantpick",
+  "plantqty", "ranchbuyone", "ranchbuyqty", "ranchsell", "repairpick", "seedbuy", "seedqty", "sellall",
+  "sellone", "sellpick", "sellqty", "sellqtypick", "shopgiftqty", "sqty", "sredeem", "stk",
+  "strollgo", "strollpanel", "tax", "taxrules", "tg", "tgq", "trade", "tradeuser",
+  "tw", "twq", "workarea", "workpick", "world"
+]);
+
+// 這個元件是不是管家的（用 ':' 前那一段比對，沒有 ':' 就整串比）
+function isButlerComponent(customId) {
+  const id = String(customId || '');
+  if (!id) return false;
+  return BUTLER_COMPONENT_PREFIXES.has(id.split(':')[0]);
+}
+
 module.exports = { botRole, roleLabel, featuresFor, commandsFor, ownsCommand, SECRETARY_FEATURES, BUTLER_FEATURES };
 
 // ---- 指令 → 功能鍵對照（訂閱付費牆用）----
@@ -92,3 +122,5 @@ function commandFeature(name) { return COMMAND_FEATURE[name] || null; }
 
 module.exports.COMMAND_FEATURE = COMMAND_FEATURE;
 module.exports.commandFeature = commandFeature;
+module.exports.isButlerComponent = isButlerComponent;
+module.exports.BUTLER_COMPONENT_PREFIXES = BUTLER_COMPONENT_PREFIXES;

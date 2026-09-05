@@ -2,7 +2,7 @@ const { Client, GatewayIntentBits, Partials, MessageFlags } = require('discord.j
 const path = require('path');
 const fs = require('fs');
 const { getSetting, ensureGuild, db } = require('../db');
-const { botRole, roleLabel, featuresFor, commandsFor, commandFeature } = require('./roles');
+const { botRole, roleLabel, featuresFor, commandsFor, commandFeature, isButlerComponent } = require('./roles');
 const { hasFeature, lockedMessage } = require('../subscription');
 const { absUrl } = require('../util/url');
 
@@ -258,6 +258,29 @@ setInterval(() => {
     } catch {}
   }
 }, LAG_TICK).unref?.();
+
+// ---- 舊面板轉接（拆成兩隻之後的遺留問題）----
+// 拆分之前，遊戲面板是「舊的那一隻」發的 —— 那隻現在是秘書。那些訊息還留在
+// 頻道裡，按鈕帶著 pan:／adv:／plantpick: 這類管家的元件 ID。玩家按下去時
+// 互動送到秘書，但秘書沒載入遊戲模組，於是沒有任何 handler 回應，玩家要等
+// 3 秒才看到「應用程式沒有回應」，而且完全不知道該怎麼辦。
+//
+// 這裡直接把這種互動接下來，明確告訴玩家舊面板已經換手、改用哪個指令。
+// 只在秘書身上生效：管家本人當然要正常處理自己的按鈕。
+client.on('interactionCreate', async (i) => {
+  if (botRole() !== 'secretary') return;
+  if (!i.isButton() && !i.isStringSelectMenu()) return;
+  if (!isButlerComponent(i.customId)) return;
+  try {
+    await i.reply({
+      content: '🔄 **這個面板是舊版的，已經不能用了。**\n\n'
+        + '冒險遊戲已經交給 **璃白Yu光管家** 負責，這則訊息是舊機器人發的，按鈕接不到新的系統。\n'
+        + '請改輸入 `/冒險面板` 重新開一個（面板是私人的，只有你看得到）。\n\n'
+        + '－ 如果找不到指令，代表管家還沒被邀請進這個伺服器，請告訴管理員。',
+      flags: MessageFlags.Ephemeral
+    });
+  } catch { /* 互動可能已逾時，略過 */ }
+});
 
 // ---- 互動看門狗：3 秒內沒有任何模組回應就記一筆，避免玩家只看到「應用程式沒有回應」卻查不到原因 ----
 client.on('interactionCreate', (i) => {
