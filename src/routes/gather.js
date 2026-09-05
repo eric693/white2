@@ -28,7 +28,8 @@ router.put('/gather', (req, res) => {
        currency_emoji=@currency_emoji, fish_cooldown=@fish_cooldown, mine_cooldown=@mine_cooldown,
        daily_limit=@daily_limit, daily_points=@daily_points, start_coins=@start_coins, announce_rare=@announce_rare,
        other_cooldown=@other_cooldown, require_tool=@require_tool, transfer_enabled=@transfer_enabled,
-       transfer_fee_pct=@transfer_fee_pct, transfer_min=@transfer_min, transfer_daily_max=@transfer_daily_max
+       transfer_fee_pct=@transfer_fee_pct, transfer_min=@transfer_min, transfer_daily_max=@transfer_daily_max,
+       craft_fee_pct=@craft_fee_pct, craft_fail_extra=@craft_fail_extra
      WHERE guild_id=@guild_id`
   ).run({
     enabled: b.enabled ? 1 : 0,
@@ -45,6 +46,8 @@ router.put('/gather', (req, res) => {
     transfer_daily_max: int(b.transfer_daily_max, 5000),
     daily_limit: int(b.daily_limit, 0),
     daily_points: int(b.daily_points, 0),
+    craft_fee_pct: Math.max(0, Math.min(100, int(b.craft_fee_pct, 0))),
+    craft_fail_extra: Math.max(0, Math.min(90, int(b.craft_fail_extra, 0))),
     start_coins: int(b.start_coins, 0),
     // 空字串＝不廣播；其餘只接受合法稀有度，避免寫進奇怪的值讓機器人比對不到
     announce_rare: RARITY.includes(b.announce_rare) ? b.announce_rare : '',

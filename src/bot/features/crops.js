@@ -9,6 +9,8 @@ const { wallet, addToBag, logCoins, menuResult, safeMenu } = require('./gather')
 const { facilitySlots, facilityBonus, applySpeed, speedFor } = require('./facility');
 
 const ccfg = (gid) => guildConfig('crop_config', gid);
+// 枯死率（種下去不一定活得到收成）與牧場的腐壞率一樣，都是 2026-09 加的經濟調節閥
+require('../../db').ensureColumns('crop_config', { wither_pct: 'INTEGER NOT NULL DEFAULT 0' });
 const gcfg = (gid) => guildConfig('gather_config', gid);
 const csv = (s) => String(s || '').split(/[\n,]/).map(x => x.trim()).filter(Boolean);
 const money = (c, n) => `${c.currency_emoji || '🪙'} ${Number(n).toLocaleString('en-US')} ${c.currency_name || '星幣'}`;
@@ -182,11 +184,20 @@ function reap(gid, uid) {
   const now = Date.now();
   const ripe = db.prepare('SELECT * FROM crop_plots WHERE guild_id=? AND user_id=? AND ready_at<=?').all(gid, uid, now);
   if (!ripe.length) return { empty: true };
+  // 枯死率：種下去不一定活得到收成（後台 wither_pct，0＝一定活）。
+  // 農業本來就有風險，全數保收的話種田是零風險印鈔。
+  const witherPct = Math.max(0, Math.min(90, ccfg(gid).wither_pct || 0));
   const gained = new Map();
+  const withered = [];
   db.transaction(() => {
     for (const r of ripe) {
       const seed = seedById(gid, r.seed_id);
       if (!seed) { db.prepare('DELETE FROM crop_plots WHERE guild_id=? AND user_id=? AND plot_type=? AND slot=?').run(gid, uid, r.plot_type, r.slot); continue; }
+      if (witherPct > 0 && Math.random() * 100 < witherPct) {
+        withered.push(`${seed.emoji || ''}${seed.name}`);
+        db.prepare('DELETE FROM crop_plots WHERE guild_id=? AND user_id=? AND plot_type=? AND slot=?').run(gid, uid, r.plot_type, r.slot);
+        continue;
+      }
       const n = yieldCountFor(gid, uid, seed);
       addToBag(gid, uid, seed.product_item_id, n);
       gained.set(seed.product_item_id, (gained.get(seed.product_item_id) || 0) + n);
@@ -198,7 +209,13 @@ function reap(gid, uid) {
     const p = productOf(itemId); if (p) value += n * livePrice(gid, p);
     return `${p ? (p.emoji || '') + p.name : '產物'} ×${n}`;
   });
-  return { ok: true, lines, value };
+  if (withered.length) {
+    const cnt = new Map();
+    for (const w of withered) cnt.set(w, (cnt.get(w) || 0) + 1);
+    lines.push(...[...cnt.entries()].map(([nm, n]) => `🥀 ${nm} 枯死了 ×${n}（沒有收成）`));
+  }
+  if (!gained.size && withered.length) return { ok: true, lines, value: 0, allWithered: true };
+  return { ok: true, lines, value, withered: withered.length };
 }
 
 function init(client) {

@@ -32,6 +32,9 @@ App.page('ranch', {
           <div class="field"><label>初始牧場格數（其餘靠 /製作「蓋牧場」開；設 0＝一定要製作才有）</label><input name="max_slots" type="number" min="0" max="25" value="${c.max_slots ?? 0}"></div>
           <div class="field"><label>未收成最多累積幾天產量</label><input name="max_accrue_days" type="number" min="1" value="${c.max_accrue_days ?? 7}"></div>
         </div>
+        <div class="field"><label>產物腐壞率 %（0＝全部都好）</label>
+          <input name="spoil_pct" type="number" min="0" max="90" value="${c.spoil_pct || 0}">
+          <div class="hint">收成時「每一份」各自擲骰，壞掉的直接丟掉（例如 10 顆蛋中 1 顆壞）。用來壓「養越多越好賺」。</div></div>
         <div class="hint" style="margin-bottom:10px">動物每天各自生產，玩家用 <code>/收成</code> 收進背包後可用 <code>/賣出</code> 賣給 NPC。
           累積上限是為了避免有人放著不理無限囤積。</div>
         <hr style="border:none;border-top:1px solid var(--border);margin:18px 0">

@@ -1,5 +1,5 @@
 // ===== 稅金：所得稅／同居稅／寵物稅／房屋稅，四者獨立，定期自動結算 =====
-// 2026-09 改版：農地稅、養殖稅、證券稅、消費稅全部停徵（欄位保留給舊資料）。
+// 2026-09 改版：農地稅、養殖稅預設停徵，但開關打開就會照設定課（證券稅、消費稅則是整套移除）。
 App.page('tax', {
   help: {
     "intro": "四種稅各自獨立：所得稅看實際獲利、同居稅看角色數量、寵物稅看寵物隻數、房屋稅看房屋等級。",
@@ -102,19 +102,19 @@ App.page('tax', {
 
         <hr style="border:none;border-top:1px solid var(--border);margin:16px 0">
         <details>
-          <summary><b>🗄️ 農地稅／養殖稅（2026-09 已停徵）</b></summary>
+          <summary><b>🌾 農地稅／養殖稅（預設停徵，可重新開徵）</b></summary>
           <div class="hint" style="margin:8px 0">
-            這兩種都是「依既有資產課稅」——玩家沒賺到錢也要繳，錢包被慢慢刮掉，
-            與新制「只課實際獲利」直接衝突，所以已經停徵，設定值不再影響結算。
-            欄位保留只是為了讓舊資料看得懂；真的要開回來就把開關打開。
+            這兩種是「依既有資產課稅」——玩家沒賺到錢也要繳。2026-09 改版時<b>預設關閉</b>
+            （新制主打「只課實際獲利」），但開關打開就會照下面的金額課，適合用來壓制
+            「囤一大片農地／養一堆動物」的玩法。前 N 格免稅、設施等級越高加課越多。
           </div>
-          <div class="field">${H.toggle('land_enabled', c.land_enabled, '開徵農地稅（已停用）')}</div>
+          <div class="field">${H.toggle('land_enabled', c.land_enabled, '開徵農地稅')}</div>
           <div class="form-row">
             <div class="field"><label>每格農地</label><input name="land_field" type="number" min="0" value="${c.land_field ?? 50}"></div>
             <div class="field"><label>每格溫室</label><input name="land_greenhouse" type="number" min="0" value="${c.land_greenhouse ?? 120}"></div>
             <div class="field"><label>前幾格免稅</label><input name="land_free" type="number" min="0" value="${c.land_free ?? 2}"></div>
           </div>
-          <div class="field">${H.toggle('breed_enabled', c.breed_enabled, '開徵養殖稅（已停用）')}</div>
+          <div class="field">${H.toggle('breed_enabled', c.breed_enabled, '開徵養殖稅')}</div>
           <div class="form-row">
             <div class="field"><label>每隻牧場動物</label><input name="breed_animal" type="number" min="0" value="${c.breed_animal ?? 80}"></div>
             <div class="field"><label>每條 SSR 魚</label><input name="breed_fish" type="number" min="0" value="${c.breed_fish ?? 200}"></div>

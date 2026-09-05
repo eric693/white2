@@ -27,6 +27,9 @@ App.page('crops', {
           <div class="field"><label>初始農地格數</label><input name="field_slots" type="number" min="0" value="${c.field_slots ?? 0}"></div>
           <div class="field"><label>初始溫室格數</label><input name="greenhouse_slots" type="number" min="0" value="${c.greenhouse_slots ?? 0}"></div>
         </div>
+        <div class="field"><label>枯死率 %（0＝種下去一定活）</label>
+          <input name="wither_pct" type="number" min="0" max="90" value="${c.wither_pct || 0}">
+          <div class="hint">採收時每一格各自擲骰，中了就整格枯死、沒有收成（種子不會退）。用來壓「種田零風險印鈔」。</div></div>
         <div class="hint" style="margin-bottom:10px">玩家的總格數＝這裡的初始格 ＋ 用 <code>/製作</code> 做「農地」「溫室」開出來的格。設 0 就代表一定要製作才有格子。玩家 <code>/種植</code> 種下、<code>/農地</code> 看進度、<code>/採收</code> 收成賣出。</div>
         <button class="btn" id="savecfg">儲存設定</button>
       </div>

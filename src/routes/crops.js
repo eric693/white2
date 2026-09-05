@@ -15,11 +15,12 @@ router.put('/crops', (req, res) => {
   const b = req.body || {};
   guildConfig('crop_config', req.guildId);
   db.prepare(
-    `UPDATE crop_config SET enabled=@enabled, field_slots=@field_slots, greenhouse_slots=@greenhouse_slots WHERE guild_id=@guild_id`
+    `UPDATE crop_config SET enabled=@enabled, field_slots=@field_slots, greenhouse_slots=@greenhouse_slots, wither_pct=@wither_pct WHERE guild_id=@guild_id`
   ).run({
     enabled: b.enabled ? 1 : 0,
     field_slots: int(b.field_slots, 6, 1),
     greenhouse_slots: int(b.greenhouse_slots, 3, 1),
+    wither_pct: Math.max(0, Math.min(90, int(b.wither_pct, 0, 0))),
     guild_id: req.guildId
   });
   audit(req.user.name, '更新種植設定');

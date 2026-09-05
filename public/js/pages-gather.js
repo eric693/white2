@@ -93,6 +93,14 @@ App.page('gather', {
           <div class="field"><label>舊版每日上限（每種各自算，0＝不限）<br><span class="hint">只有「沒有點數制、也沒有地圖」時才生效</span></label><input name="daily_limit" type="number" min="0" value="${c.daily_limit || 0}"></div>
           <div class="field"><label>新玩家初始貨幣</label><input name="start_coins" type="number" min="0" value="${c.start_coins || 0}"></div>
         </div>
+        <div class="form-row">
+          <div class="field"><label>製作手續費 %（按材料市值抽，0＝不收）</label>
+            <input name="craft_fee_pct" type="number" min="0" max="100" value="${c.craft_fee_pct || 0}">
+            <div class="hint">每做一次收一次，直接銷毀（回收星幣）。例如材料市值 1,000、收 10% ＝ 每次多花 100。</div></div>
+          <div class="field"><label>額外失敗率 %（全部配方共用，0＝照配方自己的成功率）</label>
+            <input name="craft_fail_extra" type="number" min="0" max="90" value="${c.craft_fail_extra || 0}">
+            <div class="hint">直接扣在每個配方的成功率上（配方 90% ＋ 這裡 10 ＝ 實際 80%）。失敗一樣扣材料與費用。</div></div>
+        </div>
         <div class="field"><label>抽到這個稀有度以上時公開報喜</label>
           <select name="announce_rare">
             <option value="">不廣播</option>

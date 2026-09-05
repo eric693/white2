@@ -22,12 +22,14 @@ router.put('/ranch', (req, res) => {
     `UPDATE ranch_config SET enabled=@enabled, max_slots=@max_slots, max_accrue_days=@max_accrue_days,
        steal_enabled=@steal_enabled, steal_daily_limit=@steal_daily_limit,
        steal_success_pct=@steal_success_pct, steal_take_pct=@steal_take_pct, steal_fine=@steal_fine, hatch_slots=@hatch_slots,
-       steal_channel=@steal_channel, steal_animal_pct=@steal_animal_pct, steal_mode=@steal_mode, steal_guard=@steal_guard
+       steal_channel=@steal_channel, steal_animal_pct=@steal_animal_pct, steal_mode=@steal_mode, steal_guard=@steal_guard,
+       spoil_pct=@spoil_pct
      WHERE guild_id=@guild_id`
   ).run({
     enabled: b.enabled ? 1 : 0,
     max_slots: int(b.max_slots, 0, 0),
     max_accrue_days: int(b.max_accrue_days, 7, 1),
+    spoil_pct: Math.max(0, Math.min(90, int(b.spoil_pct, 0, 0))),
     steal_enabled: b.steal_enabled ? 1 : 0,
     steal_daily_limit: int(b.steal_daily_limit, 3, 0),
     steal_success_pct: pct(b.steal_success_pct, 50),

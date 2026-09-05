@@ -25,6 +25,8 @@ const { buffPct } = require('../../util/buffs');
 const cron = require('node-cron');
 
 const rcfg = (gid) => guildConfig('ranch_config', gid);
+// 產物腐壞率（0＝不會壞）：跟農地的枯死率一樣，是用來壓「養越多越好賺」的調節閥
+require('../../db').ensureColumns('ranch_config', { spoil_pct: 'INTEGER NOT NULL DEFAULT 0' });
 const gcfg = (gid) => guildConfig('gather_config', gid);
 const csv = (s) => String(s || '').split(/[\n,]/).map(x => x.trim()).filter(Boolean);
 const money = (c, n) => `${c.currency_emoji || '🪙'} ${Number(n).toLocaleString('en-US')} ${c.currency_name || '星幣'}`;
@@ -170,13 +172,25 @@ function harvest(gid, uid) {
   accrue(gid, uid);
   const slots = db.prepare('SELECT * FROM ranch_slots WHERE guild_id=? AND user_id=? AND pending > 0').all(gid, uid);
   if (!slots.length) return { empty: true };
+  // 腐壞率：放太久的蛋奶不是每一份都好的（後台 spoil_pct，0＝全部都好）。
+  // 每一份各自擲骰，壞掉的直接丟掉 —— 沒有這條，養越多就是純線性印鈔。
+  const spoilPct = Math.max(0, Math.min(90, rcfg(gid).spoil_pct || 0));
+  let spoiled = 0;
   const gained = new Map();
   db.transaction(() => {
     for (const s of slots) {
       const a = animalById(gid, s.animal_id);
       if (!a) continue;
-      addToBag(gid, uid, a.product_item_id, s.pending);
-      gained.set(a.product_item_id, (gained.get(a.product_item_id) || 0) + s.pending);
+      let n = s.pending;
+      if (spoilPct > 0) {
+        let bad = 0;
+        for (let k = 0; k < n; k++) if (Math.random() * 100 < spoilPct) bad++;
+        spoiled += bad; n -= bad;
+      }
+      if (n > 0) {
+        addToBag(gid, uid, a.product_item_id, n);
+        gained.set(a.product_item_id, (gained.get(a.product_item_id) || 0) + n);
+      }
       db.prepare('UPDATE ranch_slots SET pending=0 WHERE guild_id=? AND user_id=? AND slot=?').run(gid, uid, s.slot);
     }
   })();
@@ -186,7 +200,9 @@ function harvest(gid, uid) {
     const p = productOf(itemId); if (p) value += n * livePrice(gid, p);
     return `${p ? (p.emoji || '') + p.name : '產物'} ×${n}`;
   });
-  return { ok: true, lines, value };
+  if (spoiled) lines.push(`🤢 有 ${spoiled} 份放到壞掉，只能丟了`);
+  if (!gained.size) return { ok: true, lines, value: 0, spoiled };
+  return { ok: true, lines, value, spoiled };
 }
 
 const stealCount = (gid, uid) =>

@@ -922,6 +922,11 @@ const MAX_CRAFT_TIMES = 99;
 // 執行一次（或多次）配方。/製作 /鍛造 指令與 /配方 的下拉選單共用同一套流程。
 function craftRecipe(gid, uid, uname, recipeId, times = 1) {
   const c = cfg(gid);
+  // 製作手續費與全域額外失敗率（後台可調，0＝跟以前一樣）。
+  // 每個配方本來就有自己的成功率與製作費，這兩個是「整體economy 調節閥」，
+  // 不必一個一個配方改：手續費按材料市值抽成，額外失敗率直接扣在成功率上。
+  const feePct = Math.max(0, Math.min(100, c.craft_fee_pct || 0));
+  const failExtra = Math.max(0, Math.min(90, c.craft_fail_extra || 0));
   const r = db.prepare('SELECT * FROM gather_recipes WHERE guild_id=? AND enabled=1 AND id=?').get(gid, recipeId);
   if (!r) return { error: '這個配方已經不存在了。' };
   const label = r.kind === 'forge' ? '鍛造' : '製作';
@@ -947,14 +952,20 @@ function craftRecipe(gid, uid, uname, recipeId, times = 1) {
     if (!have || have.count < need) lack.push(`🔴${it ? (it.emoji || '') + it.name : '#' + m.item_id} ${have ? have.count : 0}/${need}`);
   }
   const w0 = wallet(gid, uid, uname);
-  const totalCost = (r.cost || 0) * times;
+  // 手續費＝材料市值 × feePct%（每次製作各收一份）
+  const matValue = mats.reduce((sum, m) => {
+    const it = db.prepare('SELECT * FROM gather_items WHERE id=?').get(m.item_id);
+    return sum + (it ? livePrice(gid, it) * m.count : 0);
+  }, 0);
+  const feeEach = feePct > 0 ? Math.ceil(matValue * feePct / 100) : 0;
+  const totalCost = ((r.cost || 0) + feeEach) * times;
   if (lack.length) return { error: `材料不足：${lack.join('、')}` };
   if (w0.coins < totalCost) return { error: `${c.currency_name}不足：需要 ${totalCost}，你只有 ${w0.coins}。` };
 
   let ok = 0, fail = 0;
   const tx = db.transaction(() => {
     for (let n = 0; n < times; n++) {
-      const success = Math.random() * 100 < (r.success_rate ?? 100);
+      const success = Math.random() * 100 < Math.max(0, (r.success_rate ?? 100) - failExtra);
       // 失敗且設定不保留材料 → 材料照樣扣掉（這是刻意的風險設計）
       if (success || !r.fail_keep) {
         for (const m of mats) {
@@ -962,7 +973,7 @@ function craftRecipe(gid, uid, uname, recipeId, times = 1) {
             .run(m.count, gid, uid, m.item_id);
         }
       }
-      if (totalCost) db.prepare('UPDATE econ_wallets SET coins = coins - ? WHERE guild_id=? AND user_id=?').run(r.cost || 0, gid, uid);
+      if (totalCost) db.prepare('UPDATE econ_wallets SET coins = coins - ? WHERE guild_id=? AND user_id=?').run((r.cost || 0) + feeEach, gid, uid);
       if (!success) { fail++; continue; }
       ok++;
       if (r.result_type === 'tool') {
@@ -985,7 +996,7 @@ function craftRecipe(gid, uid, uname, recipeId, times = 1) {
     }
   });
   tx();
-  if (totalCost) logCoins(gid, uid, -totalCost, label, `${r.name} ×${times}`);
+  if (totalCost) logCoins(gid, uid, -totalCost, label, `${r.name} ×${times}${feeEach ? `（含手續費 ${feeEach * times}）` : ''}`);
   if (ok) bumpQuests(gid, uid, { type: 'craft', amount: ok });
 
   const PLOT_RES = { plot_field: { name: '農地', emoji: '🌾' }, plot_greenhouse: { name: '溫室', emoji: '🏡' }, plot_ranch: { name: '牧場格', emoji: '🐔' }, plot_hatch: { name: '孵化格', emoji: '🥚' }, plot_aquarium: { name: '魚缸格', emoji: '🐠' } };

@@ -187,8 +187,36 @@ function assess(gid, userId) {
   const w = db.prepare('SELECT * FROM econ_wallets WHERE guild_id=? AND user_id=?').get(gid, userId);
   if (!w) return null;
 
-  // 農地／養殖／證券／消費四種「依資產課稅」已在 2026-09 移除，
-  // 這裡不再統計格數、動物數、持股市值與兌換金額。
+  // ---- 農地稅 ----（2026-09 停徵，但後台可以重新開徵）
+  // 停徵時「連算都不算」，所以之前 land 一律回 0 —— 後台把開關打開也沒有任何效果。
+  // 現在恢復計算：開關關著就是 0，打開就照後台的每格金額課，玩家調得動也看得到。
+  // 免稅額度先抵便宜的農地、再抵溫室；再乘上設施等級加成（12 階大農場產量是入門田的
+  // 好幾倍，稅不該一樣）。養殖稅（動物／魚）同理。
+  let land = 0, breed = 0;
+  let fieldTaxed = 0, greenTaxed = 0, animalTaxed = 0, fishTaxed = 0;
+  let tierMulField = 1, tierMulGreen = 1;
+  if (c.land_enabled || c.breed_enabled) {
+    const plots = db.prepare(
+      'SELECT plot_type, COUNT(*) n FROM crop_plots WHERE guild_id=? AND user_id=? GROUP BY plot_type').all(gid, userId);
+    let field = 0, green = 0;
+    for (const p of plots) { if (p.plot_type === 'greenhouse') green = p.n; else field += p.n; }
+    const animals = db.prepare('SELECT COUNT(*) n FROM ranch_slots WHERE guild_id=? AND user_id=?').get(gid, userId).n;
+    const fish = db.prepare('SELECT COUNT(*) n FROM aquarium_slots WHERE guild_id=? AND user_id=?').get(gid, userId).n;
+    let freeLeft = Math.max(0, c.land_free || 0);
+    fieldTaxed = Math.max(0, field - freeLeft); freeLeft = Math.max(0, freeLeft - field);
+    greenTaxed = Math.max(0, green - freeLeft);
+    let bFree = Math.max(0, c.breed_free || 0);
+    animalTaxed = Math.max(0, animals - bFree); bFree = Math.max(0, bFree - animals);
+    fishTaxed = Math.max(0, fish - bFree);
+    const tierOf = (type) => (db.prepare('SELECT tier FROM facility_owned WHERE guild_id=? AND user_id=? AND type=?')
+      .get(gid, userId, type) || {}).tier || 1;
+    const tierMul = (type) => 1 + Math.max(0, tierOf(type) - 1) * (c.land_tier_pct || 0) / 100;
+    tierMulField = tierMul('field'); tierMulGreen = tierMul('greenhouse');
+    land = c.land_enabled
+      ? Math.floor(fieldTaxed * (c.land_field || 0) * tierMulField + greenTaxed * (c.land_greenhouse || 0) * tierMulGreen)
+      : 0;
+    breed = c.breed_enabled ? animalTaxed * (c.breed_animal || 0) + fishTaxed * (c.breed_fish || 0) : 0;
+  }
 
   // ---- 房屋稅 ----
   // 房子越大稅越重（指數成長）。2026-09 整體調高：家園加成是永久的，
@@ -229,11 +257,11 @@ function assess(gid, userId) {
 
   // 單次上限：四稅合計不超過餘額的 income_max_pct %，避免一次被抄家
   const cap = Math.floor(w.coins * Math.max(0, Math.min(100, c.income_max_pct ?? 50)) / 100);
-  let total = income + house + partner + pet;
+  let total = income + house + partner + pet + land + breed;
   if (cap > 0 && total > cap) {
-    // 超過上限時先砍所得稅（同居／寵物／房屋是固定持有稅，該繳還是要繳）
-    income = Math.max(0, cap - house - partner - pet);
-    total = income + house + partner + pet;
+    // 超過上限時先砍所得稅（同居／寵物／房屋／農地是固定持有稅，該繳還是要繳）
+    income = Math.max(0, cap - house - partner - pet - land - breed);
+    total = income + house + partner + pet + land + breed;
   }
   // 慈善捐款折抵：本期捐款 × 折抵比例，直接從應繳稅額扣掉（不會扣成負數）
   const gross = total;
@@ -244,12 +272,13 @@ function assess(gid, userId) {
   total = curTax + arrears;
   return {
     wallet: w, balance: w.coins, income, house, partner, pet, partnerCount: partners.length,
-    // 已移除的稅目仍回傳 0，讓還沒改完的顯示端不會變成 undefined
-    land: 0, breed: 0, stock: 0, spend: 0,
+    // 農地／養殖稅預設停徵（＝0），後台開了就會有值；證券／消費稅已整套移除
+    land, breed, stock: 0, spend: 0, tierMulField, tierMulGreen,
     gross, credit, donated, curTax, arrears, total,
     earned: ri.income, stockPnl: ri.stockPnl, incomeBase: base, stockRealizedNow: ri.realizedNow,
     counts: {
       houseLv, houseTaxedLv, placed, petCount, partnerCount: partners.length,
+      fieldTaxed, greenTaxed, animalTaxed, fishTaxed,
       earned: ri.income, stockPnl: ri.stockPnl, taxableIncome: base, donated, credit
     }
   };
@@ -591,6 +620,9 @@ function billEmbed(gid, b, period) {
   if (b.partner) lines.push(`💞 同居稅　${money(gid, b.partner)}（同居 ${b.partnerCount} 位，倍增累進）`);
   if (b.pet) lines.push(`🐾 寵物稅　${money(gid, b.pet)}（寵物 ${b.counts.petCount} 隻，倍增累進）`);
   if (b.house) lines.push(`🏡 房屋稅　${money(gid, b.house)}（房屋 Lv.${b.counts.houseLv}｜家具 ${b.counts.placed} 件）`);
+  if (b.land) lines.push(`🌾 農地稅　${money(gid, b.land)}（農地 ${b.counts.fieldTaxed} 格／溫室 ${b.counts.greenTaxed} 格`
+    + `${(b.tierMulField > 1 || b.tierMulGreen > 1) ? `　設施等級加成 ×${Math.max(b.tierMulField, b.tierMulGreen).toFixed(2)}` : ''}）`);
+  if (b.breed) lines.push(`🐄 養殖稅　${money(gid, b.breed)}（動物 ${b.counts.animalTaxed} 隻／魚 ${b.counts.fishTaxed} 條）`);
   if (b.credit) lines.push(`❤️ 慈善折抵　**−${money(gid, b.credit)}**（本期捐款 ${Number(b.donated || 0).toLocaleString('en-US')}）`);
   if (b.arrears) lines.push(`🔁 上期未繳補收　${money(gid, b.arrears)}（延過來一起收）`);
   const emb = new EmbedBuilder()
@@ -656,6 +688,10 @@ function infoEmbed(gid, userId, username) {
     + `第 2 隻 ×${c.pet_step || 2}、第 3 隻 ×${Math.pow(c.pet_step || 2, 2)}…（寵物數量已無上限）`);
   if (c.house_enabled) lines.push(`🏡 **房屋稅**　房子越大稅越重（Lv.${(c.house_free || 0) + 1} 起課，指數成長），`
     + `另加家具 ${money(gid, c.house_furniture || 0)}／件`);
+  if (c.land_enabled) lines.push(`🌾 **農地稅**　每格農地 ${money(gid, c.land_field || 0)}、每格溫室 ${money(gid, c.land_greenhouse || 0)}`
+    + `（前 ${c.land_free || 0} 格免稅；設施等級每高一階再加 ${c.land_tier_pct || 0}%）`);
+  if (c.breed_enabled) lines.push(`🐄 **養殖稅**　每隻動物 ${money(gid, c.breed_animal || 0)}、每條魚 ${money(gid, c.breed_fish || 0)}`
+    + `（前 ${c.breed_free || 0} 隻免稅）`);
   lines.push('_四種稅各自獨立計算：所得稅看實際獲利、同居稅看角色數量、寵物稅看寵物數量、房屋稅看房屋持有。_');
   if (!lines.length) lines.push('目前沒有開徵稅金。');
   emb.setDescription(lines.join('\n'));

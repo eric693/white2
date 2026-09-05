@@ -567,7 +567,12 @@ ensureColumns('special_config', {
 // 設施加成：買高階除了格數變多，還能加快產出／成熟／孵化，牧場另有防竊
 // 採集改成「每日點數池」：不同地圖每次消耗的點數不同（門票制）
 ensureColumns('gather_config', {
-  daily_points: 'INTEGER NOT NULL DEFAULT 0'   // 0＝沿用舊的地圖每日次數制
+  daily_points: 'INTEGER NOT NULL DEFAULT 0',   // 0＝沿用舊的地圖每日次數制
+  // 製作的兩個經濟調節閥（0＝跟以前一樣，不影響現況）：
+  //   craft_fee_pct    ＝手續費，按「材料市值」抽成，直接銷毀
+  //   craft_fail_extra ＝全域額外失敗率，直接扣在每個配方自己的成功率上
+  craft_fee_pct: 'INTEGER NOT NULL DEFAULT 0',
+  craft_fail_extra: 'INTEGER NOT NULL DEFAULT 0'
 });
 ensureColumns('gather_maps', {
   cost: 'INTEGER NOT NULL DEFAULT 1'           // 在這張圖採集一次扣幾點
