@@ -263,6 +263,7 @@
     <li>⚠️ <strong>徒手不能採集</strong>：工具壞掉、還沒買、時，釣魚／挖礦／伐木／採集／狩獵都會被擋下，要先 <code>/修理</code>、買一把新的，或 <code>/還款</code> 把工具贖回來。<br><strong>救急</strong>：如果你<strong>餘額是負數（欠債）</strong>又沒工具，系統會<strong>免費補一把最基本的工具</strong>給你，讓你一定能採集、慢慢賺回來還債。</li>
     <li>系統會<strong>自動使用你擁有的最高階</strong>，不用手動裝備。</li>
     <li>每採集一次扣 1 點耐久，歸零就壞掉，用 <code>/修理</code> 花星幣修好（費用如上表）。</li>
+    <li>⚠️ <strong>最高階那把壞了 ＝ 你現在沒有工具</strong>，<strong>不會</strong>自動退回低階那把（2026-09 起）。訊息會直接告訴你壞的是哪一把、修理多少錢，修好或買新的才能繼續。</li>
     <li>五種採集各有各的工具（釣竿／鎬／斧／籃／弓），要分開買。</li>
     <li>高階工具也可以用 <code>/製作</code> 拿材料自己鍛造，比用星幣買省一些。</li>
   </ul>
@@ -336,6 +337,13 @@
     </tbody>
   </table></div>
 
+  <div class="note warn">
+    <span class="h">開格子會失敗（2026-09 起）</span>
+    <code>/製作</code> 的「開闢農地／搭建溫室／蓋牧場／蓋孵化室／蓋魚缸」成功率 <strong>85%</strong>、
+    每次收 <strong>300 星幣</strong>製作費。<strong>失敗會保留材料</strong>，只損失那 300。
+    擴張不再是零成本，平均一格約 353 星幣。
+  </div>
+
   <h3>設施 vs. 製作，兩條路可以並行</h3>
   <div class="scroll"><table>
     <thead><tr><th></th><th>🏗️ 設施商店</th><th>🔨 製作</th></tr></thead>
@@ -356,6 +364,7 @@
   <ul>
     <li>生產動物每 <strong>30 分鐘</strong>產 1 個（買了高階牧場會更快）。</li>
     <li>沒收成的產物<strong>最多累積 3 天份</strong>（上限＝該動物每日產量 × 3），滿了就停產——記得回來收。</li>
+    <li>🤢 <strong>可能會壞掉</strong>：工程師可以設定腐壞率，收成時<strong>每一份</strong>各自擲骰，壞掉的直接丟（例如 10 顆蛋壞 1 顆）。收成訊息會寫「🤢 有 N 份放到壞掉」。放越久不收，損失越有感。</li>
     <li>成熟一個就能收一個，不用等整批。</li>
     <li><strong>沒收成的東西才會被偷</strong>，收進背包就安全了。</li>
     <li><strong>不想養了可以賣掉動物</strong>：<code>/牧場</code> 的下拉選單「💰賣掉動物」或 <code>/放生</code>，回收購買價的一半星幣，待收成的產物也一起進背包。</li>
@@ -392,6 +401,7 @@
     <li><strong>先買種子、再種下</strong>：在 🌱種子商店買的種子會<strong>先進背包</strong>，你自己決定什麼時候種——到 🌾農地／🏡溫室 按「🌱種植」，或打 <code>/種植 種子名 數量</code> 種下去。</li>
     <li>成熟時間 100 分鐘～8 小時不等，越久的單價越高。</li>
     <li>成熟後點 🌻採收 一次全收。<strong>作物不會被偷。</strong></li>
+    <li>🥀 <strong>可能會枯死</strong>：工程師可以設定枯死率，採收時每一格各自擲骰，中了就整格沒有收成（種子不退）。目前設定值以採收訊息為準，訊息會寫「🥀 ○○ 枯死了 ×N」。</li>
     <li>種子會自動種進對應的地：作物進農地、花卉進溫室。</li>
   </ul>
   <p>入門推薦馬鈴薯（100 分鐘）、紅蘿蔔（90 分鐘）；高價的有西瓜、蘭花、櫻花，溫室最頂級的是<strong>月光花</strong>（8 小時，單價 70）。</p>
@@ -583,16 +593,17 @@
     <thead><tr><th>稅目</th><th class="wrap">課什麼</th><th class="wrap">預設稅額</th></tr></thead>
     <tbody>
       <tr><td>💰 所得稅</td><td class="wrap">這一期<strong>實際賺到的錢</strong>——賣東西、任務、簽到等真正的收入，再加上股票<strong>賣掉之後</strong>的淨損益（含手續費）</td><td class="wrap">免稅額（10 萬）以上<strong>累進課稅</strong>（只課超過的部分），1%～20%，見下表</td></tr>
-      <tr><td>💞 同居稅</td><td class="wrap">你的<strong>同居角色數量</strong></td><td class="wrap"><strong>倍增累進</strong>：第 1 位 5,000，第 2 位 ×2、第 3 位 ×4…</td></tr>
-      <tr><td>🐾 寵物稅</td><td class="wrap">你的<strong>寵物數量</strong></td><td class="wrap"><strong>倍增累進</strong>：第 1 隻 3,000，第 2 隻 ×2、第 3 隻 ×4…</td></tr>
+      <tr><td>💞 同居稅</td><td class="wrap">你的<strong>同居角色數量</strong></td><td class="wrap"><strong>倍增累進</strong>：第 1 位 15,000，第 2 位 ×2（30,000）、第 3 位 ×4（60,000）…</td></tr>
+      <tr><td>🐾 寵物稅</td><td class="wrap">你的<strong>寵物數量</strong></td><td class="wrap"><strong>倍增累進</strong>：第 1 隻 8,000，第 2 隻 ×2（16,000）、第 3 隻 ×4（32,000）…</td></tr>
       <tr><td>🏠 房屋稅</td><td class="wrap">你的<strong>房屋等級</strong></td><td class="wrap">基礎 900，等級越高越重（指數成長）</td></tr>
     </tbody>
   </table></div>
 
   <div class="note">
     <span class="h">2026-09 改版：不再對「你有多少錢」課稅</span>
-    舊制是看<strong>錢包餘額</strong>課稅，沒賺錢也會被慢慢刮掉；農地稅、養殖稅、證券稅、消費稅
-    這些<strong>依資產課稅</strong>的項目已<strong>整套移除</strong>。現在只課<strong>這一期實際賺到的</strong>。<br>
+    舊制是看<strong>錢包餘額</strong>課稅，沒賺錢也會被慢慢刮掉；現在只課<strong>這一期實際賺到的</strong>。<br>
+    <strong>農地稅／養殖稅／兌換稅預設關閉</strong>，但工程師可以視經濟狀況重新開徵：農地稅按格數（含免稅格數、設施等級越高加課越多）、
+    養殖稅按動物與魚的數量、兌換稅按你在神秘商店兌換掉的金額。真的開了，稅單上就會多出那幾行，以 <code>/稅單</code> 顯示為準。<br>
     <strong>不算收入的項目</strong>：轉帳、銀行存提款、信貸本金與還款、各種退款、交易返還、
     股票<strong>還沒賣掉</strong>的漲跌——這些都只是錢換位置，不是賺到。
   </div>
@@ -622,8 +633,8 @@
   </div>
   <div class="note">
     <span class="h">同居稅與寵物稅是「倍增累進」</span>
-    每多一位／一隻，該位的稅額<strong>乘 2</strong>。同居 3 位＝5,000＋10,000＋20,000＝<strong>35,000</strong>；
-    寵物 3 隻＝3,000＋6,000＋12,000＝<strong>21,000</strong>。<br>
+    每多一位／一隻，該位的稅額<strong>乘 2</strong>。同居 3 位＝15,000＋30,000＋60,000＝<strong>105,000</strong>；
+    寵物 3 隻＝8,000＋16,000＋32,000＝<strong>56,000</strong>。<br>
     同居與寵物<strong>沒有數量上限</strong>，但養越多稅金增加得非常快，請自行拿捏。
   </div>
   <p class="sub">級距與免稅額工程師可能會調整，實際以 <code>/稅單</code> 或冒險面板的 🧾稅務 顯示為準。</p>
@@ -785,12 +796,14 @@
   <p class="note"><span class="h">要「擺出來」才有加成</span>放在倉庫裡的家具完全沒效果。可擺的件數由房屋階級決定。</p>
 
   <h3>🐾 寵物</h3>
-  <p><strong>只用金錢購買</strong>（不吃材料），一個家<strong>最多 3 隻</strong>。寵物不會生蛋生奶，牠給的是<strong>能力加成</strong>，而且<strong>按親密度比例給</strong>——親密度掉到 0 就完全沒效果。</p>
+  <p><strong>只用金錢購買</strong>（不吃材料），<strong>沒有數量上限</strong>（房屋 Lv.3 起可養），改由<strong>寵物稅倍增累進</strong>節制——養越多每期越貴。寵物不會生蛋生奶，牠給的是<strong>能力加成</strong>，而且<strong>按親密度比例給</strong>——親密度掉到 0 就完全沒效果。</p>
   <p>能力分成七類：🛡️ 全防護、📦 <strong>指定素材</strong>掉落率（例如「碎石 +8%」）、📈 股市、💰 銷售、✨ 稀有率、⏱️ 生產加速、🎲 反機率、💕 好感度。</p>
   <div class="note">
     <span class="h">餵食要飼料</span>
     每次餵食消耗 <strong>1 份寵物飼料</strong>，可以在寵物面板<strong>直接買</strong>（500／份），也可以自己<strong>製作</strong>（小麥×3＋紅蘿蔔×2 → 5 份）。
-    要等滿一個餵食週期才能再餵，親密度一次 +4~6，養滿約 20 次——是長期陪伴，不是三天速成。
+    要等滿一個餵食週期才能再餵，親密度一次 +4~6，養滿約 20 次——是長期陪伴，不是三天速成。<br>
+    🍖 <strong>多久餵一次？</strong>每隻寵物的間隔不同，<strong>寵物面板每一隻旁邊都直接寫著</strong>「🍖 該餵了」或「🕒 N 小時後可餵　每 N 小時餵一次」；餵食選單也會把餓了的排在最上面，標題顯示「現在有 N 隻該餵了」。<br>
+    ⚠️ 超過間隔沒餵會<strong>開始掉親密度</strong>（每超過一個週期 −5），技能效果跟著變弱。
   </div>
 </section>
 
@@ -854,11 +867,41 @@
   <p>料理也能送，而且<strong>品質越高加得越多</strong>（傳說品質是普通的 3 倍）。</p>
 
   <h3>💞 同居</h3>
-  <p>好感度到<strong>曖昧（Lv.6）</strong>以上就能請他搬進你家。名額跟著房屋階級長：Lv.6 起 1 位、Lv.10 起 2 位、Lv.13 起 3 位。</p>
-  <p>搬進來的角色會<strong>隨機帶一個能力</strong>（廚藝指導、礦脈直覺、幫忙收成、會殺價…），好感度每一階讓加成 +10%。其中「🧺 幫忙收成」會<strong>每天早上自動幫你把牧場產物收進背包</strong>。</p>
+  <p>好感度到<strong>曖昧（Lv.6）</strong>以上、房屋達 Lv.6 就能請他搬進你家。<strong>沒有人數上限</strong>——限制你的是同居稅（見下）。</p>
+  <p>每位角色都有<strong>自己專屬的能力</strong>（由管理員設定，不是隨機的），搬進來就自動生效，數值隨好感度階級成長。</p>
+
+  <h4>🛠️ 工作區域：一位角色包辦一整區</h4>
+  <p>在 💞同居 面板按「🛠️ 指派工作區域」，一位角色負責一個區域的<strong>完整流程</strong>：</p>
+  <div class="scroll"><table>
+    <thead><tr><th>區域</th><th class="wrap">他會做的事</th><th class="wrap">需要的物資</th></tr></thead>
+    <tbody>
+      <tr><td>🌾 農地</td><td class="wrap">收成成熟作物 ＋ 用背包的種子重新播種</td><td class="wrap">農地種子（沒種子就只收成）</td></tr>
+      <tr><td>🏡 溫室</td><td class="wrap">收成成熟花卉 ＋ 重新播種</td><td class="wrap">溫室種子</td></tr>
+      <tr><td>🐄 牧場</td><td class="wrap">照顧動物並收取蛋／奶進背包</td><td class="wrap">不需要</td></tr>
+      <tr><td>🥚 孵化室</td><td class="wrap">把背包的蛋放進去 ＋ 領走孵好的動物</td><td class="wrap">可孵化的蛋</td></tr>
+      <tr><td>🐠 魚缸</td><td class="wrap">餵魚 ＋ 把累積的星幣領進錢包</td><td class="wrap">買飼料的星幣</td></tr>
+      <tr><td>🍳 廚房</td><td class="wrap">領走煮好的料理 ＋ 用現有材料繼續下廚</td><td class="wrap">食譜要的材料</td></tr>
+    </tbody>
+  </table></div>
+  <ul>
+    <li>⏱️ <strong>工作不間斷</strong>：每 <strong>5 分鐘</strong>自動跑一次，成熟就收、收完立刻補種，不用等整點或隔天。</li>
+    <li>🔒 <strong>能力要對得上區域</strong>：農地收成／種植的角色才能顧農地，牧場照顧的顧牧場，廚房做飯的顧廚房…。挖礦、釣魚、賣價加成那類能力是每天自動生效的，<strong>不能指派區域</strong>。</li>
+    <li>🚫 <strong>對不上就罷工</strong>：如果他的能力跟你派的區域不符，他<strong>什麼都不會做</strong>，面板會標「罷工中」。</li>
+    <li>一個區域只能派一位，一位角色也只顧一區。<strong>換人不會重置</strong>任何設施、作物、動物或進度。</li>
+    <li>📒 <strong>同居明細</strong>：面板按「📒 同居明細」就看得到他今天／最近 7 天幫你做了哪些事（保留 7 天）。沒有紀錄通常是東西還沒成熟、沒種子可播，或根本沒指派區域。</li>
+  </ul>
+
   <div class="note warn">
-    <span class="h">同居要繳伴侶稅</span>
-    每位每期 <strong>5,000 ＋ 好感度每階 1,500</strong>（Lv.7 的對象就是 15,500／期）。關係越深越花錢，養不起可以請他搬走，好感度不會消失。
+    <span class="h">同居要繳同居稅（倍增累進）</span>
+    第 1 位 <strong>15,000</strong>／期，第 2 位 ×2（30,000）、第 3 位 ×4（60,000）…住 3 位就是每期 <strong>105,000</strong>。
+    人數沒有上限，但稅金漲得非常快——<strong>先確認你養得起再邀請</strong>。
+  </div>
+  <div class="note warn">
+    <span class="h">💔 請他搬走 ＝ 分手，好感度全部歸零</span>
+    請同居對象搬出去，你們累積的<strong>好感度會全部歸零</strong>，只剩「曾經相遇過」的紀錄，他的能力與工作也一併卸下。
+    之後還能再邀請他，但<strong>要從第一次送禮重新開始追</strong>。<br>
+    這個動作<strong>無法復原</strong>，所以按下去之前會先跳一次「真的要跟他分手嗎？」的確認——想清楚再按。
+    （也因為這樣，「繳稅前先請人搬走、繳完再請回來」是行不通的。）
   </div>
 </section>
 
@@ -883,6 +926,7 @@
     <li>結束前幾分鐘有人出價會<strong>自動延長</strong>（防狙擊）。</li>
     <li>有些標的<strong>得標時另收材料</strong>；材料不夠不會沒收標的，改按原價折算補收星幣。</li>
     <li>得標金<strong>全額進慈善基金會</strong>（之後會變成普發救濟金發回給大家），不是憑空消失。</li>
+    <li>🔒 有些場次<strong>限定資格</strong>：可能限某個身分組，也可能要求<strong>累計捐款達到一定金額</strong>（用 <code>/捐款</code> 捐給基金會就會累計）。不符資格時會告訴你還差多少；有些場次甚至<strong>不符資格就看不到</strong>。</li>
   </ul>
 </section>
 
@@ -901,6 +945,7 @@
     <span class="h">這些情況不能兌換</span>
     <strong>欠稅（餘額是負數）</strong>或<strong>有未還清的貸款</strong>的人不能兌換，要先把餘額弄回正數／把貸款還清。另外商店可由工程師<strong>暫停</strong>，暫停期間指令與面板都會擋下，不會扣到你的錢。
   </div>
+  <p><span class="h">📜 我的兌換紀錄</span>在 <code>/特殊商店</code> 按「📜 我的兌換紀錄」，可以查自己換過什麼、每一筆是 <strong>⏳待處理</strong> 還是 <strong>✅已完成</strong>。要跟管理員問進度時，<strong>報兌換單編號</strong>（例如 #301）最快。</p>
 
   <h3>📜 任務與🏆懸賞</h3>
   <p><code>/任務</code>（或面板 📜任務）看進度、按按鈕領獎。每日任務午夜重置、每週任務週一重置。<strong>🏆懸賞</strong>是限量任務：全服每天只有固定名額，<strong>先完成先領先贏</strong>，額滿當天就沒了。</p>
@@ -927,6 +972,14 @@
   <p>物品幾乎都能換，<strong>只有「種子」不能交易</strong>（種子只能自己種、去 <code>/種子商店</code> 買，不列在交易選單裡）。<strong>蛋可以交易</strong>。物品太多時交易選單會分成好幾個下拉（第 1-25 種、26-50 種…），往下找即可；或直接打 <code>/交易</code> 用打字搜尋。</p>
   <p>⚠️ <strong>成交時買賣雙方各收 200 星幣交易手續費</strong>（直接銷毀，跟所得稅無關）。餘額不足 200 的一方無法成交，提案時就會標明。</p>
   <p class="note"><span class="h">會再確認一次</span>對方按下「接受」後還有一次<strong>最終確認</strong>：付出什麼、拿到什麼、數量與手續費全部攤開，<strong>再按一次才真的換手</strong>。看清楚再按。</p>
+
+  <h3>🛠️ 製作與鍛造</h3>
+  <p><code>/製作</code>／<code>/鍛造</code> 用材料做出工具、工藝品與設施格子。每個配方各有<strong>成功率</strong>與<strong>製作費</strong>，做之前面板都會寫清楚。</p>
+  <ul>
+    <li><strong>失敗會怎樣</strong>：多數配方失敗<strong>材料照樣消耗</strong>（這是刻意的風險）；有標「失敗保留材料」的則只損失製作費。設施類（開闢農地、搭建溫室、蓋牧場、蓋孵化室、蓋魚缸）目前是 <strong>85% 成功、300 星幣、失敗保留材料</strong>。</li>
+    <li>工程師可以另外設定<strong>製作手續費 %</strong>（按材料市值抽成）與<strong>全域額外失敗率 %</strong>（直接扣在每個配方的成功率上）。有開的話，面板顯示的價格與成功率就是實際值。</li>
+    <li>同款工具<strong>只會有一件</strong>，做第二件不會多拿到東西——壞了請用 <code>/修理</code>。</li>
+  </ul>
 
   <h3>📖 圖鑑</h3>
   <p><code>/圖鑑</code> 看自己收錄了哪些東西。每種掉落物第一次拿到時會標記「🆕 圖鑑新收錄」，全部湊齊是隱藏成就。</p>
