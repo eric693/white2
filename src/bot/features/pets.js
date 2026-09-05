@@ -237,7 +237,9 @@ function petPanel(gid, uid, uname) {
       : `目前養了 **${list.length}** 隻，**沒有數量上限**。\n`
         + '已經領養的寵物**永久保留**，可以自由替換要帶哪一隻上場，不必重買、養成資料也不會重置。\n'
         + '⚠️ 隻數由**寵物稅**節制：倍增累進（第 1 隻基礎、第 2 隻 ×2、第 3 隻 ×4…），養越多每期越貴。\n'
-        + '寵物**不會生蛋生奶** —— 牠給的是技能加成，而且加成按親密度比例給，不餵就沒效果。')
+        + '寵物**不會生蛋生奶** —— 牠給的是技能加成，而且加成按親密度比例給，不餵就沒效果。\n'
+        + '🍖 **餵食間隔**：每隻寵物各有自己的間隔（下面每隻都寫了），時間到才餵得下去；'
+        + '超過間隔沒餵會開始掉親密度（每超過一個週期 −5），技能效果跟著變弱。')
     .setFooter({ text: (() => {
       // 體力（跟釣魚挖礦、逛街共用同一池）順便顯示在這裡，玩家不用再跑一次別的指令
       try {
@@ -245,13 +247,19 @@ function petPanel(gid, uid, uname) {
         return `⚡ 今日體力 ${st.left}/${st.max}｜親密度掉到 0 技能就完全失效`;
       } catch { return '親密度掉到 0 技能就完全失效'; }
     })() });
+  const nowMs = Date.now();
   for (const p of list.slice(0, 8)) {
     const pct = Math.floor(p.buff_pct * p.intimacy / 100);
+    // 餵食時間直接寫在每一隻旁邊：玩家最常問的就是「多久餵一次」
+    const leftMs = (p.fed_ms || 0) + (p.feed_hours || 8) * 3600000 - nowMs;
+    const feedTag = leftMs <= 0 ? '🍖 該餵了'
+      : leftMs >= 3600000 ? `🕒 ${Math.ceil(leftMs / 3600000)} 小時後可餵`
+      : `🕒 ${Math.ceil(leftMs / 60000)} 分鐘後可餵`;
     embed.addFields({
-      name: `${RARITY[p.rarity] || ''}${p.emoji || ''}${p.nickname || p.name}　Lv.${p.level}`,
+      name: `${RARITY[p.rarity] || ''}${p.emoji || ''}${p.nickname || p.name}　Lv.${p.level}　${feedTag}`,
       // 素材類要寫明是哪一種素材（碎石＋X%），不能只寫「素材提升」
       value: `${hearts(p.intimacy)} ${p.intimacy}/100　個性：${p.personality}\n`
-        + `${catLabel(p) ? catLabel(p) + '　' : ''}技能「${p.skill_name}」\n`
+        + `${catLabel(p) ? catLabel(p) + '　' : ''}技能「${p.skill_name}」　每 ${p.feed_hours} 小時餵一次\n`
         + `→ ${p.target_item ? `${p.target_item} 掉落率` : (BUFF_TYPES[p.buff_type] || '')} **+${pct}%**（滿親密度 ${p.buff_pct}%）`,
       inline: false
     });
@@ -268,13 +276,28 @@ function petPanel(gid, uid, uname) {
       new ButtonBuilder().setCustomId('petfood:5').setLabel(`🥫 買 5 份（${(price * 5).toLocaleString('en-US')}）`).setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId('petfood:10').setLabel(`🥫 買 10 份（${(price * 10).toLocaleString('en-US')}）`).setStyle(ButtonStyle.Secondary)));
   }
-  if (list.length) rows.push(new ActionRowBuilder().addComponents(
-    new StringSelectMenuBuilder().setCustomId('petfeed').setPlaceholder('餵食一隻寵物')
-      .addOptions(list.slice(0, 25).map(p => ({
-        label: `${p.emoji || ''}${p.nickname || p.name}`.slice(0, 100),
-        description: `親密度 ${p.intimacy}/100　Lv.${p.level}`.slice(0, 100),
-        value: String(p.id)
-      })))));
+  if (list.length) {
+    // 玩家最常問「到底多久要餵一次」，所以每一列直接寫「現在可以餵／還要等多久」，
+    // 而且把餓了的排到最上面 —— 養十隻的人不必自己一隻一隻算時間。
+    const now = Date.now();
+    const readyAt = (p) => (p.fed_ms || 0) + (p.feed_hours || 8) * 3600000;
+    const feedable = [...list].sort((a, b) => readyAt(a) - readyAt(b));
+    const hungry = feedable.filter(p => now >= readyAt(p)).length;
+    rows.push(new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder().setCustomId('petfeed')
+        .setPlaceholder(hungry ? `🍖 餵食（現在有 ${hungry} 隻該餵了）` : '餵食一隻寵物（目前都吃飽了）')
+        .addOptions(feedable.slice(0, 25).map(p => {
+          const left = readyAt(p) - now;
+          const when = left <= 0 ? '🍖 現在可以餵'
+            : left >= 3600000 ? `還要 ${Math.ceil(left / 3600000)} 小時`
+            : `還要 ${Math.ceil(left / 60000)} 分鐘`;
+          return {
+            label: `${left <= 0 ? '🍖 ' : ''}${p.emoji || ''}${p.nickname || p.name}`.slice(0, 100),
+            description: `${when}　每 ${p.feed_hours} 小時餵一次　親密度 ${p.intimacy}/100　Lv.${p.level}`.slice(0, 100),
+            value: String(p.id)
+          };
+        }))));
+  }
   const shop = db.prepare('SELECT * FROM pet_defs WHERE guild_id=? AND enabled=1 AND price>0 AND min_level<=? ORDER BY sort').all(gid, home.level);
   // 寵物種類已經超過 25 隻，直接 slice 會讓後面的品種永遠領養不到 —— 滿了就換下一行。
   if (shop.length) rows.push(...selectRows('petadopt', shop.map(p => ({

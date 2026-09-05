@@ -81,29 +81,56 @@ function nextMin(gid, a) {
 // require_mode：
 //   'bid'  ＝ 可以看、但不能出價（預設，資訊透明）
 //   'view' ＝ 連拍賣內容都不給看（禁止進入）
+//
+// require_donate：另一條門檻 —— 「累計捐款達 N 星幣才能參加」。
+// 用身分組擋只有在「捐款達標會自動發身分組」時才行得通，門檻一改就得重發身分組；
+// 這裡直接查基金會的捐款總額，改個數字就生效，也不必為每個門檻各開一個身分組。
+// 兩條同時設就是「都要滿足」。
 require('../../db').ensureColumns('auctions', {
   require_role: "TEXT NOT NULL DEFAULT ''",     // 逗號分隔的身分組 id，空＝不限
-  require_mode: "TEXT NOT NULL DEFAULT 'bid'"
+  require_mode: "TEXT NOT NULL DEFAULT 'bid'",
+  require_donate: 'INTEGER NOT NULL DEFAULT 0'  // 累計捐款門檻（星幣），0＝不限
 });
+
+/** 這個人在這台伺服器的累計捐款 */
+function donatedTotal(gid, uid) {
+  return db.prepare('SELECT COALESCE(SUM(amount),0) s FROM charity_donations WHERE guild_id=? AND user_id=?')
+    .get(gid, uid).s || 0;
+}
 
 const roleIds = (s2) => String(s2 || '').split(/[\s,;、]+/).map(x => x.trim()).filter(Boolean);
 
 // member 有沒有資格。沒設身分組就一律有資格。
 function eligible(a, member) {
   const need = roleIds(a && a.require_role);
-  if (!need.length) return true;
-  if (!member || !member.roles || !member.roles.cache) return false;
+  const needDonate = Math.max(0, (a && a.require_donate) || 0);
+  if (!need.length && !needDonate) return true;
+  if (!member) return false;
   // 管理端自己一律放行，不然管理員連測試都不能測
   if (member.permissions?.has?.('ManageGuild')) return true;
-  return need.some(r => member.roles.cache.has(r));
+  if (need.length) {
+    if (!member.roles || !member.roles.cache) return false;
+    if (!need.some(r => member.roles.cache.has(r))) return false;
+  }
+  if (needDonate && donatedTotal(a.guild_id, member.id) < needDonate) return false;
+  return true;
 }
 
 // 沒資格時要給的說明（也用在「可看不可出價」的提示上）
-function ineligibleText(a, guild) {
-  const names = roleIds(a.require_role)
-    .map(id => guild?.roles?.cache?.get(id)?.name || `身分組 ${id}`)
-    .map(n => `**${n}**`).join('、');
-  return `🔒 這場拍賣限定 ${names} 才能參加。`;
+function ineligibleText(a, guild, member) {
+  const bits = [];
+  if (roleIds(a.require_role).length) {
+    bits.push('限定 ' + roleIds(a.require_role)
+      .map(id => guild?.roles?.cache?.get(id)?.name || `身分組 ${id}`)
+      .map(n => `**${n}**`).join('、'));
+  }
+  if (a.require_donate > 0) {
+    const mine = member ? donatedTotal(a.guild_id, member.id) : 0;
+    bits.push(`需要**累計捐款 ${a.require_donate.toLocaleString('en-US')}** 以上`
+      + (member ? `（你目前 ${mine.toLocaleString('en-US')}，還差 ${Math.max(0, a.require_donate - mine).toLocaleString('en-US')}）` : '')
+      + '　→ 用 `/捐款` 捐給基金會就會累計');
+  }
+  return `🔒 這場拍賣${bits.join('，且')}才能參加。`;
 }
 
 // ---------- 出價 ----------
@@ -113,7 +140,7 @@ function placeBid(gid, uid, uname, auctionId, amount, member) {
   const a = db.prepare('SELECT * FROM auctions WHERE id=? AND guild_id=?').get(auctionId, gid);
   if (!a) return { error: '找不到這場拍賣。' };
   if (!eligible(a, member)) {
-    return { error: ineligibleText(a, member && member.guild) + '\n取得指定身分組之後就可以出價了。' };
+    return { error: ineligibleText(a, member && member.guild, member) + '\n達成上面的條件之後就可以出價了。' };
   }
   if (a.status !== 'live') return { error: a.status === 'scheduled' ? '這場拍賣還沒開始。' : '這場拍賣已經結束了。' };
   if (a.end_ts <= Date.now()) return { error: '這場拍賣剛剛結束了。' };
@@ -294,8 +321,11 @@ function auctionEmbed(gid, a) {
   if (a.buyout_price > 0) e.addFields({ name: '直接買下', value: money(gid, a.buyout_price), inline: true });
   if (mats.length) e.addFields({ name: '得標另收材料', value: mats.map(m => `${m.item} ×${m.count}`).join('、') + '\n（材料不夠會按原價折算星幣補收）', inline: false });
   if (a.image_url) e.setImage(a.image_url);
-  if (roleIds(a.require_role).length) {
-    e.addFields({ name: '參加資格', value: `限定 ${roleIds(a.require_role).map(r => `<@&${r}>`).join('、')} 才能出價`
+  if (roleIds(a.require_role).length || a.require_donate > 0) {
+    const conds = [];
+    if (roleIds(a.require_role).length) conds.push(`限定 ${roleIds(a.require_role).map(r => `<@&${r}>`).join('、')}`);
+    if (a.require_donate > 0) conds.push(`累計捐款 **${a.require_donate.toLocaleString('en-US')}** 以上`);
+    e.addFields({ name: '參加資格', value: `${conds.join('　＋　')} 才能出價`
       + (a.require_mode === 'view' ? '（未符合資格的人看不到這場拍賣）' : '（其他人可以觀看，但不能出價）'), inline: false });
   }
   e.setFooter({ text: `拍賣 #${a.id}｜出價 ${a.bids} 次｜出價即鎖款，被超越自動全額退回` });
@@ -401,7 +431,7 @@ function init(client) {
         if (!a) return i.reply({ content: '找不到這場拍賣。', ...eph }).catch(() => {});
         // 沒資格就別讓他打完金額才被退回——直接在開視窗之前說清楚
         if (!eligible(a, i.member)) {
-          return i.reply({ content: ineligibleText(a, i.guild) + '\n取得指定身分組之後就可以出價了。', ...eph }).catch(() => {});
+          return i.reply({ content: ineligibleText(a, i.guild, i.member) + '\n達成上面的條件之後就可以出價了。', ...eph }).catch(() => {});
         }
         const min = nextMin(gid, a);
         const modal = new ModalBuilder().setCustomId(`aucmodal:${id}`).setTitle(`出價：${refInfo(gid, a).name}`.slice(0, 45))

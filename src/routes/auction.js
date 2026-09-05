@@ -85,7 +85,9 @@ function fields(b) {
     // 管理端要換成任何身分組都行。mode：bid＝可看不可出價；view＝禁止進入
     require_role: String(b.require_role || '').split(/[\s,;、]+/).map(x => x.trim())
       .filter(x => /^\d+$/.test(x)).join(','),
-    require_mode: b.require_mode === 'view' ? 'view' : 'bid'
+    require_mode: b.require_mode === 'view' ? 'view' : 'bid',
+    // 另一條門檻：累計捐款達多少才能參加（0＝不限）。跟身分組同時設就是兩個都要滿足。
+    require_donate: int(b.require_donate, 0, 0)
   };
 }
 

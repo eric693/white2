@@ -499,14 +499,18 @@ function seedToolRecipes(gid) {
 const BARE_HANDS = { name: '徒手', emoji: '✋', tier: 0, luck: 0, cooldown_cut: 0, durability: 0 };
 // ---- 玩家目前使用的道具：擁有且沒壞的最高階 → 免費起始工具 → 徒手（全壞時的保底）----
 function currentTool(gid, userId, kind) {
-  // 擁有且「沒壞」的最高階（durability<=0 表示不會壞；durability>0 需 uses_left>0）
-  const owned = db.prepare(
+  // 目前裝備的是「擁有的最高階那一把」，壞了就是壞了 —— 不會自動退回低階那把。
+  // （以前壞掉會自動改用次一階的工具，玩家可以永遠不修，耐久等於形同虛設；
+  //   而且「我明明有鐵鎬，怎麼變成木鎬在挖」也很難理解。）
+  const top = db.prepare(
     `SELECT t.*, u.uses_left FROM gather_tools t JOIN gather_user_tools u ON u.tool_id = t.id
       WHERE t.guild_id=? AND t.kind=? AND u.guild_id=? AND u.user_id=? AND t.enabled=1
-        AND (t.durability<=0 OR u.uses_left>0)
       ORDER BY t.tier DESC LIMIT 1`
   ).get(gid, kind, gid, userId);
-  if (owned) return owned;
+  if (top) {
+    if (top.durability <= 0 || top.uses_left > 0) return top;
+    return { ...BARE_HANDS, brokenTool: top };   // 最好的那把壞了＝現在沒有工具，先去修
+  }
   // 沒有可用的擁有工具 → 免費基礎工具（tier1）
   const base = db.prepare('SELECT * FROM gather_tools WHERE guild_id=? AND kind=? AND enabled=1 ORDER BY tier ASC LIMIT 1').get(gid, kind);
   if (!base) return BARE_HANDS;
@@ -705,6 +709,11 @@ function doGather(gid, uid, uname, kind) {
   const c = cfg(gid);
   const tool = currentTool(gid, uid, kind);
   if (c.require_tool && !tool.id) {
+    if (tool.brokenTool) {
+      const b = tool.brokenTool;
+      return { error: `🛠️ 你的 ${b.emoji || ''}**${b.name}** 已經壞了（耐久 0/${b.durability}），不修就不能${KIND_NAME[kind]}。\n`
+        + `用 \`/修理 ${b.name}\` 修好（${repairCostOf(b).toLocaleString('en-US')} ${c.currency_name}），或去 \`/商店\` 買新的。` };
+    }
     const any = db.prepare('SELECT name, emoji FROM gather_tools WHERE guild_id=? AND kind=? AND enabled=1 ORDER BY tier ASC LIMIT 1').get(gid, kind);
     if (any) return { error: `✋ 徒手不能${KIND_NAME[kind]}：你目前沒有可用的工具（壞掉、還沒買，或被抵押走了）。先修理、買一支 ${any.emoji || ''}${any.name}，或還款把工具贖回。` };
   }
@@ -1578,6 +1587,14 @@ function init(client) {
         const tool = currentTool(gid, uid, kind);
         // 禁止徒手：工具壞了／被抵押走了就不能採集，要先修理或贖回（後台 require_tool 可關）
         if (c.require_tool && !tool.id) {
+          if (tool.brokenTool) {
+            const b = tool.brokenTool;
+            return i.reply({
+              content: `🛠️ 你的 ${b.emoji || ''}**${b.name}** 已經壞了（耐久 0/${b.durability}），不修就不能${KIND_NAME[kind]}。\n`
+                + `用 \`/修理 ${b.name}\` 修好（${repairCostOf(b).toLocaleString('en-US')} ${c.currency_name}），或去 \`/商店\` 買新的。`,
+              flags: MessageFlags.Ephemeral
+            });
+          }
           const any = db.prepare('SELECT name, emoji FROM gather_tools WHERE guild_id=? AND kind=? AND enabled=1 ORDER BY tier ASC LIMIT 1').get(gid, kind);
           if (any) {
             return i.reply({

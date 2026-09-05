@@ -688,6 +688,7 @@ function quotesEmbed(gid) {
 // 想連動物價或股價再填，由管理端自己決定。
 require('../../db').ensureColumns('market_news', {
   category: "TEXT NOT NULL DEFAULT '財經'",
+  links: "TEXT NOT NULL DEFAULT '[]'",   // 這則動態附的連結（最多 5 個）：[{emoji,label,url}]
   pinned: 'INTEGER NOT NULL DEFAULT 0'
 });
 
@@ -709,6 +710,17 @@ function newsCategories(gid) {
   return out.slice(0, 24);
 }
 const catEmoji = (c) => CAT_EMOJI[c] || '🏷️';
+
+// 一則動態可以附最多 5 個連結（新角色介紹、活動說明、報名表…）。
+// 用內文的 markdown 連結而不是按鈕：世界動態是一則訊息列很多則消息，
+// 按鈕最多 5 顆而且分不出屬於哪一則，寫成連結才知道是哪一則的。
+function linkLine(n) {
+  let links = [];
+  try { links = JSON.parse(n.links || '[]'); } catch { links = []; }
+  links = (Array.isArray(links) ? links : []).filter(l => l && /^https?:\/\//.test(l.url || '')).slice(0, 5);
+  if (!links.length) return '';
+  return '\n' + links.map(l => `${l.emoji || '🔗'} [${l.label || '前往'}](${l.url})`).join('　');
+}
 
 // 玩家看到的世界動態。
 //   mode 'latest'（預設）＝置頂在前，其餘照時間新到舊，只列「還在生效／最近」的
@@ -739,7 +751,7 @@ function worldEmbed(gid, { category = '', mode = 'latest' } = {}) {
     for (const n of rows) {
       embed.addFields({
         name: `${n.pinned ? '📌 ' : ''}${n.headline}`.slice(0, 250),
-        value: (n.body || '　').slice(0, 1024)
+        value: ((n.body || '　') + linkLine(n)).slice(0, 1024)
       });
     }
   } else {
@@ -752,7 +764,7 @@ function worldEmbed(gid, { category = '', mode = 'latest' } = {}) {
     for (const [cat, list] of groups) {
       embed.addFields({
         name: `${catEmoji(cat)}　${cat}`.slice(0, 250),
-        value: list.map(n => `${n.pinned ? '📌 ' : ''}**${n.headline}**${n.body ? `\n${n.body}` : ''}`)
+        value: list.map(n => `${n.pinned ? '📌 ' : ''}**${n.headline}**${n.body ? `\n${n.body}` : ''}${linkLine(n)}`)
           .join('\n\n').slice(0, 1024)
       });
     }

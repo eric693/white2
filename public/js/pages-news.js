@@ -155,7 +155,7 @@ App.page('news', {
     const cats = await GET('/market-news-categories').catch(() => []);
     el.querySelector('#addnews').onclick = () => {
       const symsOpt = targets.symbols.map(s => `<option value="${s.id}">${UI.esc((s.emoji || '') + s.name)}（${UI.esc(s.code)}）</option>`).join('');
-      UI.modal({
+      const m = UI.modal({
         title: '發布世界動態', okText: '發布',
         bodyHTML: `
           <div class="form-row">
@@ -168,6 +168,8 @@ App.page('news', {
           <div class="field">${H.toggle('pinned', false, '置頂（不受時效限制，永遠留在「最新」最上面）')}</div>
           <div class="hint" style="margin-bottom:8px">下面的物價／股價／發星幣<b>全部可以留空</b>——只是一則消息也能發。要連動遊戲系統再填。</div>
           <div class="field"><label>內文</label><textarea name="body" rows="3" placeholder="產蛋量預估下滑三成，蛋商已開始搶貨。"></textarea></div>
+          <div class="field"><label>附加連結（最多 5 個，例如新角色介紹、活動說明）</label>${H.buttonsEditor('links', '[]')}
+            <div class="hint">會顯示在這則動態的內文下面（🔗 文字連結）。網址要完整帶 https://。</div></div>
           <div class="form-row">
             <div class="field"><label>開始時間（只選整點，留空＝馬上）</label>
               <div style="display:flex;gap:6px">
@@ -224,12 +226,14 @@ App.page('news', {
               headline: v('headline'), body: v('body'), image_url: v('image_url'),
               duration_h: parseInt(v('duration_h'), 10) || 3, effects, stock_fx, effect_ts, payout_each,
               category: v('category') || '財經',
+              links: H.buttonsValue(back, 'links'),
               pinned: !!back?.querySelector('[name=pinned]')?.checked
             });
           } catch (e) { UI.err(e.message); return false; }
           UI.ok(v('start_date') ? '已排程，到時間會自動生效' : '已發布，一分鐘內生效'); App.go('news');
         }
       });
+      H.bindButtons(m.back);   // 附加連結的「＋新增／✕刪除／上傳圖標」
 
       // modal 開啟後綁定 scope → 目標下拉的連動
       setTimeout(() => {

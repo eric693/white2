@@ -637,10 +637,18 @@ function infoEmbed(gid, userId, username) {
     lines.push(c.income_flat
       ? `💰 **所得稅**　整筆跳級 ${range}，免稅 ${money(gid, c.income_free || 0)}`
       : `💰 **所得稅**　免稅 ${money(gid, c.income_free || 0)}，超過的部分累進 ${range}`);
+    // 「不課」清單只列這台伺服器真的有開的功能 —— 玩家看到「不課：轉帳…」
+    // 卻找不到轉帳指令（這台是關的），會以為說明寫錯或功能壞了。
+    const gc2 = require('../../db').guildConfig('gather_config', gid);
+    const notTaxed = [];
+    if (gc2.transfer_enabled) notTaxed.push('轉帳');
+    notTaxed.push('銀行存提款', '信貸本金', '退款');
+    notTaxed.push('交易返還', '股票未實現漲跌');
     lines.push('　　⤷ 只課**這一期實際賺到的錢**：賣東西、任務、簽到等收入，'
       + '＋股票**賣掉之後**的淨損益（含買賣手續費）。\n'
-      + '　　⤷ 不課：轉帳、銀行存提款、信貸本金、退款、交易返還、股票未實現漲跌，'
-      + '以及你原本就有的資產與餘額。');
+      + `　　⤷ 不課：${notTaxed.join('、')}，以及你原本就有的資產與餘額。\n`
+      + '　　⤷ ⚠️ **錢藏進銀行不會少課稅**：課的是「這一期賺了多少」，跟錢最後放在錢包還是銀行無關。'
+      + '存款本身不課稅，但賺到的當下就已經算進所得了。');
   }
   if (c.partner_enabled) lines.push(`💞 **同居稅**　倍增累進：第 1 位 ${money(gid, c.partner_base || 0)}、`
     + `第 2 位 ×${c.partner_step || 2}、第 3 位 ×${Math.pow(c.partner_step || 2, 2)}…（同居人數已無上限，靠稅金節制）`);

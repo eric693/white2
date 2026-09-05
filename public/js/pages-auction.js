@@ -154,6 +154,9 @@ App.page('auction', {
         <div class="field"><label>持續（小時）</label><input name="duration_h" type="number" min="0.25" step="0.25" value="${r.end_ts && r.start_ts ? ((r.end_ts - r.start_ts) / 3600000).toFixed(2) : 24}"></div>
       </div>
       <div class="form-row">
+        <div class="field"><label>參加資格：累計捐款門檻（星幣，0＝不限）</label>
+          <input name="require_donate" type="number" min="0" value="${r.require_donate || 0}">
+          <div class="hint">填了就只有「用 /捐款 捐給基金會、累計達這個金額」的玩家能參加。跟下面的身分組同時設＝兩個條件都要滿足。</div></div>
         <div class="field"><label>參加資格（身分組）</label>${H.roleSelect('require_role', (r.require_role || '').split(',')[0] || '', { emptyLabel: '— 不限，所有人都能出價 —' })}
           <div class="hint">只有這個身分組的人能參加。<b>不限定於基金會</b>——想用捐款者、贊助者、活動限定或任何身分組都可以，換一個就好。管理員一律不受限。</div></div>
         <div class="field"><label>沒有資格的人</label>

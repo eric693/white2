@@ -176,13 +176,22 @@ router.post('/market-news', guardModule('news'), (req, res) => {
   // 大標（分類）不再限定那 10 種：客戶要能自己決定「這則算什麼」，
   // 預設 10 類只是建議值，打新的就會自動出現在玩家端的篩選選單裡。
   const category = String(b.category || '').trim().slice(0, 12) || '財經';
+  // 附加連結（最多 5 個）：新角色介紹、活動說明、報名表…
+  let links = '[]';
+  try {
+    const arr = (typeof b.links === 'string' ? JSON.parse(b.links || '[]') : (b.links || []))
+      .filter(l => l && /^https?:\/\//.test(String(l.url || '')))
+      .slice(0, 5)
+      .map(l => ({ emoji: String(l.emoji || '').slice(0, 8), label: String(l.label || '前往').slice(0, 40), url: String(l.url) }));
+    links = JSON.stringify(arr);
+  } catch { links = '[]'; }
   const r = db.prepare(
-    `INSERT INTO market_news (guild_id,headline,body,image_url,duration_h,effects,stock_fx,effect_ts,created_by,payout_each,category,pinned)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`
+    `INSERT INTO market_news (guild_id,headline,body,image_url,duration_h,effects,stock_fx,effect_ts,created_by,payout_each,category,pinned,links)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`
   ).run(req.guildId, String(b.headline), String(b.body || ''), String(b.image_url || ''),
     int(b.duration_h, 6, 1), JSON.stringify(effects), JSON.stringify(stockFx),
     b.effect_ts ? Math.floor(int(b.effect_ts, 0, 0) / 3600000) * 3600000 : 0, req.user.name, payoutEach,
-    category, b.pinned ? 1 : 0);
+    category, b.pinned ? 1 : 0, links);
   audit(req.user.name, `發布世界動態［${category}］：${b.headline}`);
   res.json({ id: r.lastInsertRowid });
 });
