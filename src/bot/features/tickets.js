@@ -5,6 +5,7 @@ const {
   ChannelType, PermissionFlagsBits, MessageFlags} = require('discord.js');
 const { db, guildConfig, logError } = require('../../db');
 const { brandColor } = require('../../util/brand');
+const { nameOf } = require('../../util/names');
 const { absUrl } = require('../../util/url');
 const { buildButtonRows } = require('../../util/components');
 
@@ -120,7 +121,7 @@ async function openTicket(i, subject, panelId) {
   }
 
   const info = db.prepare('INSERT INTO tickets (guild_id, user_id, username, subject, panel_id, panel_name) VALUES (?,?,?,?,?,?)')
-    .run(gid, i.user.id, i.user.username, subject || '', panel.id, panel.name);
+    .run(gid, i.user.id, nameOf(i), subject || '', panel.id, panel.name);
   const ticketId = info.lastInsertRowid;
 
   // 客服身分組：優先用面板自己的，沒有才用全域
@@ -152,7 +153,7 @@ async function openTicket(i, subject, panelId) {
   }
   db.prepare('UPDATE tickets SET channel_id=? WHERE id=?').run(channel.id, ticketId);
 
-  const welcome = String(panel.welcome_text || c.welcome_text || '').replace(/{user}/g, `<@${i.user.id}>`).replace(/{username}/g, i.user.username);
+  const welcome = String(panel.welcome_text || c.welcome_text || '').replace(/{user}/g, `<@${i.user.id}>`).replace(/{username}/g, nameOf(i));
   const embed = new EmbedBuilder().setColor(brandColor()).setTitle(`客服單 #${ticketId}`)
     .setDescription(welcome + (subject ? `\n\n**主旨**：${subject}` : ''))
     .setFooter({ text: '處理完成後由客服人員結案關閉；開單者可持續在此回覆補充' });
@@ -185,7 +186,7 @@ async function closeTicket(i, ticketId) {
   }
 
   db.prepare(`UPDATE tickets SET status='closed', closed_at=datetime('now','localtime'), closed_by=? WHERE id=?`)
-    .run(i.user.username, ticketId);
+    .run(nameOf(i), ticketId);
 
   const ch = i.channel;
   // 鎖住開單者發言並改名
@@ -198,7 +199,7 @@ async function closeTicket(i, ticketId) {
     new ButtonBuilder().setCustomId(`ticket:del:${ticketId}`).setLabel('刪除此頻道').setStyle(ButtonStyle.Danger));
   await i.reply({
     embeds: [new EmbedBuilder().setColor(0x99aab5).setTitle('客服單已關閉')
-      .setDescription(`由 ${i.user.username} 關閉。客服人員確認無誤後可刪除此頻道。\n\n此頻道稍後可能被移除，屆時原本的頻道連結將無法開啟（屬正常現象）。`)],
+      .setDescription(`由 ${nameOf(i)} 關閉。客服人員確認無誤後可刪除此頻道。\n\n此頻道稍後可能被移除，屆時原本的頻道連結將無法開啟（屬正常現象）。`)],
     components: [row]
   }).catch(() => {});
 
@@ -209,14 +210,21 @@ async function closeTicket(i, ticketId) {
       await log.send({
         embeds: [new EmbedBuilder().setColor(0x99aab5).setTitle(`客服單 #${ticketId} 已關閉`)
           .addFields(
-            { name: '開單者', value: `${t.username}（\`${t.user_id}\`）`, inline: true },
-            { name: '關閉者', value: i.user.username, inline: true },
+            // 顯示「伺服器暱稱」並直接 @ 出來 —— 只印帳號名與一長串 ID，管理員根本認不出是誰
+            { name: '開單者', value: `${ticketName(i, t)}　<@${t.user_id}>`, inline: true },
+            { name: '關閉者', value: `${nameOf(i)}　<@${i.user.id}>`, inline: true },
             { name: '開單時間', value: t.opened_at, inline: true },
             { name: '主旨', value: t.subject || '（無）' }
           )]
       }).catch(() => {});
     }
   }
+}
+
+// 客服單上的開單者名字：優先用現在的伺服器暱稱，抓不到（已退群）就用開單當下記的帳號名
+function ticketName(i, t) {
+  const m = i.guild && i.guild.members && i.guild.members.cache.get(t.user_id);
+  return (m && m.displayName) || t.username || `使用者 ${t.user_id}`;
 }
 
 function init(client) {

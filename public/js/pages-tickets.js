@@ -60,7 +60,7 @@ App.page('tickets', {
           <thead><tr><th>#</th><th>面板</th><th>開單者</th><th>主旨</th><th>狀態</th><th>開單時間</th><th>關閉者</th></tr></thead>
           <tbody>${list.length ? list.map(t => `
             <tr><td>${t.id}</td><td>${UI.esc(t.panel_name || '—')}</td>
-              <td class="wrap">${UI.esc(t.username)}<br><code>${t.user_id}</code></td>
+              <td class="wrap">${H.who(t.user_id, t.username)}</td>
               <td class="wrap">${UI.esc(t.subject || '—')}</td>
               <td>${t.status === 'open' ? '<span class="tag ok">處理中</span>' : '<span class="tag">已關閉</span>'}</td>
               <td>${UI.esc(t.opened_at)}</td><td>${UI.esc(t.closed_by || '—')}</td></tr>`).join('')
