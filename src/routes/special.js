@@ -27,7 +27,7 @@ router.put('/special', (req, res) => {
     admin_users: csvField(b.admin_users),
     log_channel: b.log_channel || '',
     channel_scoped: b.channel_scoped ? 1 : 0,
-    notify_mode: ['shop', 'log', 'dm'].includes(b.notify_mode) ? b.notify_mode
+    notify_mode: ['shop', 'log', 'dm', 'none'].includes(b.notify_mode) ? b.notify_mode
       : (guildConfig('special_config', req.guildId).notify_mode || 'shop'),
     per_item_limit: Math.max(0, parseInt(b.per_item_limit, 10) || 0),
     price_escalate: b.price_escalate ? 1 : 0,

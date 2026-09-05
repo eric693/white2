@@ -223,8 +223,10 @@ async function doRedeem(client, gid, item, user, uname, qtyRaw = 1, member = nul
   const shop = item.shop_id ? db.prepare('SELECT * FROM special_shops WHERE id=? AND guild_id=?').get(item.shop_id, gid) : null;
   const roleIds = (shop && shop.notify_roles) ? shop.notify_roles : c.admin_roles;
   const mode = c.notify_mode || 'shop';
-  // shop＝發在商店頻道（公開）；log＝只發到管理員通知頻道；dm＝不發任何頻道，改私訊管理員
-  const chId = mode === 'dm' ? '' : (mode === 'log' ? c.log_channel : (item.channel_id || (shop && shop.channel_id) || c.log_channel));
+  // shop＝發在商店頻道（公開）；log＝只發到管理員通知頻道；dm＝不發頻道改私訊管理員；
+  // none＝完全不通知（兌換單照樣進後台待辦，管理員自己去看）
+  const chId = (mode === 'dm' || mode === 'none') ? ''
+    : (mode === 'log' ? c.log_channel : (item.channel_id || (shop && shop.channel_id) || c.log_channel));
 
   const notify = new EmbedBuilder().setColor(brandColor()).setTitle('🎁 收到一筆兌換')
     .setDescription(`<@${user.id}> 用 ${money(gc, total)} 兌換了 **${item.emoji || ''}${item.name}** × **${qty}**` +
@@ -235,7 +237,7 @@ async function doRedeem(client, gid, item, user, uname, qtyRaw = 1, member = nul
   if (item.image_url) notify.setThumbnail(absUrl(item.image_url));
 
   let posted = false;
-  if (chId) {
+  if (chId && mode !== 'none') {
     const ch = client.channels.cache.get(chId) || await client.channels.fetch(chId).catch(() => null);
     if (ch) {
       const mentions = [...csv(roleIds).map(r => `<@&${r}>`), ...csv(c.admin_users).map(u => `<@${u}>`)];
@@ -254,7 +256,9 @@ async function doRedeem(client, gid, item, user, uname, qtyRaw = 1, member = nul
   const embed = new EmbedBuilder().setColor(brandColor()).setTitle('✅ 兌換成功')
     .setDescription(`你兌換了 ${item.emoji || '🎁'} **${item.name}** × **${qty}**！\n` +
       `共花費 ${money(gc, total)}\n` +
-      (posted ? '已私下通知管理員為你處理，請留意私訊。' : '⚠️ 目前沒有可用的通知管道，請直接聯絡管理員。') +
+      (mode === 'none'
+        ? '兌換單已送出，管理員會在後台看到並為你處理。'
+        : posted ? '已私下通知管理員為你處理，請留意私訊。' : '⚠️ 目前沒有可用的通知管道，請直接聯絡管理員。') +
       `\n\n兌換單編號：#${redeemId}`)
     .setFooter({ text: `餘額 ${(w.coins - total).toLocaleString('en-US')} ${gc.currency_name}` });
   return { embed };
