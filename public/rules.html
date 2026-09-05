@@ -589,7 +589,7 @@
     （負數餘額只會來自其他情況，例如賣出負股價的股票、被看門動物罰款。）
   </div>
 
-  <h3>四種稅（各自獨立計算）</h3>
+  <h3>各種稅（各自獨立計算）</h3>
   <div class="scroll"><table>
     <thead><tr><th>稅目</th><th class="wrap">課什麼</th><th class="wrap">預設稅額</th></tr></thead>
     <tbody>
@@ -597,40 +597,40 @@
       <tr><td>💞 同居稅</td><td class="wrap">你的<strong>同居角色數量</strong></td><td class="wrap"><strong>倍增累進</strong>：第 1 位 15,000，第 2 位 ×2（30,000）、第 3 位 ×4（60,000）…</td></tr>
       <tr><td>🐾 寵物稅</td><td class="wrap">你的<strong>寵物數量</strong></td><td class="wrap"><strong>倍增累進</strong>：第 1 隻 8,000，第 2 隻 ×2（16,000）、第 3 隻 ×4（32,000）…</td></tr>
       <tr><td>🏠 房屋稅</td><td class="wrap">你的<strong>房屋等級</strong></td><td class="wrap">基礎 900，等級越高越重（指數成長）</td></tr>
+      <tr><td>🛍️ 兌換稅</td><td class="wrap">你這一期在<strong>神秘商店兌換掉的金額</strong></td><td class="wrap"><strong>20%</strong>（例如兌換 35,000 → 課 7,000）</td></tr>
     </tbody>
   </table></div>
 
   <div class="note">
     <span class="h">2026-09 改版：不再對「你有多少錢」課稅</span>
     舊制是看<strong>錢包餘額</strong>課稅，沒賺錢也會被慢慢刮掉；現在只課<strong>這一期實際賺到的</strong>。<br>
-    <strong>農地稅／養殖稅／兌換稅預設關閉</strong>，但工程師可以視經濟狀況重新開徵：農地稅按格數（含免稅格數、設施等級越高加課越多）、
-    養殖稅按動物與魚的數量、兌換稅按你在神秘商店兌換掉的金額。真的開了，稅單上就會多出那幾行，以 <code>/稅單</code> 顯示為準。<br>
+    <strong>兌換稅目前開徵中（20%）</strong>：在神秘商店兌換等於把星幣換成實體獎勵，這一段也要課稅。
+    <strong>農地稅／養殖稅目前關閉</strong>，工程師可以視經濟狀況重新開徵（農地稅按格數、設施等級越高加課越多；養殖稅按動物與魚的數量）。
+    真的開了，稅單上就會多出那幾行，一律以 <code>/稅單</code> 顯示為準。<br>
     <strong>不算收入的項目</strong>：轉帳、銀行存提款、信貸本金與還款、各種退款、交易返還、
     股票<strong>還沒賣掉</strong>的漲跌——這些都只是錢換位置，不是賺到。
   </div>
 
   <h3>所得稅是「累進課稅」（只課超過的部分）</h3>
   <p>採<strong>累進級距</strong>：<strong>不是整筆課</strong>，而是每一段各用自己的稅率——跨過門檻，<strong>只有超過的那一段</strong>才適用更高的稅率。所以<strong>不會「多賺一塊整筆爆增」</strong>，賺越多的那部分才課越重，中低玩家幾乎沒感覺。</p>
-  <p>免稅額 <strong>10 萬</strong>，超過的部分分段課，最高 20%：</p>
+  <p>免稅額 <strong>5 萬</strong>，超過的部分分段課，最高 23%：</p>
   <div class="scroll"><table>
     <thead><tr><th class="wrap">這一段收入</th><th class="num">稅率</th></tr></thead>
     <tbody>
-      <tr><td class="wrap">10 萬以下（免稅額）</td><td class="num">0%</td></tr>
-      <tr><td class="wrap">10 萬 ～ 20 萬</td><td class="num">1%</td></tr>
-      <tr><td class="wrap">20 萬 ～ 40 萬</td><td class="num">2%</td></tr>
-      <tr><td class="wrap">40 萬 ～ 70 萬</td><td class="num">3%</td></tr>
-      <tr><td class="wrap">70 萬 ～ 100 萬</td><td class="num">5%</td></tr>
-      <tr><td class="wrap">100 萬 ～ 200 萬</td><td class="num">7%</td></tr>
-      <tr><td class="wrap">200 萬 ～ 400 萬</td><td class="num">10%</td></tr>
-      <tr><td class="wrap">400 萬 ～ 700 萬</td><td class="num">13%</td></tr>
-      <tr><td class="wrap">700 萬 ～ 1000 萬</td><td class="num">17%</td></tr>
-      <tr><td class="wrap">1000 萬以上</td><td class="num">20%</td></tr>
+      <tr><td class="wrap">5 萬以下（免稅額）</td><td class="num">0%</td></tr>
+      <tr><td class="wrap">5 萬 ～ 6 萬</td><td class="num">3%</td></tr>
+      <tr><td class="wrap">6 萬 ～ 15 萬</td><td class="num">6%</td></tr>
+      <tr><td class="wrap">15 萬 ～ 50 萬</td><td class="num">10%</td></tr>
+      <tr><td class="wrap">50 萬 ～ 200 萬</td><td class="num">14%</td></tr>
+      <tr><td class="wrap">200 萬 ～ 1000 萬</td><td class="num">18%</td></tr>
+      <tr><td class="wrap">1000 萬以上</td><td class="num">23%</td></tr>
     </tbody>
   </table></div>
   <div class="note">
     <span class="h">怎麼算的（舉例）</span>
-    這期賺了 <strong>30 萬</strong>：10～20 萬那段 10 萬 ×1%＝1,000，加 20～30 萬那段 10 萬 ×2%＝2,000，<strong>合計 3,000</strong>（有效稅率才 1%）。<br>
-    這期賺了 <strong>300 萬</strong>：分段加起來約 <strong>15 萬</strong>（5%）。越往上、超過的那一段才課越重。
+    這期賺了 <strong>10 萬</strong>：5～6 萬那段 1 萬 ×3%＝300，加 6～10 萬那段 4 萬 ×6%＝2,400，<strong>合計 2,700</strong>（有效稅率 2.7%）。<br>
+    這期賺了 <strong>100 萬</strong>：分段加起來約 <strong>10.6 萬</strong>（10.6%）。越往上、超過的那一段才課越重。<br>
+    ⚠️ 級距與免稅額工程師會視情況調整，<strong>實際以 <code>/稅單</code> 的「稅制說明」為準</strong>（那裡顯示的一定是當下生效的數字）。
   </div>
   <div class="note">
     <span class="h">同居稅與寵物稅是「倍增累進」</span>
@@ -869,7 +869,8 @@
 
   <h3>💞 同居</h3>
   <p>好感度到<strong>曖昧（Lv.6）</strong>以上、房屋達 Lv.6 就能請他搬進你家。<strong>沒有人數上限</strong>——限制你的是同居稅（見下）。</p>
-  <p>每位角色都有<strong>自己專屬的能力</strong>（由管理員設定，不是隨機的），搬進來就自動生效，數值隨好感度階級成長。</p>
+  <p>每位角色都有<strong>自己專屬的能力</strong>（由管理員設定，不是隨機的），搬進來就自動生效，數值隨好感度階級成長。
+  照顧型能力<strong>一區就是一個</strong>——🌾農地照顧＝收成＋重新播種、🐠魚缸照顧＝餵魚＋領星幣，不會再出現「只會收不會種」的半套。</p>
 
   <h4>🛠️ 工作區域：一位角色包辦一整區</h4>
   <p>在 💞同居 面板按「🛠️ 指派工作區域」，一位角色負責一個區域的<strong>完整流程</strong>：</p>

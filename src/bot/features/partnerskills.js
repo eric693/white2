@@ -23,13 +23,21 @@ const today = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10)
 // code 是程式認得的鍵；後台只能挑這裡有的 code（新增能力要同時加這裡的實作）。
 // unit：count＝數量、coins＝金額、pct＝百分比。後台填的 val_min/val_max 就是這個單位。
 const ABILITIES = {
-  // 生產類
+  // ---- 整區照顧（2026-09 統合）----
+  // 以前一區拆成「收成」與「種植／餵食／放蛋」兩個能力，管理端要替角色挑兩次、
+  // 玩家也只能派到其中一半，等於永遠只做半套。現在一區一個能力，內容＝該區的完整流程，
+  // 跟「工作區域」一一對應。舊的拆分能力自動併過來（見 migrateMergedSkills）。
+  farm_care:          { kind: 'produce',   name: '🌾 農地照顧',     unit: 'none',  desc: '收成成熟的作物 ＋ 用背包的種子重新播種' },
+  greenhouse_care:    { kind: 'produce',   name: '🏡 溫室照顧',     unit: 'none',  desc: '收成成熟的花卉 ＋ 用背包的種子重新播種' },
+  ranch_tend:         { kind: 'produce',   name: '🐄 牧場照顧',     unit: 'none',  desc: '照顧動物並把蛋／奶收進背包' },
+  hatch_care:         { kind: 'produce',   name: '🥚 孵化室照顧',   unit: 'none',  desc: '把背包的蛋放進孵化室 ＋ 領走孵好的動物' },
+  aqua_care:          { kind: 'produce',   name: '🐠 魚缸照顧',     unit: 'none',  desc: '餵魚 ＋ 把累積的星幣領進錢包' },
+  kitchen_cook:       { kind: 'care',      name: '🍳 廚房做飯',     unit: 'none',  desc: '領走煮好的料理 ＋ 用現有材料繼續下廚' },
+  // 生產類（舊的拆分能力，保留給既有資料，後台清單不再顯示）
   farm_harvest:       { kind: 'produce',   name: '🌾 農地收成',     unit: 'none',  desc: '每天自動收成已成熟的農地產物' },
   aqua_collect:       { kind: 'produce',   name: '🐠 魚缸收成',     unit: 'none',  desc: '每天自動把魚缸累積的星幣領進錢包' },
   greenhouse_harvest: { kind: 'produce',   name: '🏡 溫室收成',     unit: 'none',  desc: '每天自動收成已成熟的溫室產物' },
   hatch_collect:      { kind: 'produce',   name: '🥚 孵化室收成',   unit: 'none',  desc: '每天自動領走孵好的動物，牧場滿了就直接賣掉換星幣' },
-  ranch_tend:         { kind: 'produce',   name: '🐄 牧場照顧',     unit: 'none',  desc: '自動照顧動物並把蛋／奶收進背包' },
-  kitchen_cook:       { kind: 'care',      name: '🍳 廚房做飯',     unit: 'none',  desc: '用背包現有的材料自動下廚，煮好也自動收進料理櫃（材料不夠就跳過）' },
   thief_guard:        { kind: 'produce',   name: '🛡️ 擊退小偷',     unit: 'coins', desc: '協助擊退小偷，成功時額外拿到星幣' },
   // 冒險類
   mine_helper:        { kind: 'adventure', name: '⛏️ 挖礦助手',     unit: 'count', kindKey: 'mine',   desc: '每天額外帶回隨機礦物' },
@@ -54,11 +62,11 @@ const KIND_LABEL = { produce: '生產類', adventure: '冒險類', care: '自動
 // ---- 開箱即有的預設能力池（後台可整批匯入後再自行調整）----
 // tiers 是「好感階段 → 數值」：lv 是好感度階級門檻，由低到高；玩家好感度達到哪一階就用哪一階的數值。
 const DEFAULT_SKILLS = [
-  { code: 'farm_harvest',       tiers: [] },
-  { code: 'aqua_collect',       tiers: [] },
-  { code: 'greenhouse_harvest', tiers: [] },
-  { code: 'hatch_collect',      tiers: [] },
+  { code: 'farm_care',          tiers: [] },
+  { code: 'greenhouse_care',    tiers: [] },
   { code: 'ranch_tend',         tiers: [] },
+  { code: 'hatch_care',         tiers: [] },
+  { code: 'aqua_care',          tiers: [] },
   { code: 'kitchen_cook',       tiers: [] },
   { code: 'thief_guard',        val_min: 100, val_max: 5000, tiers: [{ lv: 8, min: 200, max: 8000 }, { lv: 10, min: 500, max: 12000 }] },
   { code: 'mine_helper',        val_min: 5, val_max: 5, tiers: [{ lv: 8, min: 7, max: 7 }, { lv: 10, min: 10, max: 10 }] },
@@ -66,10 +74,6 @@ const DEFAULT_SKILLS = [
   { code: 'fish_helper',        val_min: 5, val_max: 5, tiers: [{ lv: 8, min: 7, max: 7 }, { lv: 10, min: 10, max: 10 }] },
   { code: 'forage_helper',      val_min: 5, val_max: 5, tiers: [{ lv: 8, min: 7, max: 7 }, { lv: 10, min: 10, max: 10 }] },
   { code: 'hunt_helper',        val_min: 5, val_max: 5, tiers: [{ lv: 8, min: 7, max: 7 }, { lv: 10, min: 10, max: 10 }] },
-  { code: 'farm_plant',         tiers: [] },
-  { code: 'aqua_feed',          tiers: [] },
-  { code: 'greenhouse_plant',   tiers: [] },
-  { code: 'hatch_put',          tiers: [] },
   { code: 'daily_coins',        val_min: 0, val_max: 1000, tiers: [{ lv: 8, min: 0, max: 2000 }, { lv: 10, min: 0, max: 5000 }] },
   { code: 'sell_bonus',         val_min: 5, val_max: 5, tiers: [{ lv: 8, min: 7, max: 7 }, { lv: 10, min: 10, max: 10 }] },
   { code: 'stock_fee_cut',      val_min: 1, val_max: 1, tiers: [{ lv: 8, min: 2, max: 2 }, { lv: 10, min: 3, max: 3 }] },
@@ -89,6 +93,33 @@ function seedSkills(gid) {
       ins.run(gid, a.name, d.code, a.kind, a.passive || '', d.val_min || 0, d.val_max || 0,
         JSON.stringify(d.tiers || []), a.desc, idx);
     });
+  })();
+}
+
+// 2026-09 統合：把舊的「收成／種植」拆分能力併進「整區照顧」。
+// 角色原本被指到 farm_harvest 或 farm_plant，一律改指到 farm_care（同一位角色重複的只留一筆），
+// 舊能力本身停用（資料保留，不刪），後台清單就只剩一區一個。
+const MERGE_MAP = {
+  farm_harvest: 'farm_care', farm_plant: 'farm_care',
+  greenhouse_harvest: 'greenhouse_care', greenhouse_plant: 'greenhouse_care',
+  hatch_collect: 'hatch_care', hatch_put: 'hatch_care',
+  aqua_collect: 'aqua_care', aqua_feed: 'aqua_care'
+};
+function migrateMergedSkills(gid) {
+  const idOf = (code) => (db.prepare('SELECT id FROM partner_skills WHERE guild_id=? AND code=?').get(gid, code) || {}).id;
+  db.transaction(() => {
+    for (const [oldCode, newCode] of Object.entries(MERGE_MAP)) {
+      const oldId = idOf(oldCode), newId = idOf(newCode);
+      if (!oldId || !newId) continue;
+      // 已經有新能力的角色，直接把舊的那筆刪掉；沒有的才改指過去
+      db.prepare(`DELETE FROM role_skills WHERE guild_id=? AND skill_id=?
+                    AND role_id IN (SELECT role_id FROM role_skills WHERE guild_id=? AND skill_id=?)`)
+        .run(gid, oldId, gid, newId);
+      db.prepare('UPDATE role_skills SET skill_id=? WHERE guild_id=? AND skill_id=?').run(newId, gid, oldId);
+      // 同居中的角色若記著舊能力 id，一併換過去
+      db.prepare('UPDATE home_partners SET skill_id=? WHERE guild_id=? AND skill_id=?').run(newId, gid, oldId);
+      db.prepare('UPDATE partner_skills SET enabled=0 WHERE guild_id=? AND id=?').run(gid, oldId);
+    }
   })();
 }
 
@@ -419,12 +450,13 @@ function areaAssignments(gid, uid) {
 // 工作區域要跟角色的「能力」相符 —— 挖礦助手不該被派去種田。
 // 以前完全沒鎖，任何角色都能顧任何一區，能力設定等於白設。
 const AREA_SKILLS = {
-  farm:       ['farm_harvest', 'farm_plant'],
-  greenhouse: ['greenhouse_harvest', 'greenhouse_plant'],
+  // 每區第一個是「整區照顧」（現行），後面是舊的拆分能力 —— 既有角色不用重設也還能顧同一區
+  farm:       ['farm_care', 'farm_harvest', 'farm_plant'],
+  greenhouse: ['greenhouse_care', 'greenhouse_harvest', 'greenhouse_plant'],
   ranch:      ['ranch_tend', 'thief_guard'],
-  kitchen:    ['kitchen_cook'],
-  hatchery:   ['hatch_collect', 'hatch_put'],
-  aquarium:   ['aqua_collect', 'aqua_feed']
+  hatchery:   ['hatch_care', 'hatch_collect', 'hatch_put'],
+  aquarium:   ['aqua_care', 'aqua_collect', 'aqua_feed'],
+  kitchen:    ['kitchen_cook']
 };
 /** 這個能力可以顧哪一區（顧不了任何一區就回 null） */
 function areaOfSkill(code) {
@@ -474,6 +506,11 @@ function runOne(gid, p, skill) {
   switch (skill.code) {
     case 'farm_harvest':       { const l = harvestPlots(gid, uid, 'field');      return l.length ? l : null; }
     case 'ranch_tend':         { const l = tendRanch(gid, uid);                  return l.length ? l : null; }
+    // 整區照顧＝直接跑那一區的完整流程（跟「工作區域」同一套實作，不會有兩種行為）
+    case 'farm_care':          { const l = runArea(gid, uid, uname, 'farm');       return l.length ? l : null; }
+    case 'greenhouse_care':    { const l = runArea(gid, uid, uname, 'greenhouse'); return l.length ? l : null; }
+    case 'hatch_care':         { const l = runArea(gid, uid, uname, 'hatchery');   return l.length ? l : null; }
+    case 'aqua_care':          { const l = runArea(gid, uid, uname, 'aquarium');   return l.length ? l : null; }
     case 'kitchen_cook':       { const l = tendKitchen(gid, uid, uname);         return l.length ? l : null; }
     case 'greenhouse_harvest': { const l = harvestPlots(gid, uid, 'greenhouse'); return l.length ? l : null; }
     case 'aqua_collect': {
@@ -525,7 +562,8 @@ function runOne(gid, p, skill) {
 // 所以重複跑是安全的，不需要用 last_run 擋。
 const HOURLY_SKILLS = new Set([
   'farm_harvest', 'greenhouse_harvest', 'aqua_collect', 'hatch_collect', 'ranch_tend',
-  'farm_plant', 'greenhouse_plant', 'hatch_put', 'aqua_feed', 'kitchen_cook'
+  'farm_plant', 'greenhouse_plant', 'hatch_put', 'aqua_feed', 'kitchen_cook',
+  'farm_care', 'greenhouse_care', 'hatch_care', 'aqua_care', 'ranch_tend'
 ]);
 
 /** 把這一輪做的事寫進明細（玩家用 💞同居 面板的「📒 同居明細」查得到） */
@@ -626,6 +664,7 @@ function runDaily(gid, mode = 'daily') {
 function init(client) {
   for (const [gid] of client.guilds.cache) {
     try { seedSkills(gid); } catch (e) { logError(gid, '同居能力預設建立失敗：', e.message); }
+    try { migrateMergedSkills(gid); } catch (e) { logError(gid, '同居能力統合失敗：', e.message); }
   }
   // 每天早上 8:40 結算（牧場的「幫忙收成」是 8:30，錯開避免同時搶 DB）
   cron.schedule('40 8 * * *', async () => {
@@ -672,7 +711,7 @@ function notifyChannel(client, gid) {
   return null;
 }
 
-module.exports = { WORK_AREAS, AREA_SKILLS, areaOfSkill, areaOfRole, runArea, areaAssignments, assignArea, designatedSkill, workLog, workCountToday,
+module.exports = { WORK_AREAS, AREA_SKILLS, areaOfSkill, areaOfRole, migrateMergedSkills, MERGE_MAP, runArea, areaAssignments, assignArea, designatedSkill, workLog, workCountToday,
   init, ABILITIES, KIND_LABEL, seedSkills, valueFor, skillText,
   skillsForRole, skillById, activeSkill, passivePct, runDaily, DEFAULT_SKILLS
 };
