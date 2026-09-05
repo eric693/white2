@@ -9,7 +9,7 @@ App.page('news', {
   help: {
     "intro": "遊戲世界的統一時間軸：官方公告、城市大小事、NPC 與角色動向、財經、企業、股票、活動、市場、世界觀，全部發在這裡。需要時才連動物價與股價。",
     "steps": [
-      "選分類（官方／城市／NPC／角色／財經／企業／股票／活動／市場／世界觀），寫標題與內文。",
+      "填「大標（分類）」——預設有官方／城市／NPC／角色／財經／企業／股票／活動／市場／世界觀，也可以直接打自己的大標（例如「公會」「戀愛」），打過就會出現在玩家端的分類選單。",
       "要有遊戲效果時，再選要影響的物品類別或個別股票，設漲跌幅度與持續時間。",
       "可以順便設定全民發放星幣，讓一則動態同時是一次活動。",
       "發布前用預覽確認文案與影響範圍。"
@@ -152,17 +152,17 @@ App.page('news', {
         <div class="field"><label>波動倍率 %</label><input name="vm${idx}" type="number" min="100" max="400" value="100"></div>
       </div>`;
 
+    const cats = await GET('/market-news-categories').catch(() => []);
     el.querySelector('#addnews').onclick = () => {
       const symsOpt = targets.symbols.map(s => `<option value="${s.id}">${UI.esc((s.emoji || '') + s.name)}（${UI.esc(s.code)}）</option>`).join('');
       UI.modal({
         title: '發布世界動態', okText: '發布',
         bodyHTML: `
           <div class="form-row">
-            <div class="field" style="max-width:170px"><label>分類</label>
-              <select name="category">
-                ${['財經','官方','城市','NPC','角色','企業','股票','活動','市場','世界觀']
-                  .map(x => `<option value="${x}">${x}</option>`).join('')}
-              </select></div>
+            <div class="field" style="max-width:190px"><label>大標（分類）</label>
+              <input name="category" list="newscats" value="財經" placeholder="可直接打自己的大標">
+              <datalist id="newscats">${(cats || []).map(x => `<option value="${UI.esc(x)}">`).join('')}</datalist>
+              <div class="hint">下拉是建議值，也可以自己打（最多 12 字）。打過的大標會自動出現在玩家端的分類選單。</div></div>
             <div class="field" style="flex:1"><label>標題</label><input name="headline" placeholder="🥚 蛋雞流感席捲南區牧場"></div>
           </div>
           <div class="field">${H.toggle('pinned', false, '置頂（不受時效限制，永遠留在「最新」最上面）')}</div>

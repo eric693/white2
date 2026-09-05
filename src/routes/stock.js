@@ -173,8 +173,9 @@ router.post('/market-news', guardModule('news'), (req, res) => {
   // 世界動態改版後，「什麼效果都沒有」也是合法的——官方公告、城市大小事、
   // 角色動向本來就只是故事，不必為了發一則消息硬掰一個物價變動出來。
   const payoutEach = int(b.payout_each, 0, 0);
-  const CATEGORIES = ['官方', '城市', 'NPC', '角色', '財經', '企業', '股票', '活動', '市場', '世界觀'];
-  const category = CATEGORIES.includes(String(b.category)) ? String(b.category) : '財經';
+  // 大標（分類）不再限定那 10 種：客戶要能自己決定「這則算什麼」，
+  // 預設 10 類只是建議值，打新的就會自動出現在玩家端的篩選選單裡。
+  const category = String(b.category || '').trim().slice(0, 12) || '財經';
   const r = db.prepare(
     `INSERT INTO market_news (guild_id,headline,body,image_url,duration_h,effects,stock_fx,effect_ts,created_by,payout_each,category,pinned)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`
@@ -184,6 +185,17 @@ router.post('/market-news', guardModule('news'), (req, res) => {
     category, b.pinned ? 1 : 0);
   audit(req.user.name, `發布世界動態［${category}］：${b.headline}`);
   res.json({ id: r.lastInsertRowid });
+});
+
+// 這台伺服器可用的大標：預設 10 類 ＋ 管理員自己打過的自訂分類
+router.get('/market-news-categories', guardModule('news'), (req, res) => {
+  const preset = ['官方', '城市', 'NPC', '角色', '財經', '企業', '股票', '活動', '市場', '世界觀'];
+  const used = db.prepare(
+    `SELECT category, COUNT(*) n FROM market_news WHERE guild_id=? AND category <> ''
+      GROUP BY category ORDER BY n DESC`).all(req.guildId).map(r => r.category);
+  const out = [];
+  for (const c of [...preset, ...used]) if (c && !out.includes(c)) out.push(c);
+  res.json(out);
 });
 
 // 置頂／取消置頂：置頂的動態不受時效限制，會一直留在「最新」的最上面

@@ -697,6 +697,19 @@ const CAT_EMOJI = {
   企業: '🏢', 股票: '📈', 活動: '🎉', 市場: '🛒', 世界觀: '🌏'
 };
 
+// 每台伺服器實際在用的大標：預設那 10 類，再加上管理員自己打的自訂分類。
+// 分類本來寫死，客戶要的是「自己決定這則算什麼」，所以改成後台可以直接輸入新的大標，
+// 用過就會自動出現在玩家端的篩選選單裡（Discord 選單上限 25 項，取最常用的）。
+function newsCategories(gid) {
+  const used = db.prepare(
+    `SELECT category, COUNT(*) n FROM market_news
+      WHERE guild_id=? AND category <> '' GROUP BY category ORDER BY n DESC`).all(gid).map(r => r.category);
+  const out = [];
+  for (const c of [...NEWS_CATEGORIES, ...used]) if (c && !out.includes(c)) out.push(c);
+  return out.slice(0, 24);
+}
+const catEmoji = (c) => CAT_EMOJI[c] || '🏷️';
+
 // 玩家看到的世界動態。
 //   mode 'latest'（預設）＝置頂在前，其餘照時間新到舊，只列「還在生效／最近」的
 //   mode 'history'        ＝連已經結束的一起列
@@ -719,24 +732,42 @@ function worldEmbed(gid, { category = '', mode = 'latest' } = {}) {
       ? `目前沒有「${category}」類的動態。`
       : '目前風平浪靜，沒有任何動態。');
   }
-  // 只給玩家看標題與內文，不顯示實際漲跌數字（避免照著新聞去套利）
-  for (const n of rows) {
-    const cat = n.category || '財經';
-    embed.addFields({
-      name: `${n.pinned ? '📌 ' : ''}${CAT_EMOJI[cat] || ''}［${cat}］${n.headline}`.slice(0, 250),
-      value: (n.body || '　').slice(0, 1024)
-    });
+  // 只給玩家看標題與內文，不顯示實際漲跌數字（避免照著新聞去套利）。
+  // 沒指定分類時依「大標」分組（📢 官方 / 🎉 活動 …），一眼看得出哪則是哪一類；
+  // 已經篩過某一類就不用再重複標大標了。
+  if (category) {
+    for (const n of rows) {
+      embed.addFields({
+        name: `${n.pinned ? '📌 ' : ''}${n.headline}`.slice(0, 250),
+        value: (n.body || '　').slice(0, 1024)
+      });
+    }
+  } else {
+    const groups = new Map();
+    for (const n of rows) {
+      const cat = n.category || '財經';
+      if (!groups.has(cat)) groups.set(cat, []);
+      groups.get(cat).push(n);
+    }
+    for (const [cat, list] of groups) {
+      embed.addFields({
+        name: `${catEmoji(cat)}　${cat}`.slice(0, 250),
+        value: list.map(n => `${n.pinned ? '📌 ' : ''}**${n.headline}**${n.body ? `\n${n.body}` : ''}`)
+          .join('\n\n').slice(0, 1024)
+      });
+    }
   }
   return embed.setFooter({ text: '🌏 璃白Yu光世界動態 · 官方公告與各地消息都在這裡' });
 }
 
 // 分類／最新／歷史的切換列
-function worldRows(category = '', mode = 'latest') {
+function worldRows(category = '', mode = 'latest', gid = '') {
+  const cats = gid ? newsCategories(gid) : NEWS_CATEGORIES;
   const menu = new StringSelectMenuBuilder().setCustomId(`world:cat:${mode}`)
     .setPlaceholder(category ? `分類：${category}` : '全部分類')
     .addOptions([{ label: '全部分類', value: '_all', default: !category }]
-      .concat(NEWS_CATEGORIES.map(c => ({
-        label: c, emoji: CAT_EMOJI[c], value: c, default: c === category
+      .concat(cats.map(c => ({
+        label: c.slice(0, 100), emoji: catEmoji(c), value: c, default: c === category
       }))));
   const btns = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setCustomId(`world:mode:latest:${category || '_all'}`).setLabel('最新')
@@ -866,7 +897,7 @@ function init(client) {
         if (act === 'market') return i.reply({ embeds: [marketEmbed(i.guildId)], flags: MessageFlags.Ephemeral });
         if (act === 'quotes') return i.reply({ embeds: [quotesEmbed(i.guildId)], flags: MessageFlags.Ephemeral });
         if (act === 'news') {
-          return i.reply({ embeds: [worldEmbed(i.guildId)], components: worldRows(), flags: MessageFlags.Ephemeral });
+          return i.reply({ embeds: [worldEmbed(i.guildId)], components: worldRows('', 'latest', i.guildId), flags: MessageFlags.Ephemeral });
         }
         if (act === 'mine') return i.reply({ embeds: [portfolioEmbed(i.guildId, i.user.id, i.user.username)], flags: MessageFlags.Ephemeral });
         if (act === 'chart') {
@@ -956,12 +987,12 @@ function init(client) {
       if (i.isStringSelectMenu?.() && i.customId.startsWith('world:cat:')) {
         const mode = i.customId.split(':')[2] === 'history' ? 'history' : 'latest';
         const cat = i.values[0] === '_all' ? '' : i.values[0];
-        return i.update({ embeds: [worldEmbed(i.guildId, { category: cat, mode })], components: worldRows(cat, mode) }).catch(() => {});
+        return i.update({ embeds: [worldEmbed(i.guildId, { category: cat, mode })], components: worldRows(cat, mode, i.guildId) }).catch(() => {});
       }
       if (i.isButton?.() && i.customId.startsWith('world:mode:')) {
         const [, , mode, rawCat] = i.customId.split(':');
         const cat = rawCat === '_all' ? '' : rawCat;
-        return i.update({ embeds: [worldEmbed(i.guildId, { category: cat, mode })], components: worldRows(cat, mode) }).catch(() => {});
+        return i.update({ embeds: [worldEmbed(i.guildId, { category: cat, mode })], components: worldRows(cat, mode, i.guildId) }).catch(() => {});
       }
 
       if (!i.isChatInputCommand() || !CMDS.includes(i.commandName)) return;
@@ -976,7 +1007,7 @@ function init(client) {
       }
 
       if (i.commandName === '世界動態') {
-        return i.reply({ embeds: [worldEmbed(gid)], components: worldRows(), flags: MessageFlags.Ephemeral });
+        return i.reply({ embeds: [worldEmbed(gid)], components: worldRows('', 'latest', i.guildId), flags: MessageFlags.Ephemeral });
       }
       if (!c.stock_enabled) return i.reply({ content: '股市目前沒有開放。', flags: MessageFlags.Ephemeral });
       if (!channelOk(gid, i.channelId)) {
