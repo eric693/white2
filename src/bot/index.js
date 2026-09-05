@@ -1,7 +1,7 @@
 const { Client, GatewayIntentBits, Partials, MessageFlags } = require('discord.js');
 const path = require('path');
 const fs = require('fs');
-const { getSetting, ensureGuild, db } = require('../db');
+const { getSetting, setSetting, ensureGuild, db } = require('../db');
 const { botRole, roleLabel, featuresFor, commandsFor, commandFeature, isButlerComponent } = require('./roles');
 const { hasFeature, lockedMessage } = require('../subscription');
 const { absUrl } = require('../util/url');
@@ -184,8 +184,21 @@ async function applyAppearance() {
   if (name && client.user.username !== name) {
     try { await client.user.setUsername(name); } catch { console.warn('設定機器人名稱失敗（Discord 每小時限 2 次）'); }
   }
+  // 頭像只在「設定值真的變了」才推上去。
+  // 以前是每次啟動都無條件 setAvatar()，造成兩個問題：
+  //   ① 直接在 Developer Portal 換的頭像，下次重啟就被這裡蓋回舊值
+  //      （角色欄位空白時還會退回單機器人時代的共用那張，更容易誤會「換了又變回去」）
+  //   ② 每次重啟都打一次 API，白白消耗 Discord 的頻率限制
+  // 記住上次實際套用的值，一樣就跳過；想重推一次就把設定改一下再改回來。
   const avatar = roleSetting('bot_avatar');
-  if (avatar) { try { await client.user.setAvatar(resolveAvatar(avatar)); } catch (e) { console.warn('設定頭像失敗（Discord 有頻率限制，稍後會自動重試）：', e.message); } }
+  const appliedKey = `bot_avatar_applied_${role}`;
+  if (avatar && getSetting(appliedKey) !== avatar) {
+    try {
+      await client.user.setAvatar(resolveAvatar(avatar));
+      setSetting(appliedKey, avatar);
+      console.log(`  ↳ 已更新 ${roleLabel(role)} 的頭像`);
+    } catch (e) { console.warn('設定頭像失敗（Discord 有頻率限制，稍後會自動重試）：', e.message); }
+  }
 
   const status = roleSetting('bot_status') || 'online';       // online | idle | dnd | invisible
   const text = roleSetting('bot_activity_text');
