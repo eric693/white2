@@ -146,6 +146,7 @@ app.use('/api', require('./routes/polls'));
 app.use('/api', require('./routes/giveaways'));
 app.use('/api', require('./routes/blacklist'));
 app.use('/api', require('./routes/wheels'));
+app.use('/api', require('./routes/postwheel'));
 app.use('/api', require('./routes/music'));
 app.use('/api', require('./routes/system'));
 app.use('/api', require('./routes/uploads'));

@@ -867,6 +867,29 @@ function logError(guildId, ...args) {
   writeError(fmt(args), guildId);
 }
 
+// 貼文轉盤的抽選紀錄：指令抽完就發結果，沒有存檔的話後台完全查不到誰中過獎，
+// 也沒辦法事後補抽。每抽一次寫一筆，中獎名單存 JSON。
+db.exec(`CREATE TABLE IF NOT EXISTS postwheel_draws (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id TEXT NOT NULL DEFAULT '',
+  channel_id TEXT NOT NULL DEFAULT '',
+  message_id TEXT NOT NULL DEFAULT '',
+  message_url TEXT NOT NULL DEFAULT '',
+  post_author TEXT NOT NULL DEFAULT '',
+  operator_id TEXT NOT NULL DEFAULT '',
+  operator_name TEXT NOT NULL DEFAULT '',
+  people INTEGER NOT NULL DEFAULT 0,
+  comments INTEGER NOT NULL DEFAULT 0,
+  win_count INTEGER NOT NULL DEFAULT 0,
+  winners TEXT NOT NULL DEFAULT '[]',
+  allow_repeat INTEGER NOT NULL DEFAULT 0,
+  per_message INTEGER NOT NULL DEFAULT 0,
+  include_reactions INTEGER NOT NULL DEFAULT 0,
+  source TEXT NOT NULL DEFAULT 'command',
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+)`);
+db.exec('CREATE INDEX IF NOT EXISTS idx_postwheel_draws_guild ON postwheel_draws(guild_id)');
+
 // ---- 跨行程工作佇列（拆成秘書／管家兩隻之後的橋）----
 // 後台網站只跑在其中一個行程（預設秘書），但有些動作只有另一隻做得到 ——
 // 例如「發布神秘商店面板」：面板的下拉選單互動只會送到「發訊息的那個應用程式」，

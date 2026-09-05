@@ -5,7 +5,7 @@
 const {
   EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, MessageFlags
 } = require('discord.js');
-const { logError } = require('../../db');
+const { db, logError } = require('../../db');
 const { brandColor } = require('../../util/brand');
 
 // 從訊息連結或純 ID 取出訊息 ID 與（連結才有的）頻道 ID
@@ -88,6 +88,70 @@ function drawWinners(pool, count, allowRepeat) {
   return winners;
 }
 
+function saveDraw({ guildId, msg, people, winners, count, operatorId, operatorName,
+                   allowRepeat, perMessage, includeReactions, source }) {
+  try {
+    db.prepare(`INSERT INTO postwheel_draws
+      (guild_id, channel_id, message_id, message_url, post_author, operator_id, operator_name,
+       people, comments, win_count, winners, allow_repeat, per_message, include_reactions, source)
+      VALUES (@guild_id,@channel_id,@message_id,@message_url,@post_author,@operator_id,@operator_name,
+       @people,@comments,@win_count,@winners,@allow_repeat,@per_message,@include_reactions,@source)`).run({
+      guild_id: guildId || '', channel_id: msg.channel?.id || '', message_id: msg.id,
+      message_url: msg.url || '', post_author: msg.author ? msg.author.username : '',
+      operator_id: operatorId || '', operator_name: operatorName || '',
+      people: people.length, comments: people.reduce((a, p) => a + p.count, 0),
+      win_count: count, winners: JSON.stringify(winners.map(w => ({ id: w.id, tag: w.tag }))),
+      allow_repeat: allowRepeat ? 1 : 0, per_message: perMessage ? 1 : 0,
+      include_reactions: includeReactions ? 1 : 0, source: source || 'command'
+    });
+  } catch (e) { logError(guildId || '', '貼文轉盤存檔失敗：', e.message); }
+}
+
+// 後台補抽：照原本那則貼文重新蒐集留言者再抽一次，把結果發回原頻道。
+// 排除名單＝這則貼文先前所有紀錄的中獎者，避免補抽又抽到同一批人。
+async function rerollDraw(client, drawId, { count, operatorName, excludePrevious = true } = {}) {
+  const rec = db.prepare('SELECT * FROM postwheel_draws WHERE id=?').get(drawId);
+  if (!rec) throw new Error('找不到這筆抽選紀錄');
+  const ch = client.channels.cache.get(rec.channel_id) || await client.channels.fetch(rec.channel_id).catch(() => null);
+  if (!ch || !ch.messages) throw new Error('找不到原貼文所在的頻道（可能已刪除或機器人看不到）');
+  const msg = await ch.messages.fetch(rec.message_id).catch(() => null);
+  if (!msg) throw new Error('找不到原貼文（可能已被刪除）');
+
+  let people = await collectCommenters(msg, { includeReactions: !!rec.include_reactions });
+  if (excludePrevious) {
+    const past = new Set();
+    for (const r of db.prepare('SELECT winners FROM postwheel_draws WHERE guild_id=? AND message_id=?').all(rec.guild_id, rec.message_id)) {
+      try { for (const w of JSON.parse(r.winners || '[]')) past.add(w.id); } catch {}
+    }
+    people = people.filter(p => !past.has(p.id));
+  }
+  if (!people.length) throw new Error(excludePrevious ? '沒有還沒中過獎的留言者可以補抽了。' : '這則貼文沒有留言者可以抽。');
+
+  const n = Math.max(1, Math.min(parseInt(count, 10) || 1, 50));
+  const pool = rec.per_message ? people.flatMap(p => Array(Math.min(p.count, 50)).fill(p)) : people;
+  const winners = drawWinners(pool, n, !!rec.allow_repeat);
+
+  const embed = new EmbedBuilder()
+    .setColor(brandColor())
+    .setTitle('🎯 貼文轉盤補抽結果')
+    .setDescription(
+      `**抽選來源**：[前往貼文](${msg.url})\n` +
+      `**候選留言者**：${people.length} 人${excludePrevious ? '（已排除先前中過獎的人）' : ''}\n` +
+      `**補抽**：${winners.length} 位\n\n` +
+      winners.map((w, k) => `${k + 1}. <@${w.id}>`).join('\n'))
+    .setFooter({ text: `由管理員 ${operatorName || '後台'} 在後台補抽` })
+    .setTimestamp();
+  await ch.send({ content: winners.map(w => `<@${w.id}>`).join(' '), embeds: [embed] });
+
+  saveDraw({
+    guildId: rec.guild_id, msg, people, winners, count: winners.length,
+    operatorId: '', operatorName: operatorName || '後台',
+    allowRepeat: !!rec.allow_repeat, perMessage: !!rec.per_message,
+    includeReactions: !!rec.include_reactions, source: 'reroll'
+  });
+  return { winners: winners.map(w => ({ id: w.id, tag: w.tag })), people: people.length };
+}
+
 async function handle(i) {
   const input = i.options.getString('貼文');
   const count = i.options.getInteger('抽出人數') || 1;
@@ -165,6 +229,13 @@ async function handle(i) {
     .setFooter({ text: perMessage ? '每則留言各算一次資格' : '同一人不論留幾則都只算 1 個資格' })
     .setTimestamp();
 
+  // 存檔：後台「貼文轉盤」頁靠這張表回查誰中過獎、以及事後補抽
+  saveDraw({
+    guildId: i.guildId, msg, people, winners, count: winners.length,
+    operatorId: i.user.id, operatorName: i.user.username,
+    allowRepeat, perMessage, includeReactions, source: 'command'
+  });
+
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setLabel('查看原貼文').setStyle(ButtonStyle.Link).setURL(msg.url));
 
@@ -176,6 +247,8 @@ async function handle(i) {
 }
 
 function init(client) {
+  client._rerollPostWheel = (drawId, opts) => rerollDraw(client, drawId, opts);
+
   client.on('interactionCreate', async (i) => {
     try {
       if (!i.isChatInputCommand?.() || i.commandName !== '貼文轉盤') return;
@@ -190,4 +263,4 @@ function init(client) {
   console.log('  ↳ 貼文轉盤模組已載入（從貼文留言者中隨機抽選）');
 }
 
-module.exports = { init, parseTarget, collectCommenters, drawWinners };
+module.exports = { init, parseTarget, collectCommenters, drawWinners, rerollDraw };

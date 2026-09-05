@@ -27,6 +27,7 @@ const MODULES = [
   { key: 'polls',        label: '投票',              group: '活動' },
   { key: 'giveaways',    label: '抽獎',              group: '活動' },
   { key: 'wheels',       label: '角色轉盤',          group: '活動' },
+  { key: 'postwheel',    label: '貼文轉盤',          group: '活動' },
   { key: 'reminders',    label: '提醒',              group: '活動' },
   { key: 'music',        label: '音樂',              group: '活動' },
 
