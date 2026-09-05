@@ -12,6 +12,17 @@ function inviteUrl(role) {
   const id = require('../bot').roleClientId(role);
   return id ? `https://discord.com/oauth2/authorize?client_id=${id}&scope=bot%20applications.commands&permissions=${PERMS}` : '';
 }
+// 解析邀請連結要帶一把有效的 Bot Token。用「這個行程正在扮演的那一隻」，
+// 而不是寫死 .env 的 DISCORD_TOKEN —— 憑證改放後台之後，寫死那把可能是空的。
+function botToken() {
+  const { botRole } = require('../bot/roles');
+  const role = botRole();
+  const r = role === 'both' ? 'butler' : role;
+  return getSetting(`bot_token_${r}`)
+    || process.env[r === 'secretary' ? 'DISCORD_TOKEN_SECRETARY' : 'DISCORD_TOKEN_BUTLER']
+    || process.env.DISCORD_TOKEN || '';
+}
+
 router.use(requireAuth());
 
 // 機器人所在伺服器清單（供後台切換）
@@ -65,7 +76,7 @@ router.post('/guild-admin-by-invite', async (req, res) => {
   if (!m) return res.status(400).json({ error: '看不懂，請貼類似 discord.gg/abcd 的伺服器邀請連結' });
   try {
     const r = await fetch(`https://discord.com/api/v10/invites/${encodeURIComponent(m[1])}?with_counts=true`,
-      { headers: { Authorization: `Bot ${process.env.DISCORD_TOKEN}` } });
+      { headers: { Authorization: `Bot ${botToken()}` } });
     if (!r.ok) return res.status(400).json({ error: `邀請連結無效或已過期（${r.status}）` });
     const g = (await r.json()).guild;
     if (!g || !g.id) return res.status(400).json({ error: '這個連結解析不到伺服器' });
