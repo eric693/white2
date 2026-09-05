@@ -79,6 +79,9 @@ const TABS = {
 // 常用捷徑：每個分頁都要看得到，但 6 分類已經吃掉 2 行、內容還要 2 行，
 // 剩下的 1 行塞不下 8 顆按鈕 —— 所以做成下拉選單（1 行可放 25 項，以後要加也不怕）。
 const QUICK = [
+  // 錢包放第一個：最常看的東西，以前面板上完全沒有這個入口（只有「星幣明細」），
+  // 玩家只能自己去打 /錢包，很多人根本不知道有這個指令。
+  ['adv:wallet', '錢包', '👛', '看目前有多少星幣'],
   ['adv:bag', '背包', '🎒', '看你身上有什麼'],
   ['adv:storage', '倉庫', '📦', '收起來防誤賣，賣出碰不到'],
   ['adv:ledger', '星幣明細', '📜', '每一筆錢怎麼進來、花去哪'],
@@ -105,7 +108,7 @@ const navRows = (active) => {
   const rows = [];
   for (let n = 0; n < all.length; n += per) rows.push(new ActionRowBuilder().addComponents(...all.slice(n, n + per)));
   rows.push(new ActionRowBuilder().addComponents(
-    new StringSelectMenuBuilder().setCustomId('pan:quick').setPlaceholder('⚡ 常用捷徑（背包・任務・狀態・簽到・圖鑑・成就・大賽…）')
+    new StringSelectMenuBuilder().setCustomId('pan:quick').setPlaceholder('⚡ 常用捷徑（錢包・背包・任務・狀態・簽到・圖鑑・成就・大賽…）')
       .setMinValues(1).setMaxValues(1)
       .addOptions(QUICK.map(([id, label, emoji, desc]) => ({ label, value: id, description: desc, emoji })))));
   return rows;
