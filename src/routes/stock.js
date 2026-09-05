@@ -182,7 +182,12 @@ router.post('/market-news', guardModule('news'), (req, res) => {
     const arr = (typeof b.links === 'string' ? JSON.parse(b.links || '[]') : (b.links || []))
       .filter(l => l && /^https?:\/\//.test(String(l.url || '')))
       .slice(0, 5)
-      .map(l => ({ emoji: String(l.emoji || '').slice(0, 8), label: String(l.label || '前往').slice(0, 40), url: String(l.url) }));
+      .map(l => {
+        // 自訂表情是 <a:name:id> 這種長字串，以前砍到 8 字會變成「<a:Black」這種壞掉的殘骸
+        const e = String(l.emoji || '').trim().slice(0, 64);
+        const ok = !e || /^<a?:[A-Za-z0-9_]+:\d+>$/.test(e) || [...e].length <= 4;   // 自訂表情或一般 emoji
+        return { emoji: ok ? e : '', label: String(l.label || '前往').slice(0, 40), url: String(l.url) };
+      });
     links = JSON.stringify(arr);
   } catch { links = '[]'; }
   const r = db.prepare(

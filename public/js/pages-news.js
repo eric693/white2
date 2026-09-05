@@ -169,7 +169,9 @@ App.page('news', {
           <div class="hint" style="margin-bottom:8px">下面的物價／股價／發星幣<b>全部可以留空</b>——只是一則消息也能發。要連動遊戲系統再填。</div>
           <div class="field"><label>內文</label><textarea name="body" rows="3" placeholder="產蛋量預估下滑三成，蛋商已開始搶貨。"></textarea></div>
           <div class="field"><label>附加連結（最多 5 個，例如新角色介紹、活動說明）</label>${H.buttonsEditor('links', '[]')}
-            <div class="hint">會顯示在這則動態的內文下面（🔗 文字連結）。網址要完整帶 https://。</div></div>
+            <div class="hint">會變成玩家訊息下方的<b>連結按鈕（框框）</b>，內文也會附一份文字連結。網址要完整帶 https://。
+              一次列出好幾則動態時，按鈕文字會自動帶 ①②③ 對應到是哪一則的連結。
+              表情可留空，也可以貼自訂表情語法（<code>&lt;a:名稱:ID&gt;</code>）。</div></div>
           <div class="form-row">
             <div class="field"><label>開始時間（只選整點，留空＝馬上）</label>
               <div style="display:flex;gap:6px">

@@ -97,7 +97,7 @@ function seedPets(gid) {
 }
 
 const petsOf = (gid, uid) => db.prepare(
-  `SELECT o.*, p.name, p.emoji, p.rarity, p.skill_name, p.buff_type, p.buff_pct, p.feed_hours, p.target_item, p.category
+  `SELECT o.*, p.name, p.emoji, p.rarity, p.skill_name, p.buff_type, p.buff_pct, p.feed_hours, p.target_item, p.category, p.price
      FROM pet_owned o JOIN pet_defs p ON p.id=o.pet_id
     WHERE o.guild_id=? AND o.user_id=? ORDER BY o.id`).all(gid, uid);
 // 寵物數量上限已於 2026-09 取消，改由「寵物稅」倍增累進節制
@@ -298,6 +298,17 @@ function petPanel(gid, uid, uname) {
           };
         }))));
   }
+  // 送走寵物：以前只能領養不能送走，寵物稅是按隻數倍增累進的，
+  // 等於「養了就永遠得繳」，玩家反映「寵物沒辦法卸下來」。
+  if (list.length && rows.length < 4) {
+    rows.push(new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder().setCustomId('petrelease').setPlaceholder('👋 送走一隻寵物（回收半價，養成資料會消失）')
+        .addOptions(list.slice(0, 25).map(p => ({
+          label: `${p.emoji || ''}${p.nickname || p.name}`.slice(0, 100),
+          description: `Lv.${p.level}　親密度 ${p.intimacy}/100　回收 ${Math.floor((p.price || 0) / 2).toLocaleString('en-US')} 星幣`.slice(0, 100),
+          value: String(p.id)
+        })))));
+  }
   const shop = db.prepare('SELECT * FROM pet_defs WHERE guild_id=? AND enabled=1 AND price>0 AND min_level<=? ORDER BY sort').all(gid, home.level);
   // 寵物種類已經超過 25 隻，直接 slice 會讓後面的品種永遠領養不到 —— 滿了就換下一行。
   if (shop.length) rows.push(...selectRows('petadopt', shop.map(p => ({
@@ -306,6 +317,23 @@ function petPanel(gid, uid, uname) {
     value: String(p.id)
   })), '領養一隻新寵物', { maxRows: 5 - rows.length }));
   return { embeds: [embed], components: rows };
+}
+
+/** 送走寵物：回收一半購入價，養成資料一併消失（跟牧場放生同規則） */
+function releasePet(gid, uid, uname, ownedId) {
+  const p = db.prepare(
+    `SELECT o.*, d.name, d.emoji, d.price FROM pet_owned o JOIN pet_defs d ON d.id=o.pet_id
+      WHERE o.guild_id=? AND o.user_id=? AND o.id=?`).get(gid, uid, ownedId);
+  if (!p) return { error: '找不到這隻寵物。' };
+  const back = Math.floor((p.price || 0) / 2);
+  db.transaction(() => {
+    db.prepare('DELETE FROM pet_owned WHERE guild_id=? AND user_id=? AND id=?').run(gid, uid, ownedId);
+    if (back > 0) {
+      const { addCoins } = require('./gather');
+      addCoins(gid, uid, uname, back, '送走寵物', `${p.nickname || p.name}（回收半價）`);
+    }
+  })();
+  return { pet: p, back };
 }
 
 function init(client) {
@@ -323,6 +351,35 @@ function init(client) {
         if (out.error) return i.reply({ content: out.error, ...eph }).catch(() => {});
         await i.update(petPanel(gid, uid, uname)).catch(() => {});
         return i.followUp({ content: `🥫 買了 **${out.bought}** 份飼料（花了 ${out.total.toLocaleString('en-US')}），現在有 ${out.left} 份。`, ...eph }).catch(() => {});
+      }
+      if (i.isStringSelectMenu() && i.customId === 'petrelease') {
+        const p = db.prepare(
+          `SELECT o.*, d.name, d.emoji, d.price FROM pet_owned o JOIN pet_defs d ON d.id=o.pet_id
+            WHERE o.guild_id=? AND o.user_id=? AND o.id=?`).get(gid, uid, parseInt(i.values[0], 10));
+        if (!p) return i.reply({ content: '找不到這隻寵物。', ...eph }).catch(() => {});
+        const back = Math.floor((p.price || 0) / 2);
+        return i.reply({
+          content: `👋 真的要送走 ${p.emoji || ''}**${p.nickname || p.name}**（Lv.${p.level}、親密度 ${p.intimacy}/100）嗎？\n`
+            + `・回收 **${back.toLocaleString('en-US')}** 星幣（購入價的一半）\n`
+            + '・**等級、親密度、暱稱都會消失**，重新領養要從頭養\n'
+            + '・好處是**下一期的寵物稅會少一隻**（寵物稅是倍增累進的）',
+          components: [new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId(`petbye:${p.id}`).setLabel(`👋 送走（回收 ${back.toLocaleString('en-US')}）`).setStyle(ButtonStyle.Danger),
+            new ButtonBuilder().setCustomId('petkeep').setLabel('❤️ 算了，留下').setStyle(ButtonStyle.Secondary))],
+          ...eph
+        }).catch(() => {});
+      }
+      if (i.isButton() && i.customId === 'petkeep') {
+        return i.update({ content: '❤️ 牠繼續住在你家。', components: [] }).catch(() => {});
+      }
+      if (i.isButton() && i.customId.startsWith('petbye:')) {
+        const out = releasePet(gid, uid, uname, parseInt(i.customId.split(':')[1], 10));
+        if (out.error) return i.update({ content: out.error, components: [] }).catch(() => {});
+        return i.update({
+          content: `👋 ${out.pet.emoji || ''}**${out.pet.nickname || out.pet.name}** 已經送走，回收 **${out.back.toLocaleString('en-US')}** 星幣。\n`
+            + '下一期的寵物稅會少算這一隻。用 `/寵物` 重新開面板看最新狀態。',
+          components: []
+        }).catch(() => {});
       }
       if (i.isStringSelectMenu() && isSelect(i.customId, 'petadopt')) {
         const out = adoptPet(gid, uid, uname, parseInt(i.values[0], 10));

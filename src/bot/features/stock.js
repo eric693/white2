@@ -715,18 +715,38 @@ const catEmoji = (c) => CAT_EMOJI[c] || '🏷️';
 // 用內文的 markdown 連結而不是按鈕：世界動態是一則訊息列很多則消息，
 // 按鈕最多 5 顆而且分不出屬於哪一則，寫成連結才知道是哪一則的。
 function linkLine(n) {
-  let links = [];
-  try { links = JSON.parse(n.links || '[]'); } catch { links = []; }
-  links = (Array.isArray(links) ? links : []).filter(l => l && /^https?:\/\//.test(l.url || '')).slice(0, 5);
+  const links = linksOf(n);
   if (!links.length) return '';
-  return '\n' + links.map(l => `${l.emoji || '🔗'} [${l.label || '前往'}](${l.url})`).join('　');
+  return '\n' + links.map(l => `🔗 [${l.label || '前往'}](${l.url})`).join('　');
+}
+
+// 動態的連結按鈕（玩家要的「框框」）。
+// 一則訊息會列好幾則動態，所以按鈕文字前面帶跟內文一樣的編號 ①②③，才知道是哪一則的。
+const NUM = ['①', '②', '③', '④', '⑤', '⑥', '⑦', '⑧'];
+function linkButtonRows(rows) {
+  const out = [];
+  let cur = [];
+  rows.forEach((n, idx) => {
+    for (const l of linksOf(n)) {
+      if (out.length >= 3 && cur.length >= 5) return;              // 最多 3 行按鈕，其餘留給分類選單與最新／歷史
+      const b = new ButtonBuilder().setStyle(ButtonStyle.Link).setURL(l.url)
+        .setLabel(`${rows.length > 1 ? NUM[idx] || '' : ''}${l.label || '前往'}`.slice(0, 80));
+      // 自訂表情（<a:name:id>）與一般 emoji 都吃得下；格式怪的就不放，免得整列按鈕建不起來
+      const e = String(l.emoji || '').trim();
+      if (e) { try { b.setEmoji(e); } catch { /* 格式不合就不加 emoji */ } }
+      cur.push(b);
+      if (cur.length === 5) { out.push(new ActionRowBuilder().addComponents(...cur)); cur = []; }
+    }
+  });
+  if (cur.length) out.push(new ActionRowBuilder().addComponents(...cur));
+  return out.slice(0, 3);
 }
 
 // 玩家看到的世界動態。
 //   mode 'latest'（預設）＝置頂在前，其餘照時間新到舊，只列「還在生效／最近」的
 //   mode 'history'        ＝連已經結束的一起列
 //   category              ＝只看某一類
-function worldEmbed(gid, { category = '', mode = 'latest' } = {}) {
+function newsList(gid, { category = '', mode = 'latest' } = {}) {
   const now = Date.now();
   let rows = db.prepare(
     'SELECT * FROM market_news WHERE guild_id=? AND applied=1 ORDER BY pinned DESC, effect_ts DESC, id DESC LIMIT 100').all(gid);
@@ -735,7 +755,18 @@ function worldEmbed(gid, { category = '', mode = 'latest' } = {}) {
     // 還在生效中的，加上置頂的（置頂不受時效限制）
     rows = rows.filter(n => n.pinned || (n.effect_ts || 0) + Math.max(1, n.duration_h || 6) * 3600000 > now);
   }
-  rows = rows.slice(0, 8);
+  return rows.slice(0, 8);
+}
+
+// 一則動態的連結（過濾掉沒填好的網址）
+function linksOf(n) {
+  let links = [];
+  try { links = JSON.parse(n.links || '[]'); } catch { links = []; }
+  return (Array.isArray(links) ? links : []).filter(l => l && /^https?:\/\//.test(l.url || '')).slice(0, 5);
+}
+
+function worldEmbed(gid, { category = '', mode = 'latest' } = {}) {
+  const rows = newsList(gid, { category, mode });
 
   const embed = new EmbedBuilder().setColor(brandColor())
     .setTitle(`🌏 世界動態${category ? `｜${CAT_EMOJI[category] || ''}${category}` : ''}${mode === 'history' ? '（歷史）' : ''}`);
@@ -748,12 +779,12 @@ function worldEmbed(gid, { category = '', mode = 'latest' } = {}) {
   // 沒指定分類時依「大標」分組（📢 官方 / 🎉 活動 …），一眼看得出哪則是哪一類；
   // 已經篩過某一類就不用再重複標大標了。
   if (category) {
-    for (const n of rows) {
+    rows.forEach((n, idx) => {
       embed.addFields({
-        name: `${n.pinned ? '📌 ' : ''}${n.headline}`.slice(0, 250),
+        name: `${rows.length > 1 ? (NUM[idx] || '') + ' ' : ''}${n.pinned ? '📌 ' : ''}${n.headline}`.slice(0, 250),
         value: ((n.body || '　') + linkLine(n)).slice(0, 1024)
       });
-    }
+    });
   } else {
     const groups = new Map();
     for (const n of rows) {
@@ -764,7 +795,7 @@ function worldEmbed(gid, { category = '', mode = 'latest' } = {}) {
     for (const [cat, list] of groups) {
       embed.addFields({
         name: `${catEmoji(cat)}　${cat}`.slice(0, 250),
-        value: list.map(n => `${n.pinned ? '📌 ' : ''}**${n.headline}**${n.body ? `\n${n.body}` : ''}${linkLine(n)}`)
+        value: list.map(n => `${rows.length > 1 ? (NUM[rows.indexOf(n)] || '') + ' ' : ''}${n.pinned ? '📌 ' : ''}**${n.headline}**${n.body ? `\n${n.body}` : ''}${linkLine(n)}`)
           .join('\n\n').slice(0, 1024)
       });
     }
@@ -775,6 +806,8 @@ function worldEmbed(gid, { category = '', mode = 'latest' } = {}) {
 // 分類／最新／歷史的切換列
 function worldRows(category = '', mode = 'latest', gid = '') {
   const cats = gid ? newsCategories(gid) : NEWS_CATEGORIES;
+  // 連結按鈕（框框）：跟 embed 用同一份清單，編號才對得起來
+  const linkRows = gid ? linkButtonRows(newsList(gid, { category, mode })) : [];
   const menu = new StringSelectMenuBuilder().setCustomId(`world:cat:${mode}`)
     .setPlaceholder(category ? `分類：${category}` : '全部分類')
     .addOptions([{ label: '全部分類', value: '_all', default: !category }]
@@ -786,7 +819,7 @@ function worldRows(category = '', mode = 'latest', gid = '') {
       .setStyle(mode === 'latest' ? ButtonStyle.Primary : ButtonStyle.Secondary),
     new ButtonBuilder().setCustomId(`world:mode:history:${category || '_all'}`).setLabel('歷史')
       .setStyle(mode === 'history' ? ButtonStyle.Primary : ButtonStyle.Secondary));
-  return [new ActionRowBuilder().addComponents(menu), btns];
+  return [new ActionRowBuilder().addComponents(menu), btns, ...linkRows].slice(0, 5);
 }
 
 // 舊名保留：面板與其他模組還在呼叫 newsEmbed
