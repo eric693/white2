@@ -253,14 +253,22 @@ async function doRedeem(client, gid, item, user, uname, qtyRaw = 1, member = nul
       if (await u.send({ embeds: [notify] }).then(() => true).catch(() => false)) posted = true;
     }
   }
+  // 兌換完要一次講清楚：換到什麼、花多少、還能換幾份、接下來會怎樣。
+  // 以前只有一行「已通知管理員」，玩家不知道要等多久、也不知道自己還能不能換。
+  const { already: usedNow, limit: myLimit } = qtyCap(gid, item, user.id, uname);
   const embed = new EmbedBuilder().setColor(brandColor()).setTitle('✅ 兌換成功')
     .setDescription(`你兌換了 ${item.emoji || '🎁'} **${item.name}** × **${qty}**！\n` +
       `共花費 ${money(gc, total)}\n` +
+      (item.description ? `\n📄 ${item.description}\n` : '') +
       (mode === 'none'
-        ? '兌換單已送出，管理員會在後台看到並為你處理。'
-        : posted ? '已私下通知管理員為你處理，請留意私訊。' : '⚠️ 目前沒有可用的通知管道，請直接聯絡管理員。') +
-      `\n\n兌換單編號：#${redeemId}`)
+        ? '\n兌換單已送出，**管理員會在後台看到**並為你處理。'
+        : posted ? '\n已通知管理員為你處理，請耐心等候。' : '\n⚠️ 目前沒有可用的通知管道，請直接聯絡管理員。') +
+      `\n\n兌換單編號：**#${redeemId}**（要詢問進度時報這個編號）` +
+      (myLimit > 0 ? `\n這期你已換 **${usedNow}/${myLimit}** 份（${nextResetText(c)}）` : '') +
+      (item.stock < 0 ? '' : `\n這項剩餘庫存：**${Math.max(0, item.stock)}**`) +
+      '\n\n用 `/特殊商店` 的「📜 我的兌換紀錄」可以查你換過什麼、處理到哪了。')
     .setFooter({ text: `餘額 ${(w.coins - total).toLocaleString('en-US')} ${gc.currency_name}` });
+  if (item.image_url) embed.setThumbnail(absUrl(item.image_url));
   return { embed };
 }
 
@@ -286,15 +294,20 @@ function shopPanel(gid, shop) {
       }).join('\n') : '（尚無商品）'))
     .setFooter({ text: rulesLine(gid) || '從下方選單選一項即可兌換，系統會通知管理員處理' });
   const components = [];
-  if (items.length) {
+  // 一個下拉最多 25 項，超過就換下一列（最多 5 列＝125 項），
+  // 直接 slice 會讓第 26 項之後的獎勵在面板上永遠選不到。
+  for (let n = 0; n < items.length && components.length < 5; n += 25) {
+    const chunk = items.slice(n, n + 25);
     components.push(new ActionRowBuilder().addComponents(
-      new StringSelectMenuBuilder().setCustomId(`sredeem:${shop.id}`).setPlaceholder('選擇要兌換的獎勵…')
-        .addOptions(items.slice(0, 25).map(it => ({
+      new StringSelectMenuBuilder().setCustomId(`sredeem:${shop.id}:${components.length}`)
+        .setPlaceholder(items.length > 25
+          ? `選擇要兌換的獎勵…（${n + 1}〜${n + chunk.length} 項，共 ${items.length} 項）`
+          : '選擇要兌換的獎勵…')
+        .addOptions(chunk.map(it => ({
           label: `${it.name}`.slice(0, 100),
           description: `${money(gc, it.price)}${it.stock < 0 ? '' : `｜庫存 ${it.stock}`}`.slice(0, 100),
           value: String(it.id)
-        })))
-    ));
+        })))));
   }
   return { embeds: [embed], components };
 }
@@ -344,6 +357,26 @@ function init(client) {
 
   client.on('interactionCreate', async (i) => {
     try {
+      // ---- 我的兌換紀錄：玩家查自己換過什麼、處理到哪了 ----
+      // 以前兌換完就沒有下文，玩家只能從星幣明細看到被扣錢，不知道管理員收到沒、處理了沒。
+      if (i.isButton() && i.customId === 'smylog') {
+        const gid = i.guildId, gc = gcfg(gid);
+        const rows = db.prepare(
+          `SELECT * FROM special_redeems WHERE guild_id=? AND user_id=? ORDER BY id DESC LIMIT 15`).all(gid, i.user.id);
+        const e = new EmbedBuilder().setColor(brandColor()).setTitle('📜 我的兌換紀錄');
+        if (!rows.length) {
+          e.setDescription('你還沒有兌換過任何獎勵。');
+        } else {
+          const STATUS = { pending: '⏳ 待處理', done: '✅ 已完成', cancelled: '❌ 已取消', refunded: '↩️ 已退款' };
+          e.setDescription(rows.map(r =>
+            `\`#${r.id}\`　${STATUS[r.status] || r.status}　**${r.item_name}** ×${r.qty || 1}\n`
+            + `　${money(gc, r.price)}　${String(r.created_at || '').slice(0, 16)}`).join('\n'));
+          const pending = rows.filter(r => r.status === 'pending').length;
+          e.setFooter({ text: pending ? `還有 ${pending} 筆等管理員處理，詢問進度時報單號` : '所有兌換都處理完了' });
+        }
+        return i.reply({ embeds: [e], flags: MessageFlags.Ephemeral }).catch(() => {});
+      }
+
       // ---- 面板下拉選單兌換：選商品 → 選份數 ----
       if (i.isStringSelectMenu() && i.customId.startsWith('sredeem:')) {
         const gid = i.guildId;
@@ -444,16 +477,32 @@ function init(client) {
         for (const sp of shops) for (const it of itemsOfShop(gid, sp.id)) pool.push({ it, shop: sp });
         if (!scoped) for (const it of loose) pool.push({ it, shop: null });
         const avail = pool.filter(x => x.it.stock !== 0);
-        const rows = avail.length ? [new ActionRowBuilder().addComponents(
-          new StringSelectMenuBuilder().setCustomId('sredeem:0').setPlaceholder('選擇要兌換的獎勵…')
-            .addOptions(avail.slice(0, 25).map(({ it, shop }) => {
-              const p = priceNow(it), n = affordable(it);
-              return {
-                label: `${shop ? shop.name + '：' : ''}${it.name}`.slice(0, 100),
-                description: `你這份 ${p.toLocaleString('en-US')} ${gc.currency_name}${p !== it.price ? '（越換越貴）' : ''}｜可換 ${n} 份${it.stock < 0 ? '' : `　庫存 ${it.stock}`}`.slice(0, 100),
-                value: String(it.id), emoji: it.emoji || '🎁'
-              };
-            }))) ] : [];
+        // Discord 一個下拉最多 25 項，直接 slice 會讓第 26 項之後的獎勵永遠選不到
+        //（玩家看得到清單卻換不到，只能自己打 /兌換 名稱）。改成滿了就換下一個下拉，
+        // 一則訊息最多 5 行，留一行給「我的兌換紀錄」按鈕 → 最多 4 × 25 ＝ 100 項。
+        const opt = ({ it, shop }) => {
+          const p = priceNow(it), n = affordable(it);
+          return {
+            label: `${shop ? shop.name + '：' : ''}${it.name}`.slice(0, 100),
+            description: `你這份 ${p.toLocaleString('en-US')} ${gc.currency_name}${p !== it.price ? '（越換越貴）' : ''}｜可換 ${n} 份${it.stock < 0 ? '' : `　庫存 ${it.stock}`}`.slice(0, 100),
+            value: String(it.id), emoji: it.emoji || '🎁'
+          };
+        };
+        const rows = [];
+        for (let n = 0; n < avail.length && rows.length < 4; n += 25) {
+          const chunk = avail.slice(n, n + 25);
+          rows.push(new ActionRowBuilder().addComponents(
+            new StringSelectMenuBuilder().setCustomId(`sredeem:0:${rows.length}`)
+              .setPlaceholder(avail.length > 25
+                ? `選擇要兌換的獎勵…（${n + 1}〜${n + chunk.length} 項，共 ${avail.length} 項）`
+                : '選擇要兌換的獎勵…')
+              .addOptions(chunk.map(opt))));
+        }
+        if (avail.length > 100) {
+          embed.addFields({ name: '⚠️ 選單放不下', value: `獎勵有 ${avail.length} 項，選單只放得下 100 項；其餘的請用 \`/兌換 商品名稱\` 直接換。` });
+        }
+        rows.push(new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId('smylog').setLabel('📜 我的兌換紀錄').setStyle(ButtonStyle.Secondary)));
         return await reply({ embeds: [embed], components: rows });
       }
 

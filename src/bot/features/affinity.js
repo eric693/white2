@@ -964,10 +964,21 @@ function init(client) {
           const a = WORK_AREAS[area];
           const list2 = partnersOf(gid, uid);
           if (!list2.length) return i.update({ content: '你家還沒有同居角色。', components: [] }).catch(() => {});
+          // 只列「能力對得上這一區」的角色：挖礦助手不能去種田，列出來只會白選一次
+          const { areaOfRole } = require('./partnerskills');
+          const fit = list2.filter(p => areaOfRole(gid, p.role_id) === area);
+          if (!fit.length) {
+            return i.update({
+              content: `${a.name}\n${a.desc}\n\n⚠️ 你家目前**沒有能顧這一區的角色**。\n`
+                + '工作區域要跟角色的能力相符（例如「🌾 農地收成／🌱 農地種植」的角色才能顧農地）。\n'
+                + '角色的能力由管理員在後台指定，可以先用 `/好感度` 面板看看每位角色的能力是什麼。',
+              components: []
+            }).catch(() => {});
+          }
           const menu = new StringSelectMenuBuilder().setCustomId(`workpick:${area}`)
             .setPlaceholder('派誰負責？')
             .addOptions([{ label: '（取消指派，這個區域改成無人負責）', value: '0' }]
-              .concat(list2.slice(0, 24).map(p => ({
+              .concat(fit.slice(0, 24).map(p => ({
                 label: p.name.slice(0, 100),
                 description: (p.work_area && p.work_area !== area
                   ? `目前顧著 ${(WORK_AREAS[p.work_area] || {}).name || p.work_area}，改派會離開那裡`
@@ -975,7 +986,7 @@ function init(client) {
                 value: String(p.role_id)
               }))));
           return i.update({
-            content: `${a.name}\n${a.desc}\n需要的物資：${a.need}\n\n派誰負責？`,
+            content: `${a.name}\n${a.desc}\n需要的物資：${a.need}\n\n派誰負責？（只列得出能力對得上這一區的角色）`,
             components: [new ActionRowBuilder().addComponents(menu)]
           }).catch(() => {});
         }

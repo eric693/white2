@@ -28,6 +28,7 @@ const ABILITIES = {
   aqua_collect:       { kind: 'produce',   name: '🐠 魚缸收成',     unit: 'none',  desc: '每天自動把魚缸累積的星幣領進錢包' },
   greenhouse_harvest: { kind: 'produce',   name: '🏡 溫室收成',     unit: 'none',  desc: '每天自動收成已成熟的溫室產物' },
   hatch_collect:      { kind: 'produce',   name: '🥚 孵化室收成',   unit: 'none',  desc: '每天自動領走孵好的動物，牧場滿了就直接賣掉換星幣' },
+  ranch_tend:         { kind: 'produce',   name: '🐄 牧場照顧',     unit: 'none',  desc: '自動照顧動物並把蛋／奶收進背包' },
   thief_guard:        { kind: 'produce',   name: '🛡️ 擊退小偷',     unit: 'coins', desc: '協助擊退小偷，成功時額外拿到星幣' },
   // 冒險類
   mine_helper:        { kind: 'adventure', name: '⛏️ 挖礦助手',     unit: 'count', kindKey: 'mine',   desc: '每天額外帶回隨機礦物' },
@@ -56,6 +57,7 @@ const DEFAULT_SKILLS = [
   { code: 'aqua_collect',       tiers: [] },
   { code: 'greenhouse_harvest', tiers: [] },
   { code: 'hatch_collect',      tiers: [] },
+  { code: 'ranch_tend',         tiers: [] },
   { code: 'thief_guard',        val_min: 100, val_max: 5000, tiers: [{ lv: 8, min: 200, max: 8000 }, { lv: 10, min: 500, max: 12000 }] },
   { code: 'mine_helper',        val_min: 5, val_max: 5, tiers: [{ lv: 8, min: 7, max: 7 }, { lv: 10, min: 10, max: 10 }] },
   { code: 'wood_helper',        val_min: 5, val_max: 5, tiers: [{ lv: 8, min: 7, max: 7 }, { lv: 10, min: 10, max: 10 }] },
@@ -375,8 +377,39 @@ function areaAssignments(gid, uid) {
 }
 
 /** 指派／取消指派。一個區域只能一位，一位角色也只顧一個區域。 */
+// 工作區域要跟角色的「能力」相符 —— 挖礦助手不該被派去種田。
+// 以前完全沒鎖，任何角色都能顧任何一區，能力設定等於白設。
+const AREA_SKILLS = {
+  farm:       ['farm_harvest', 'farm_plant'],
+  greenhouse: ['greenhouse_harvest', 'greenhouse_plant'],
+  ranch:      ['ranch_tend', 'thief_guard'],
+  hatchery:   ['hatch_collect', 'hatch_put'],
+  aquarium:   ['aqua_collect', 'aqua_feed']
+};
+/** 這個能力可以顧哪一區（顧不了任何一區就回 null） */
+function areaOfSkill(code) {
+  for (const [area, codes] of Object.entries(AREA_SKILLS)) if (codes.includes(code)) return area;
+  return null;
+}
+/** 這位角色（依後台指定的能力）可以顧哪一區 */
+function areaOfRole(gid, roleId) {
+  const sk = designatedSkill(gid, roleId);
+  return sk ? areaOfSkill(sk.code) : null;
+}
+
 function assignArea(gid, uid, roleId, area) {
   if (area && !WORK_AREAS[area]) return { error: '沒有這個工作區域。' };
+  if (area) {
+    // 能力對不上就擋下來，並告訴玩家這位角色到底能顧哪一區
+    const sk = designatedSkill(gid, roleId);
+    const can = sk ? areaOfSkill(sk.code) : null;
+    if (can !== area) {
+      const skName = sk ? sk.name : '（沒有能力）';
+      return { error: can
+        ? `這位角色的能力是「${skName}」，只能負責 **${(WORK_AREAS[can] || {}).name || can}**，不能派去 ${(WORK_AREAS[area] || {}).name || area}。`
+        : `這位角色的能力是「${skName}」，那是每天自動生效的能力，不需要（也不能）指派工作區域。` };
+    }
+  }
   const p = db.prepare('SELECT 1 FROM home_partners WHERE guild_id=? AND user_id=? AND role_id=?').get(gid, uid, roleId);
   if (!p) return { error: '這位角色沒有住在你家。' };
   db.transaction(() => {
@@ -400,6 +433,7 @@ function runOne(gid, p, skill) {
   const { addCoins } = require('./gather');
   switch (skill.code) {
     case 'farm_harvest':       { const l = harvestPlots(gid, uid, 'field');      return l.length ? l : null; }
+    case 'ranch_tend':         { const l = tendRanch(gid, uid);                  return l.length ? l : null; }
     case 'greenhouse_harvest': { const l = harvestPlots(gid, uid, 'greenhouse'); return l.length ? l : null; }
     case 'aqua_collect': {
       const { accrue } = require('./aquarium');
@@ -449,7 +483,7 @@ function runOne(gid, p, skill) {
 // 這些動作本身都有自然上限（沒成熟就收不到、沒空格就種不了、魚飽了就不餵），
 // 所以重複跑是安全的，不需要用 last_run 擋。
 const HOURLY_SKILLS = new Set([
-  'farm_harvest', 'greenhouse_harvest', 'aqua_collect', 'hatch_collect',
+  'farm_harvest', 'greenhouse_harvest', 'aqua_collect', 'hatch_collect', 'ranch_tend',
   'farm_plant', 'greenhouse_plant', 'hatch_put', 'aqua_feed'
 ]);
 
@@ -572,7 +606,7 @@ function init(client) {
     } finally { busy = false; }
   }, { timezone: 'Asia/Taipei' });
 
-  console.log('  ↳ 同居能力模組已載入（18 種能力：收成／照顧類每 5 分鐘不間斷、配給類每天 8:40）');
+  console.log('  ↳ 同居能力模組已載入（19 種能力：收成／照顧類每 5 分鐘不間斷、配給類每天 8:40；工作區域鎖定對應能力）');
 }
 
 /** 通知頻道：沿用採集系統設定的頻道，沒設就不發 */
@@ -582,7 +616,7 @@ function notifyChannel(client, gid) {
   return null;
 }
 
-module.exports = { WORK_AREAS, runArea, areaAssignments, assignArea, designatedSkill, workLog, workCountToday,
+module.exports = { WORK_AREAS, AREA_SKILLS, areaOfSkill, areaOfRole, runArea, areaAssignments, assignArea, designatedSkill, workLog, workCountToday,
   init, ABILITIES, KIND_LABEL, seedSkills, valueFor, skillText,
   skillsForRole, skillById, activeSkill, passivePct, runDaily, DEFAULT_SKILLS
 };

@@ -47,6 +47,7 @@ App.page('wheels', {
             <button class="btn small" data-post="${w.id}">發布面板</button>
             <button class="btn small secondary" data-listed="${w.id}" data-val="${w.listed ? 0 : 1}">${w.listed ? '下架' : '上架'}</button>
             <button class="btn small secondary" data-ewheel="${w.id}">設定</button>
+            <button class="btn small secondary" data-bgs="${w.id}">換底圖排程</button>
             <button class="btn small danger" data-dwheel="${w.id}">刪除</button></div>
           <div style="color:var(--muted);margin-bottom:8px">${UI.esc(w.description || '')}
             ${w.tags ? '　' + UI.esc(w.tags.split(',').join('、')) : ''}</div>
@@ -229,6 +230,46 @@ App.page('wheels', {
     el.querySelectorAll('[data-drole]').forEach(b => b.onclick = async () => {
       if (!await UI.confirm('刪除此角色？')) return;
       await DEL('/wheel-roles/' + b.dataset.drole); UI.ok('已刪除'); App.go('wheels'); });
+
+    // 換底圖排程：每個月換一張底圖不用有人卡在 00:00 手動改
+    el.querySelectorAll('[data-bgs]').forEach(b => b.onclick = async () => {
+      const wid = b.dataset.bgs;
+      const list = await GET(`/wheels/${wid}/bg-schedule`);
+      const rows = list.length ? list.map(r => `
+        <tr><td>${UI.esc(r.apply_at)}</td>
+          <td><img src="${UI.esc(r.bg_url)}" style="height:38px;border-radius:4px"></td>
+          <td>${r.applied ? '<span class="tag">已套用</span>' : '<span class="tag primary">待生效</span>'}</td>
+          <td>${UI.esc(r.note || '')}</td>
+          <td><button class="btn tiny danger" data-bgdel="${r.id}">刪</button></td></tr>`).join('')
+        : '<tr><td colspan="5" class="hint">還沒有排程。</td></tr>';
+      const m = UI.modal({
+        title: '換底圖排程', okText: '新增排程',
+        bodyHTML: `
+          <div class="hint" style="margin-bottom:8px">時間到（台北時間，每分鐘檢查一次）機器人會自動把這張圖換成轉盤的小卡背景，
+            不用自己等到 00:00。可以一次把好幾個月的圖都排好。</div>
+          <div class="table-wrap"><table class="list">
+            <thead><tr><th>生效時間</th><th>底圖</th><th>狀態</th><th>備註</th><th></th></tr></thead>
+            <tbody>${rows}</tbody></table></div>
+          <hr>
+          <div class="field"><label>新的底圖</label>${H.uploadField('bg_url', '', { label: '底圖' })}
+            ${H.cropButton('bg_url', 1000 / 420, '裁切背景範圍')}</div>
+          <div class="field"><label>生效時間（例如下個月 1 號 00:00）</label>
+            <input name="apply_at" type="datetime-local"></div>
+          <div class="field"><label>備註（自己看的，例如「10 月主題」）</label><input name="note"></div>`,
+        onOk: async (back) => {
+          const v = H.collect(back);
+          if (!v.bg_url) { UI.err('請先上傳底圖'); return false; }
+          if (!v.apply_at) { UI.err('請選生效時間'); return false; }
+          await POST(`/wheels/${wid}/bg-schedule`, v);
+          UI.ok('已排程'); App.go('wheels');
+        }
+      });
+      H.bindUploads(m.back);
+      H.bindCropButtons(m.back);
+      m.back.querySelectorAll('[data-bgdel]').forEach(x => x.onclick = async () => {
+        await DEL('/wheel-bg-schedule/' + x.dataset.bgdel); UI.ok('已刪除'); m.close(); App.go('wheels');
+      });
+    });
 
     el.querySelectorAll('[data-post]').forEach(b => b.onclick = () => UI.modal({
       title: '發布轉盤面板', okText: '發布',

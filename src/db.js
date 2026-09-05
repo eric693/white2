@@ -867,6 +867,20 @@ function logError(guildId, ...args) {
   writeError(fmt(args), guildId);
 }
 
+// 轉盤底圖的換圖排程：白白每個月都要換一張底圖，之前只能自己卡在 00:00 手動換。
+// 這裡讓後台先把「幾月幾號要換成哪張」排好，時間到由機器人自動套用。
+db.exec(`CREATE TABLE IF NOT EXISTS wheel_bg_schedule (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id TEXT NOT NULL DEFAULT '',
+  wheel_id INTEGER NOT NULL,
+  bg_url TEXT NOT NULL DEFAULT '',
+  apply_at TEXT NOT NULL DEFAULT '',      -- 'YYYY-MM-DD HH:MM'（台北時間）
+  applied INTEGER NOT NULL DEFAULT 0,
+  note TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+)`);
+db.exec('CREATE INDEX IF NOT EXISTS idx_wheel_bg_due ON wheel_bg_schedule(applied, apply_at)');
+
 // 同居角色的工作明細：每 5 分鐘的自動收成／播種都寫一筆，玩家才知道
 // 「他今天到底做了什麼」——以前這些動作是靜悄悄完成的，東西直接進背包，
 // 玩家只看到數字變了，會懷疑同居角色根本沒在工作。

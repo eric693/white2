@@ -55,6 +55,29 @@ router.post('/wheels', (req, res) => {
   res.json({ id: info.lastInsertRowid });
 });
 
+// ---- 底圖換圖排程（每月換底圖不用卡在 00:00 手動改）----
+router.get('/wheels/:id/bg-schedule', (req, res) => {
+  if (!ownsWheel(req, res)) return;
+  res.json(db.prepare('SELECT * FROM wheel_bg_schedule WHERE guild_id=? AND wheel_id=? ORDER BY apply_at').all(req.guildId, req.params.id));
+});
+router.post('/wheels/:id/bg-schedule', (req, res) => {
+  if (!ownsWheel(req, res)) return;
+  const b = req.body || {};
+  const at = String(b.apply_at || '').replace('T', ' ').slice(0, 16);
+  if (!/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}$/.test(at)) return res.status(400).json({ error: '請填生效時間' });
+  if (!b.bg_url) return res.status(400).json({ error: '請選底圖' });
+  const r = db.prepare(
+    'INSERT INTO wheel_bg_schedule (guild_id, wheel_id, bg_url, apply_at, note) VALUES (?,?,?,?,?)')
+    .run(req.guildId, req.params.id, String(b.bg_url), at, String(b.note || ''));
+  audit(req.user.name, `排定轉盤 #${req.params.id} 於 ${at} 換底圖`);
+  res.json({ id: r.lastInsertRowid });
+});
+router.delete('/wheel-bg-schedule/:sid', (req, res) => {
+  db.prepare('DELETE FROM wheel_bg_schedule WHERE id=? AND guild_id=?').run(req.params.sid, req.guildId);
+  audit(req.user.name, `刪除轉盤換底圖排程 #${req.params.sid}`);
+  res.json({ ok: true });
+});
+
 router.put('/wheels/:id', (req, res) => {
   db.prepare(
     `UPDATE role_wheels SET name=@name, description=@description, image_url=@image_url, tags=@tags,

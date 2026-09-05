@@ -208,7 +208,27 @@ async function postFilter(client, channelId) {
   await ch.send({ embeds: [embed], components: [new ActionRowBuilder().addComponents(menu)] });
 }
 
+// ---- 底圖換圖排程 ----
+// 每分鐘檢查一次：到時間就把排定的底圖套到轉盤上（台北時間比較）。
+// 這樣「每個月換一張底圖」不必有人卡在 00:00 手動改。
+function runBgSchedule() {
+  const now = nowStr();
+  const due = db.prepare(
+    "SELECT * FROM wheel_bg_schedule WHERE applied=0 AND apply_at <> '' AND apply_at <= ? ORDER BY apply_at").all(now);
+  for (const row of due) {
+    try {
+      const r = db.prepare('UPDATE role_wheels SET card_bg=? WHERE id=? AND guild_id=?')
+        .run(row.bg_url || '', row.wheel_id, row.guild_id);
+      db.prepare('UPDATE wheel_bg_schedule SET applied=1 WHERE id=?').run(row.id);
+      if (r.changes) console.log(`  ↳ 轉盤 #${row.wheel_id} 已自動換底圖（排程 ${row.apply_at}）`);
+    } catch (e) { logError(row.guild_id, '轉盤換底圖排程失敗：', e.message); }
+  }
+}
+
 function init(client) {
+  setInterval(() => { try { runBgSchedule(); } catch {} }, 60000).unref?.();
+  runBgSchedule();
+
   client.on('interactionCreate', async (i) => {
     try {
       // ---- 8.4 標籤篩選 ----
@@ -438,4 +458,4 @@ function init(client) {
   console.log('  ↳ 角色轉盤模組已載入（標籤篩選/收藏/權重/不重複/每日限制/統計）');
 }
 
-module.exports = { init, postWheel, postFilter };
+module.exports = { init, postWheel, postFilter, runBgSchedule };
