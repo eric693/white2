@@ -92,6 +92,7 @@ App.page('bots', {
         <div class="hint" style="margin-top:8px">名稱、頭像與狀態存檔就套用；<b>Token 與 Client ID／Secret 要重啟對應的行程</b>才會生效。</div></div>`;
 
     H.bindUploads(el);
+    H.bindCropButtons(el);      // 少了這行，「裁切頭像」按鈕會完全沒反應
     H.bindEmojiPickers?.(el);
 
     el.querySelector('#save').onclick = async () => {
