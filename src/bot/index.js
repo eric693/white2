@@ -343,6 +343,51 @@ if (process.env.INTERACTION_TRACE === '1') {
   console.log('  ↳ ⚠️  互動回應診斷已開啟（INTERACTION_TRACE=1），查完記得關掉');
 }
 
+// ---- 過期互動直接丟掉 ----
+// Discord 的互動 token 只有 3 秒可以做第一次回應。斷線重連（RESUME）時，Gateway 會把
+// 中斷期間的事件「補送」過來 —— 那些互動早就過期了，任何模組去回應都必然吃到
+// 10062 Unknown interaction，玩家端也早就顯示「應用程式沒有回應」，我們回什麼都到不了。
+//
+// 以前這些過期互動照樣送進所有模組，於是每一則都變成一串錯誤紀錄（回應失敗、重複回應、
+// 互動無回應），把真正的問題埋掉。這裡在事件分派之前就攔掉，只留一行彙總紀錄。
+//
+// 為什麼是攔 client.emit 而不是加一個 listener：listener 攔不住其他 listener，
+// 二十幾個模組還是會各自跑一次。從 emit 這一層擋掉才是真的不分派。
+const STALE_MS = 2500;               // 距離 token 到期只剩 0.5 秒才動手，已經來不及了
+let staleCount = 0, staleWorst = 0;
+// 機器人的時鐘可能跟 Discord 差幾百毫秒（甚至更多）。直接拿「現在 − 互動建立時間」當年齡，
+// 時鐘一旦快了幾秒就會把**全部**互動判成過期，整隻機器人形同停擺。
+// 所以用「最近看過的最小年齡」當基準線（正常送達只要幾十毫秒，那個最小值≈時鐘偏差），
+// 只有比基準線再慢 STALE_MS 以上的才算真的過期。基準線每 5 分鐘重新量一次。
+let baseAge = Infinity, baseAt = Date.now();
+const origEmit = client.emit.bind(client);
+client.emit = (name, ...args) => {
+  if (name === 'interactionCreate') {
+    const i = args[0];
+    const born = i && i.createdTimestamp;
+    const age = born ? Date.now() - born : 0;
+    if (Date.now() - baseAt > 300000) { baseAge = Infinity; baseAt = Date.now(); }   // 定期重新量
+    if (age < baseAge) baseAge = age;
+    const lag = age - (Number.isFinite(baseAge) ? baseAge : 0);
+    if (lag > STALE_MS) {
+      staleCount++;
+      if (lag > staleWorst) staleWorst = lag;
+      return false;
+    }
+  }
+  return origEmit(name, ...args);
+};
+// 丟掉的數量每分鐘彙總一次（有丟才記）——平常應該是 0，一直有就代表連線在抖
+setInterval(() => {
+  if (!staleCount) return;
+  try {
+    require('../db').logError('', '已丟棄過期互動：',
+      `${staleCount} 筆（最慢的比正常送達晚了 ${Math.round(staleWorst / 1000)} 秒，多半是斷線重連時 Discord 補送的舊事件；`
+      + '這些互動的 token 已失效，回應也送不到玩家端）');
+  } catch {}
+  staleCount = 0; staleWorst = 0;
+}, 60000).unref?.();
+
 // ---- 卡頓偵測 ----
 // 「互動無回應」常常不是那個功能壞掉，而是整個 event loop 被別的同步工作卡住幾秒
 // （SQLite 是同步的，結算／稅務／股市跑大批資料時會這樣）。這裡每 200ms 量一次延遲，
