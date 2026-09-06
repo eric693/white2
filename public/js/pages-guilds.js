@@ -4,7 +4,8 @@ App.page('guilds', {
     "intro": "控管哪些 Discord 伺服器可以使用這隻機器人（邀請制）。",
     "steps": [
       "朋友把伺服器邀請連結給你，貼進「用邀請連結授權」就能預先核准。",
-      "已加入的伺服器可以在清單直接核准或撤銷。"
+      "已加入的伺服器可以在清單直接核准或撤銷。",
+      "最上面那排數字就是「有多少人邀請過」：待核准＝邀過但還沒開通的。"
     ],
     "notes": [
       "未核准的伺服器加進去也不能用，會顯示聯繫訊息。",
@@ -15,7 +16,21 @@ App.page('guilds', {
   async render(el) {
     const d = await GET('/guild-admin');
 
+    const st = d.stats || {};
+    const ROLE_NAME = { secretary: '秘書', butler: '管家' };
+    const roleTags = (v) => (v || '').split(',').filter(Boolean)
+      .map(r => `<span class="tag">${ROLE_NAME[r] || r}</span>`).join(' ') || '—';
+
     el.innerHTML = `
+      <div class="stat-grid">
+        <div class="stat"><div class="num">${st.total || 0}</div><div class="label">邀請過的伺服器</div></div>
+        <div class="stat"><div class="num">${st.approved || 0}</div><div class="label">已開通</div></div>
+        <div class="stat"><div class="num">${st.pending || 0}</div><div class="label">待核准</div></div>
+        <div class="stat"><div class="num">${st.online || 0}</div><div class="label">機器人在線</div></div>
+        <div class="stat"><div class="num">${st.invites || 0}</div><div class="label">累計邀請次數</div></div>
+        <div class="stat"><div class="num">${st.this_month || 0}</div><div class="label">本月有邀請</div></div>
+      </div>
+
       <div class="card" style="max-width:760px">
         <h3>邀請控管</h3>
         <div class="field">
@@ -35,13 +50,16 @@ App.page('guilds', {
           <div class="spacer"></div>
           <button class="btn small" id="preapprove">＋ 預先授權伺服器 ID</button></div>
         <div class="table-wrap"><table class="list">
-          <thead><tr><th>伺服器</th><th>ID</th><th>狀態</th><th>成員</th><th>備註</th><th></th></tr></thead>
+          <thead><tr><th>伺服器</th><th>ID</th><th>狀態</th><th>邀過哪隻</th><th>邀請次數</th><th>最後邀請</th><th>成員</th><th>備註</th><th></th></tr></thead>
           <tbody>${d.guilds.length ? d.guilds.map(g => `
             <tr><td class="wrap"><strong>${UI.esc(g.name || '（未知）')}</strong></td>
               <td><code>${g.guild_id}</code></td>
               <td>${g.approved
                 ? (g.online ? '<span class="tag ok">已授權·使用中</span>' : '<span class="tag primary">已授權·未加入</span>')
                 : '<span class="tag danger">待核准</span>'}</td>
+              <td>${roleTags(g.invited_roles)}</td>
+              <td>${g.invite_count || 0}</td>
+              <td class="wrap">${UI.esc(g.last_invite_at || g.joined_at || '—')}</td>
               <td>${g.members || '—'}</td>
               <td class="wrap">${UI.esc(g.note || '—')}</td>
               <td>${g.approved
@@ -49,7 +67,7 @@ App.page('guilds', {
                 : `<button class="btn tiny" data-approve="${g.guild_id}" data-name="${UI.esc(g.name || '')}">核准</button>`}
                 ${g.approved ? `<button class="btn tiny danger" data-reset="${g.guild_id}" data-name="${UI.esc(g.name || '')}">重置資料</button>` : ''}
                 ${g.online ? `<button class="btn tiny danger" data-leave="${g.guild_id}">讓機器人離開</button>` : ''}</td></tr>`).join('')
-            : '<tr><td colspan="6" class="empty">尚無紀錄</td></tr>'}
+            : '<tr><td colspan="9" class="empty">尚無紀錄</td></tr>'}
           </tbody></table></div>
       </div>`;
 

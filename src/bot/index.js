@@ -118,19 +118,39 @@ function startExpiryWatch() {
   }, { timezone: process.env.TZ || 'Asia/Taipei' });
 }
 
+// 每一次「被邀請進伺服器」都記一筆：次數、時間、是哪一隻被邀的。
+// 白名單擋下的那幾次也算——「有多少人邀請過」要看得出來，不能只留下核准的。
+function recordInvite(g) {
+  const { botRole } = require('./roles');
+  const role = botRole() === 'both' ? 'butler' : botRole();
+  const now = new Date().toLocaleString('sv-SE', { timeZone: process.env.TZ || 'Asia/Taipei' }).replace('T', ' ');
+  db.prepare(`INSERT INTO guilds (guild_id, name, icon, active, approved, owner_id, invite_count, last_invite_at, invited_roles)
+              VALUES (?, ?, ?, 0, 0, ?, 1, ?, ?)
+              ON CONFLICT(guild_id) DO UPDATE SET
+                name = excluded.name, icon = excluded.icon,
+                owner_id = CASE WHEN excluded.owner_id != '' THEN excluded.owner_id ELSE guilds.owner_id END,
+                invite_count = guilds.invite_count + 1,
+                last_invite_at = excluded.last_invite_at`)
+    .run(g.id, g.name, g.iconURL() || '', g.ownerId || '', now, role);
+  // invited_roles 是逗號分隔的集合，同一隻重複邀不會重複記
+  const cur = (db.prepare('SELECT invited_roles FROM guilds WHERE guild_id=?').get(g.id) || {}).invited_roles || '';
+  const set = new Set(cur.split(',').filter(Boolean));
+  if (!set.has(role)) {
+    set.add(role);
+    db.prepare('UPDATE guilds SET invited_roles=? WHERE guild_id=?').run([...set].join(','), g.id);
+  }
+}
+
 // 被邀請進新伺服器 → 檢查白名單，未核准就自動退出（只給朋友使用）
 client.on('guildCreate', async (g) => {
   try {
     const row = db.prepare('SELECT approved FROM guilds WHERE guild_id = ?').get(g.id);
     const openMode = getSetting('allow_any_guild', '0') === '1';   // 後台可切換為開放加入
+    recordInvite(g);   // 先記一筆邀請（不論後面有沒有被擋下）
 
     if (!row && !openMode) {
       // 全新且未預先核准 → 記錄待審核，只通知「你自己的」管理頻道，不在對方伺服器留言。
       // （在別人伺服器「發訊息後立刻離開」會被 Discord 反濫發系統判定成廣告/濫發，導致機器人被標記）
-      db.prepare(`INSERT INTO guilds (guild_id, name, icon, active, approved, owner_id)
-                  VALUES (?, ?, ?, 0, 0, ?)
-                  ON CONFLICT(guild_id) DO UPDATE SET name=excluded.name, icon=excluded.icon`)
-        .run(g.id, g.name, g.iconURL() || '', g.ownerId || '');
       await notifyPendingGuild(g);
       await g.leave().catch(() => {});
       console.log(`⛔ 未授權的伺服器已自動退出（未留言）：${g.name}（${g.id}）— 可到後台核准後重新邀請`);
@@ -182,7 +202,8 @@ async function notifyPendingGuild(g) {
     `🔔 **有人把機器人邀請到未授權的伺服器**\n` +
     `伺服器：**${g.name}**（\`${g.id}\`）\n` +
     `擁有者：<@${g.ownerId}>\n` +
-    `成員數：${g.memberCount}\n\n` +
+    `成員數：${g.memberCount}\n` +
+    `累計邀請次數：${(db.prepare('SELECT invite_count FROM guilds WHERE guild_id=?').get(g.id) || {}).invite_count || 1} 次\n\n` +
     `機器人已自動退出。若要允許，請到後台「伺服器管理」核准後再請對方重新邀請。`
   ).catch(() => {});
 }

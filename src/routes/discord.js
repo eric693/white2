@@ -44,8 +44,19 @@ router.get('/guilds', (req, res) => {
 router.get('/guild-admin', (req, res) => {
   const live = new Map((bot.guildList ? bot.guildList() : []).map(g => [g.id, g]));
   const rows = db.prepare('SELECT * FROM guilds ORDER BY approved DESC, joined_at DESC').all();
+  const guilds = rows.map(r => ({ ...r, online: live.has(r.guild_id), members: (live.get(r.guild_id) || {}).members || 0 }));
+  // 「有多少人邀請過」的統計：待審＝邀過但還沒核准
+  const ym = new Date().toLocaleDateString('sv-SE', { timeZone: process.env.TZ || 'Asia/Taipei' }).slice(0, 7);
+  const stats = {
+    total: guilds.length,
+    approved: guilds.filter(g => g.approved).length,
+    pending: guilds.filter(g => !g.approved).length,
+    online: guilds.filter(g => g.online).length,
+    invites: guilds.reduce((n, g) => n + (g.invite_count || 0), 0),
+    this_month: guilds.filter(g => String(g.last_invite_at || g.joined_at || '').startsWith(ym)).length
+  };
   res.json({
-    guilds: rows.map(r => ({ ...r, online: live.has(r.guild_id), members: (live.get(r.guild_id) || {}).members || 0 })),
+    guilds, stats,
     open_mode: getSetting('allow_any_guild', '0') === '1',
     // 兩隻機器人各有自己的邀請連結（Client ID 不同）
     invite: inviteUrl('butler'),

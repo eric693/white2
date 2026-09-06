@@ -631,6 +631,22 @@ if (HOME_GUILD) {
   db.prepare('INSERT OR IGNORE INTO guilds (guild_id, name) VALUES (?, ?)').run(HOME_GUILD, '主伺服器');
 }
 
+// guilds 的後補欄位（白名單審核 + 邀請紀錄）。舊資料庫是手動加過的，這裡補上遷移，
+// 全新安裝才不會少欄位。
+ensureColumns('guilds', {
+  approved: 'INTEGER NOT NULL DEFAULT 0',
+  note: "TEXT NOT NULL DEFAULT ''",
+  owner_id: "TEXT NOT NULL DEFAULT ''",
+  invite_count: 'INTEGER NOT NULL DEFAULT 0',      // 累計被邀請次數（含被白名單擋下的那幾次）
+  last_invite_at: "TEXT NOT NULL DEFAULT ''",      // 最後一次被邀請的時間
+  invited_roles: "TEXT NOT NULL DEFAULT ''"        // 哪幾隻被邀過：secretary/butler，逗號分隔
+});
+// 舊資料回填：這欄上線前就在的伺服器，至少算被邀請過一次，時間沿用加入時間。
+db.prepare(`UPDATE guilds SET invite_count = 1,
+              last_invite_at = CASE WHEN last_invite_at = '' THEN joined_at ELSE last_invite_at END
+            WHERE invite_count = 0`).run();
+
+
 // 需要 guild_id 的業務資料表（單例設定表 + 多筆資料表）。純全域表（admin_users/guilds）不列入。
 // error_logs 另外處理：有 guild_id，但允許空字串代表「全站層級」（如登入失敗、斷線）。
 const GUILD_TABLES = [
