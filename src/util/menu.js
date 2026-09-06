@@ -37,11 +37,42 @@ function emojiTooNew(str) {
  */
 function safeEmoji(e) {
   if (!e) return undefined;
+  if (typeof e === 'object') return e;          // 已經是 { id, name } 的自訂表情，原樣放行
   const raw = String(e).trim();
   if (!raw) return undefined;
   const m = /^<(a)?:([^:]+):(\d+)>$/.exec(raw);
   if (m) return { id: m[3], name: m[2], animated: !!m[1] };
   return emojiTooNew(raw) ? undefined : raw;
+}
+
+
+/**
+ * 全域保險：把 emoji 過濾裝到 discord.js 的建構器上。
+ *
+ * 後台可以替物品、動物、魚、家具、股票、寵物、按鈕…填 emoji，程式裡有幾十處會把它
+ * 直接放進選單或按鈕。只要其中一顆是 Discord 不認得的新字，它就把「整份元件」退回
+ * （COMPONENT_INVALID_EMOJI）——不是那一個選項壞掉，是整個面板送不出去，玩家只看到
+ * 「應用程式沒有回應」。一個一個呼叫點去包 safeEmoji 遲早會漏，所以在這裡一次擋掉。
+ * 只在啟動時裝一次（bot/index.js）。
+ */
+function installEmojiGuard() {
+  const { StringSelectMenuBuilder, StringSelectMenuOptionBuilder, ButtonBuilder } = require('discord.js');
+  if (StringSelectMenuBuilder.prototype.__emojiGuard) return;
+  const addOptions = StringSelectMenuBuilder.prototype.addOptions;
+  StringSelectMenuBuilder.prototype.addOptions = function (...opts) {
+    const clean = opts.flat().map(o => (o && typeof o === 'object' && !(o instanceof StringSelectMenuOptionBuilder) && 'emoji' in o)
+      ? { ...o, emoji: safeEmoji(o.emoji) } : o);
+    return addOptions.apply(this, clean);
+  };
+  for (const B of [ButtonBuilder, StringSelectMenuOptionBuilder]) {
+    const orig = B.prototype.setEmoji;
+    if (!orig) continue;
+    B.prototype.setEmoji = function (e) {
+      const safe = safeEmoji(e);
+      return safe === undefined ? this : orig.call(this, safe);
+    };
+  }
+  StringSelectMenuBuilder.prototype.__emojiGuard = true;
 }
 
 /**
@@ -71,4 +102,4 @@ function selectRows(id, options, placeholder, opt = {}) {
 /** 這個 customId 是不是屬於某個分頁選單（含第 0 頁） */
 const isSelect = (customId, id) => customId === id || customId.startsWith(id + ':');
 
-module.exports = { selectRows, isSelect, safeEmoji };
+module.exports = { selectRows, isSelect, safeEmoji, installEmojiGuard };
