@@ -1,6 +1,6 @@
 // 特殊兌換商店（可分多間店，每間可發布面板到自己的頻道）
 // 兌換不做內部代幣交易，而是把「兌換通知」貼到指定頻道並 @ 管理員，由人工處理。
-const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, MessageFlags } = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
 const { db, guildConfig, logError } = require('../../db');
 const { brandColor } = require('../../util/brand');
 const { absUrl } = require('../../util/url');

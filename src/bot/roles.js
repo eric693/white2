@@ -180,7 +180,7 @@ const COMPONENT_PREFIX_FEATURE = {
   aucbid: 'auction', aucbuy: 'auction', aucmodal: 'auction',
   loan: 'loans', bank: 'loans',
   trade: 'trades', tradeuser: 'trades', tg: 'trades', tgq: 'trades', tw: 'trades', twq: 'trades',
-  sredeem: 'special', sqty: 'special', shopgiftqty: 'special',
+  sredeem: 'special', sqty: 'special', shopgiftqty: 'special', smylog: 'special',
   facbuy: 'facility', contestme: 'contest'
 };
 
