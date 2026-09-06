@@ -128,6 +128,36 @@
   }
   .chip svg { width: 17px; height: 17px; color: var(--accent); flex: none; }
 
+
+  /* ---- invite ---- */
+  .invite-row { display: flex; flex-wrap: wrap; gap: .7rem; margin: 1.5rem 0 .2rem; }
+  .ibtn {
+    font-size: .95rem; font-weight: 700; text-decoration: none; border-radius: 12px;
+    padding: .7rem 1.2rem; border: 1px solid var(--accent); color: var(--bg);
+    background: var(--accent); box-shadow: var(--shadow); display: inline-flex; gap: .5rem; align-items: center;
+  }
+  .ibtn:hover { filter: brightness(1.08); }
+  .ibtn.ghost { background: transparent; color: var(--accent); }
+  .ibtn.ghost:hover { background: var(--surface-2); }
+
+  .dock { position: fixed; right: 20px; bottom: 20px; z-index: 60;
+    display: flex; flex-direction: column; align-items: flex-end; gap: .5rem; }
+  .dock-panel { display: none; flex-direction: column; gap: .5rem; padding: .9rem;
+    background: var(--surface); backdrop-filter: blur(8px); border: 1px solid var(--line);
+    border-radius: 14px; box-shadow: var(--shadow); max-width: min(78vw, 300px); }
+  .dock.open .dock-panel { display: flex; }
+  .dock-panel .t { font-size: .78rem; color: var(--ink-faint); }
+  .dock-panel a { font-size: .92rem; text-decoration: none; color: var(--ink);
+    border: 1px solid var(--line); border-radius: 10px; padding: .55rem .8rem;
+    display: flex; justify-content: space-between; gap: .6rem; background: var(--surface-2); }
+  .dock-panel a:hover { border-color: var(--accent); color: var(--accent); }
+  .dock-btn { cursor: pointer; font: inherit; font-size: .95rem; font-weight: 700;
+    border: 1px solid var(--accent); background: var(--accent); color: var(--bg);
+    border-radius: 999px; padding: .7rem 1.25rem; box-shadow: var(--shadow); }
+  .dock-btn:hover { filter: brightness(1.08); }
+  @media (max-width: 720px) { .dock { right: 14px; bottom: 14px; } }
+  @media print { .dock { display: none; } }
+
   /* ---- stat rail ---- */
   .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1px;
     background: var(--line-soft); border: 1px solid var(--line); border-radius: 16px;
@@ -264,6 +294,13 @@
         <span class="chip"><svg><use href="#i-gift"/></svg>抽獎投票直接在 Discord 玩</span>
         <span class="chip"><svg><use href="#i-server"/></svg>多伺服器，一個後台</span>
         <span class="chip"><svg><use href="#i-key"/></svg>依伺服器訂閱，方案自由組合</span>
+      </div>
+
+      <div class="invite-row">
+        <a class="ibtn" href="https://discord.com/oauth2/authorize?client_id=1528399550006689882&scope=bot%20applications.commands&permissions=1099783466050" target="_blank" rel="noopener">邀請秘書進伺服器</a>
+        <a class="ibtn" href="https://discord.com/oauth2/authorize?client_id=1545612660656185344&scope=bot%20applications.commands&permissions=1099783466050" target="_blank" rel="noopener">邀請管家進伺服器</a>
+        <a class="ibtn ghost" href="/features#buy">方案與購買</a>
+        <a class="ibtn ghost" href="/features">看完整功能介紹</a>
       </div>
 
       <div class="stats">
@@ -417,9 +454,9 @@
         <h2>邀請制，三步就能上線</h2>
       </div>
       <div class="flow">
-        <div class="step reveal"><div class="k">壹</div><h4>邀請進伺服器</h4><p>秘書與管家各有一條邀請連結，需要哪些功能就邀哪一隻，兩隻都邀也可以；未開通時會先提示聯繫作者。</p></div>
+        <div class="step reveal"><div class="k">壹</div><h4>邀請進伺服器</h4><p>秘書與管家各有一條邀請連結，需要哪些功能就邀哪一隻，兩隻都邀也可以；未開通時會先提示聯繫作者。</p><div class="invite-row"><a class="ibtn" href="https://discord.com/oauth2/authorize?client_id=1528399550006689882&scope=bot%20applications.commands&permissions=1099783466050" target="_blank" rel="noopener">邀請秘書</a><a class="ibtn" href="https://discord.com/oauth2/authorize?client_id=1545612660656185344&scope=bot%20applications.commands&permissions=1099783466050" target="_blank" rel="noopener">邀請管家</a></div></div>
         <div class="step reveal"><div class="k">貳</div><h4>作者開通授權</h4><p>作者在總後台核准你的伺服器，並替你開一組專屬後台帳號。</p></div>
-        <div class="step reveal"><div class="k">參</div><h4>重新邀請即用</h4><p>再次邀請機器人就會正式進駐，指令即時出現。實際開放的功能依你的訂閱方案而定，升級後立刻生效、不必重來。</p></div>
+        <div class="step reveal"><div class="k">參</div><h4>重新邀請即用</h4><p>再次邀請機器人就會正式進駐，指令即時出現。免費版可直接玩，要開通標準版／專業版就跟作者說一聲—— 秘書與管家<b>同一套方案、同一組價格</b>，<a href="/features#buy">看方案與價格</a>。</p></div>
       </div>
     </div>
   </section>
@@ -471,6 +508,28 @@
     function start(){ size(); make(); cancelAnimationFrame(raf); draw(); }
     start(); addEventListener('resize', start);
   })();
+</script>
+
+<div class="dock" id="dock">
+  <div class="dock-panel" id="dockPanel">
+    <div class="t">邀請進你的伺服器</div>
+    <a href="https://discord.com/oauth2/authorize?client_id=1528399550006689882&scope=bot%20applications.commands&permissions=1099783466050" target="_blank" rel="noopener">璃白Yu光秘書<span>↗</span></a>
+    <a href="https://discord.com/oauth2/authorize?client_id=1545612660656185344&scope=bot%20applications.commands&permissions=1099783466050" target="_blank" rel="noopener">璃白Yu光管家<span>↗</span></a>
+    <a href="/features#buy">方案與購買<span>→</span></a>
+    <div class="t">兩隻各邀一次；未開通會先自動退出，核准後再邀一次</div>
+  </div>
+  <button class="dock-btn" id="dockBtn" aria-expanded="false" aria-controls="dockPanel">邀請機器人</button>
+</div>
+<script>
+(function(){
+  var d=document.getElementById('dock'),b=document.getElementById('dockBtn');
+  b.addEventListener('click',function(e){e.stopPropagation();
+    var o=d.classList.toggle('open');b.setAttribute('aria-expanded',o?'true':'false');});
+  document.addEventListener('click',function(e){if(!d.contains(e.target)){
+    d.classList.remove('open');b.setAttribute('aria-expanded','false');}});
+  document.addEventListener('keydown',function(e){if(e.key==='Escape'){
+    d.classList.remove('open');b.setAttribute('aria-expanded','false');}});
+})();
 </script>
 </body>
 </html>

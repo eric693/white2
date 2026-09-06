@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>璃白Yu光 White2 — 功能介紹</title>
+<meta name="description" content="璃白Yu光 White2（Discord 社群機器人 + 網頁後台）功能介紹：兩隻機器人、103 個指令：社群管理歸秘書，冒險經濟歸管家。">
+<meta name="theme-color" content="#9E3B2E">
+<meta property="og:title" content="璃白Yu光 White2 — 功能介紹">
+<meta property="og:description" content="兩隻機器人、103 個指令：社群管理歸秘書，冒險經濟歸管家。">
+<meta property="og:type" content="website">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22%3E%3Crect width=%22100%22 height=%22100%22 fill=%22%239E3B2E%22/%3E%3C/svg%3E">
+<style>
+:root{
+  --paper:#EDEFEB; --surface:#F9FAF8; --raise:#FFFFFF;
+  --ink:#151B18; --ink2:#4B5A53; --ink3:#7B887F;
+  --rule:#D2D8D1; --rule2:#E2E7E1;
+  --accent:#9E3B2E; --accent-ink:#9E3B2E; --accent-wash:#9E3B2E14;
+  --sans:"Noto Sans TC","PingFang TC","Microsoft JhengHei","Hiragino Sans",system-ui,-apple-system,sans-serif;
+  --serif:"Noto Serif TC","Songti TC","Source Han Serif TC",Georgia,serif;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Noto Sans TC",monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --paper:#111512; --surface:#181D19; --raise:#1E2420;
+  --ink:#E9EDE8; --ink2:#A4B0A8; --ink3:#77847B;
+  --rule:#2A322C; --rule2:#222A25;
+  --accent:#D8735A; --accent-ink:#E08A72; --accent-wash:#D8735A1F;
+}}
+:root[data-theme="dark"]{
+  --paper:#111512; --surface:#181D19; --raise:#1E2420;
+  --ink:#E9EDE8; --ink2:#A4B0A8; --ink3:#77847B;
+  --rule:#2A322C; --rule2:#222A25;
+  --accent:#D8735A; --accent-ink:#E08A72; --accent-wash:#D8735A1F;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{transition:none!important}}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--sans);
+  font-size:15.5px;line-height:1.75;-webkit-font-smoothing:antialiased}
+img{max-width:100%}
+a{color:var(--accent-ink)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:2px}
+
+.masthead{border-bottom:1px solid var(--rule);background:var(--surface)}
+.masthead-in{max-width:1160px;margin:0 auto;padding:20px 28px;
+  display:flex;flex-wrap:wrap;align-items:center;gap:10px 18px}
+.field{font-family:var(--mono);font-size:11px;letter-spacing:.16em;color:var(--ink3)}
+.stamp{margin-left:auto;font-family:var(--mono);font-size:11px;letter-spacing:.12em;
+  color:var(--accent-ink);border:1px solid var(--accent);padding:3px 9px;white-space:nowrap}
+
+.shell{max-width:1160px;margin:0 auto;padding:0 28px 90px;
+  display:grid;grid-template-columns:minmax(0,1fr) 214px;gap:52px;align-items:start}
+main{padding:38px 0 0;min-width:0}
+
+.hero h1{font-family:var(--serif);font-weight:700;font-size:clamp(30px,5vw,44px);
+  line-height:1.22;margin:0 0 6px;letter-spacing:.01em;text-wrap:balance}
+.hero .sub{margin:0;font-size:17px;color:var(--ink2)}
+.hero .line{margin:20px 0 0;font-size:16.5px;line-height:1.8;max-width:58ch;
+  border-left:3px solid var(--accent);padding-left:16px}
+.facts{margin:28px 0 0;padding:16px 0;border-top:1px solid var(--rule);
+  border-bottom:1px solid var(--rule);display:flex;flex-wrap:wrap;gap:16px 34px;align-items:center}
+.fact dt{font-family:var(--mono);font-size:10.5px;letter-spacing:.14em;color:var(--ink3);margin:0 0 3px}
+.fact dd{margin:0;font-size:14px}
+.entries{display:flex;flex-wrap:wrap;gap:10px;margin-left:auto}
+.entry{font-family:var(--mono);font-size:12.5px;text-decoration:none;white-space:nowrap;
+  border:1px solid var(--rule);color:var(--ink);padding:7px 14px;display:inline-flex;gap:8px;
+  align-items:center;transition:border-color .15s,color .15s,background .15s}
+.entry span{color:var(--ink3);font-size:11px}
+.entry:hover{border-color:var(--accent);color:var(--accent-ink);background:var(--accent-wash)}
+.entry:hover span{color:var(--accent-ink)}
+.entry:first-child{border-color:var(--accent);color:var(--accent-ink)}
+
+.toc{position:sticky;top:0;max-height:100vh;overflow-y:auto;padding:44px 0 40px;
+  font-size:13px;line-height:1.6}
+.toc-label{font-family:var(--mono);font-size:10.5px;letter-spacing:.18em;color:var(--ink3);
+  padding-bottom:8px;border-bottom:1px solid var(--rule);margin-bottom:8px}
+.toc a{display:block;padding:6px 10px;border-left:2px solid transparent;text-decoration:none;
+  color:var(--ink2);transition:color .15s,border-color .15s,background .15s}
+.toc a:hover{background:var(--accent-wash);color:var(--ink)}
+.toc a.on{border-left-color:var(--accent);color:var(--accent-ink);font-weight:500;background:var(--accent-wash)}
+
+.doc{max-width:66ch;padding-top:4px}
+.doc h2{font-family:var(--serif);font-weight:700;font-size:23px;line-height:1.45;
+  margin:54px 0 14px;padding-top:22px;border-top:1px solid var(--rule);
+  scroll-margin-top:20px;text-wrap:balance}
+.doc h2::before{content:"";display:block;width:26px;height:2px;background:var(--accent);margin-bottom:14px}
+.doc h3{font-weight:700;font-size:16.5px;margin:32px 0 8px;text-wrap:balance}
+.doc h4{font-weight:700;font-size:15px;margin:24px 0 6px;color:var(--ink2)}
+.doc p{margin:0 0 14px}
+.doc ul,.doc ol{margin:0 0 16px;padding-left:1.35em}
+.doc li{margin:0 0 6px}
+.doc li::marker{color:var(--ink3)}
+.doc hr{border:0;border-top:1px solid var(--rule2);margin:36px 0}
+.doc blockquote{margin:20px 0;padding:2px 0 2px 18px;border-left:3px solid var(--accent);
+  color:var(--ink2);font-size:14.5px}
+.doc blockquote p:last-child{margin-bottom:0}
+.doc code{font-family:var(--mono);font-size:.88em;background:var(--raise);
+  border:1px solid var(--rule2);padding:1px 5px;border-radius:2px}
+.doc pre{background:var(--raise);border:1px solid var(--rule);padding:16px 18px;
+  overflow-x:auto;margin:20px 0;font-size:12.5px;line-height:1.7}
+.doc pre code{background:none;border:0;padding:0;font-size:12.5px}
+.tw{overflow-x:auto;margin:20px 0;border:1px solid var(--rule)}
+.doc table{border-collapse:collapse;width:100%;font-size:14px;
+  font-variant-numeric:tabular-nums;background:var(--surface)}
+.doc th,.doc td{text-align:left;padding:9px 14px;border-bottom:1px solid var(--rule2);vertical-align:top}
+.doc thead th{font-family:var(--mono);font-weight:500;font-size:12px;letter-spacing:.06em;
+  color:var(--ink2);background:var(--raise);border-bottom:1px solid var(--rule)}
+.doc tbody tr:last-child td{border-bottom:0}
+
+footer{max-width:66ch;margin-top:64px;padding-top:18px;border-top:1px solid var(--rule);
+  font-family:var(--mono);font-size:12px;color:var(--ink3);line-height:1.9}
+
+
+.entry.cta{background:var(--accent);border-color:var(--accent);color:#fff}
+.entry.cta span{color:#ffffffcc}
+.entry.cta:hover{background:var(--accent);color:#fff;filter:brightness(1.08)}
+.entry.cta:hover span{color:#ffffffcc}
+
+.invite-box{margin:22px 0 0;padding:18px 20px;border:1px solid var(--accent);background:var(--accent-wash)}
+.invite-box h3{margin:0 0 4px;font-size:16px}
+.invite-box p{margin:0 0 14px;font-size:14px;color:var(--ink2)}
+.doc td.ask{color:var(--accent-ink);font-weight:700;white-space:nowrap}
+.invite-links{display:flex;flex-wrap:wrap;gap:10px}
+
+.dock{position:fixed;right:20px;bottom:20px;z-index:50;display:flex;flex-direction:column;
+  align-items:flex-end;gap:8px}
+.dock-panel{display:none;flex-direction:column;gap:8px;padding:14px;background:var(--raise);
+  border:1px solid var(--rule);box-shadow:0 10px 30px #0000002e;max-width:min(78vw,300px)}
+.dock.open .dock-panel{display:flex}
+.dock-panel .t{font-family:var(--mono);font-size:11px;letter-spacing:.12em;color:var(--ink3)}
+.dock-panel a{font-size:13.5px;text-decoration:none;border:1px solid var(--rule);
+  padding:9px 12px;color:var(--ink);display:flex;justify-content:space-between;gap:10px}
+.dock-panel a:hover{border-color:var(--accent);color:var(--accent-ink);background:var(--accent-wash)}
+.dock-btn{font-family:var(--sans);font-size:14px;font-weight:700;cursor:pointer;
+  border:1px solid var(--accent);background:var(--accent);color:#fff;padding:11px 18px;
+  border-radius:999px;box-shadow:0 8px 24px #0000002e}
+.dock-btn:hover{filter:brightness(1.08)}
+@media (max-width:900px){.dock{right:14px;bottom:14px}}
+@media print{.dock{display:none}}
+
+@media (max-width:900px){
+  .shell{grid-template-columns:1fr;gap:0;padding:0 20px 64px}
+  .toc{display:none}
+  main{padding-top:28px}
+  .entries{margin-left:0}
+  .masthead-in{padding:16px 20px}
+}
+</style>
+</head>
+<body>
+
+<header class="masthead">
+  <div class="masthead-in">
+    <span class="field">社群與營運</span>
+    <span class="field">璃白Yu光 White2</span>
+    <span class="stamp">功能介紹　2026.09</span>
+  </div>
+</header>
+
+<div class="shell">
+  <main>
+    <div class="hero">
+      <h1>璃白Yu光 White2</h1>
+      <p class="sub">Discord 社群機器人 + 網頁後台</p>
+      <p class="line">兩隻機器人、103 個指令：社群管理歸秘書，冒險經濟歸管家。</p>
+      <dl class="facts">
+        <div class="fact"><dt>使用對象</dt><dd>Discord 伺服器經營者</dd></div>
+        <div class="entries"><a class="entry cta" href="https://discord.com/oauth2/authorize?client_id=1528399550006689882&scope=bot%20applications.commands&permissions=1099783466050" target="_blank" rel="noopener">邀請秘書<span>↗</span></a><a class="entry cta" href="https://discord.com/oauth2/authorize?client_id=1545612660656185344&scope=bot%20applications.commands&permissions=1099783466050" target="_blank" rel="noopener">邀請管家<span>↗</span></a><a class="entry" href="https://white.crownai.ink" target="_blank" rel="noopener">管理後台<span>↗</span></a><a class="entry" href="https://white.crownai.ink/intro" target="_blank" rel="noopener">機器人介紹頁<span>↗</span></a><a class="entry" href="https://white.crownai.ink/rules" target="_blank" rel="noopener">玩家規則手冊<span>↗</span></a></div>
+      </dl>
+    </div>
+    <article class="doc" id="doc">
+<h2>公開連結</h2>
+<div class="tw"><table><thead><tr><th>入口</th><th>網址</th></tr></thead><tbody><tr><td>管理後台</td><td><a href="https://white.crownai.ink" target="_blank" rel="noopener">https://white.crownai.ink</a></td></tr><tr><td>機器人介紹頁</td><td><a href="https://white.crownai.ink/intro.html" target="_blank" rel="noopener">https://white.crownai.ink/intro.html</a></td></tr><tr><td>玩家規則手冊</td><td><a href="https://white.crownai.ink/rules.html" target="_blank" rel="noopener">https://white.crownai.ink/rules.html</a></td></tr></tbody></table></div>
+<div class="invite-box">
+<h3>邀請機器人</h3>
+<p>秘書與管家是兩個獨立的 Discord 應用程式，<strong>要各邀一次</strong>；只想用其中一邊就邀那一隻。未開通的伺服器會先自動退出並通知作者，核准後再邀一次即可。</p>
+<div class="invite-links"><a class="entry cta" href="https://discord.com/oauth2/authorize?client_id=1528399550006689882&scope=bot%20applications.commands&permissions=1099783466050" target="_blank" rel="noopener">邀請璃白Yu光秘書<span>↗</span></a><a class="entry cta" href="https://discord.com/oauth2/authorize?client_id=1545612660656185344&scope=bot%20applications.commands&permissions=1099783466050" target="_blank" rel="noopener">邀請璃白Yu光管家<span>↗</span></a></div>
+</div>
+<p>後台支援手機、平板、電腦，也可<strong>加到手機主畫面（PWA）</strong>像 App 一樣開啟。</p>
+<hr>
+<h2>這是什麼？</h2>
+<p>White2 是一整套 Discord 伺服器經營工具，由<strong>兩隻機器人 + 一套網頁後台</strong>組成：</p>
+<ul><li><strong>璃白Yu光秘書</strong> — 社群管理：音樂、抽獎、投票、客服單、論壇、歡迎、等級……</li><li><strong>璃白Yu光管家</strong> — 遊戲經濟：冒險採集、農牧、家園、股市、稅務、拍賣……</li></ul>
+<p>為什麼是兩隻？因為 Discord 規定一隻機器人最多只能有 100 個指令，而全部功能加起來已經 103 個。拆開之後還有額外好處：秘書不會被遊戲排程拖慢，管家不會佔著語音頻道。</p>
+<p><strong>所有設定都在網頁後台改</strong>，不必記指令、不必上主機。同一套系統可同時服務多個 Discord 伺服器，每台伺服器的資料完全分開。</p>
+<hr>
+<h2>社群管理功能（秘書）</h2>
+<div class="tw"><table><thead><tr><th>功能</th><th>說明</th></tr></thead><tbody><tr><td><strong>關鍵字自動回覆</strong></td><td>設定多組關鍵字、限定頻道、冷卻時間，並保留觸發紀錄</td></tr><tr><td><strong>關鍵字警告</strong></td><td>偵測到違規字詞通知管理員、累計警告，<strong>三次自動禁言</strong>，處分留紀錄</td></tr><tr><td><strong>加入／退出通知</strong></td><td>自動產生歡迎圖卡、入群通知、離群明細與歷史紀錄</td></tr><tr><td><strong>生日慶生</strong></td><td>生日填寫提醒、當天自動祝賀（不重複發送）、生日限定身分組</td></tr><tr><td><strong>公告系統</strong></td><td>多頻道同時發布、標記成員、<strong>排程與循環發送</strong>、發送紀錄</td></tr><tr><td><strong>投票</strong></td><td>限制身分組參與、可否修改答案、結果隱藏、倒數計時</td></tr><tr><td><strong>抽獎</strong></td><td>保證中獎、限制重複中獎、補抽、撤銷、取消、倒數、黑名單</td></tr><tr><td><strong>提醒</strong></td><td>多對象提醒、可附圖片與按鈕、失敗會通知</td></tr><tr><td><strong>客服單</strong></td><td>玩家開單自動建立專屬頻道，關單後保留完整紀錄</td></tr><tr><td><strong>表情身分組</strong></td><td>按表情自動取得／移除身分組</td></tr><tr><td><strong>角色轉盤</strong></td><td>標籤篩選、收藏、權重、不重複、每日限制、統計，並可<strong>排程換底圖</strong>（幾月幾號換哪張，時間到自動換）</td></tr><tr><td><strong>貼文轉盤</strong></td><td>從指定貼文的留言者中隨機抽選；<strong>一人一票，洗留言不會增加機率</strong>。後台保留每次抽選紀錄，可排除已中獎者補抽</td></tr><tr><td><strong>論壇整理</strong></td><td>貼文自動同步、目錄自動更新（可依玩家／標籤／留言數／活躍度排序）</td></tr><tr><td><strong>等級系統</strong></td><td>聊天累積經驗值、自動升級身分組、排行榜圖卡</td></tr><tr><td><strong>音樂播放</strong></td><td>歌單、控制面板、音量調整、常駐語音頻道、播放權限、播放紀錄</td></tr></tbody></table></div>
+<hr>
+<h2>冒險生活功能（管家）</h2>
+<p>所有玩法共用同一份<strong>星幣錢包</strong>與<strong>背包</strong>，玩家可用 <code>/幫助</code> 查詢，或看公開的玩家規則手冊（含完整數值與機率）。</p>
+<h3>採集與生產</h3>
+<ul><li><strong>五種採集</strong>：<code>/釣魚</code> <code>/挖礦</code> <code>/伐木</code> <code>/採集</code> <code>/狩獵</code>，各有冷卻時間與稀有掉落。</li><li>地圖有每日次數限制；工具有耐久度，可修理，<strong>壞掉就是沒工具</strong>（不會自動退回舊的那把）。</li><li><strong>製作與鍛造</strong>：依分類選配方，可設定製作手續費與失敗率。</li><li>圖鑑、任務與限量懸賞、賣出換星幣。</li></ul>
+<h3>農牧與家園</h3>
+<div class="tw"><table><thead><tr><th>玩法</th><th>內容</th></tr></thead><tbody><tr><td><strong>設施商店</strong></td><td>農地／溫室／牧場／孵化室分三階購買</td></tr><tr><td><strong>種植</strong></td><td>農地種作物、溫室種花卉、成熟倒數、採收；可設枯死率</td></tr><tr><td><strong>牧場</strong></td><td>飼養動物、各自計時產出、收成、放生、孵蛋；<strong>看門動物可防竊</strong>；可設產物腐壞率</td></tr><tr><td><strong>魚缸</strong></td><td>固定 8 格只養 SSR 魚，自動產星幣、需定期餵食（餓 48 小時會死）、撈金、賣魚</td></tr><tr><td><strong>家園</strong></td><td>小屋 15 階、小屋簽到、家具佈置、廚房料理（36 道食譜／5 種品質）、寵物、59 個成就</td></tr></tbody></table></div>
+<h3>角色與同居</h3>
+<ul><li>逛街隨機遇到角色、送禮（有喜好倍率）、培養好感度、邀請同居。</li><li><strong>同居角色可指派工作區域</strong>：農地／溫室／牧場／孵化室／魚缸／廚房， 一位角色就能包辦該區完整自動化。</li><li>收成與照顧類工作<strong>每 5 分鐘不間斷執行</strong>（成熟就收、收完補種）。</li><li>工作區域鎖定對應能力，派錯的角色會<strong>罷工</strong>。</li><li>玩家與後台都查得到同居明細（他今天做了什麼）。</li></ul>
+<h3>經濟系統</h3>
+<div class="tw"><table><thead><tr><th>模組</th><th>說明</th></tr></thead><tbody><tr><td><strong>星幣股市</strong></td><td>掛牌股票、K 線、漲跌停、新聞衝擊、買賣手續費（銷毀回收星幣）；持股上限與禁當沖；預設關閉，後台可開啟</td></tr><tr><td><strong>世界動態</strong></td><td>整合遊戲公告與財經新聞，大標分類可自訂，一則可附最多 5 個連結</td></tr><tr><td><strong>銀行</strong></td><td>存款（自由存提、按日生息，不算收入不課稅）＋ 信用貸款（免抵押、利息較高）</td></tr><tr><td><strong>稅金</strong></td><td>四稅各自獨立：所得稅（只課本期實際賺到的，含股票已實現損益）／同居稅／寵物稅／房屋稅。<strong>只從錢包扣、扣到 0 為止不會變負數</strong>，缺繳記在稅單上</td></tr><tr><td><strong>慈善基金會</strong></td><td>捐款抵稅、帳目公開；基金池是普發與大賽獎金的財源</td></tr><tr><td><strong>拍賣會</strong></td><td>限時競標、出價鎖款、防狙擊自動延長、限定標的（稱號／寵物／素材／格子），手續費進基金會，可設參加資格</td></tr><tr><td><strong>大賽</strong></td><td>週賽月賽比成長量、前三名獎金、冠軍拿限定稱號</td></tr><tr><td><strong>以物易物</strong></td><td>玩家一對一以物換物，公開提案與成交公告；轉帳有手續費與二次確認；禮物禁止交易</td></tr><tr><td><strong>特殊兌換商店</strong></td><td>多分店、面板發布、兌換後通知管理員處理</td></tr></tbody></table></div>
+<h3>偷竊機制</h3>
+<p><code>/偷</code>（別人牧場未收成的產物）與 <code>/偷魚</code>（別人魚缸未領的星幣）是唯二的玩家互相影響玩法。有每日限次與成功率，看門動物與設施等級可降低被偷機率；被抓到會罰星幣，<strong>罰到不夠會倒扣成負數（欠款）</strong>，要賺回來才回正。</p>
+<hr>
+<h2>網頁後台</h2>
+<p>每個功能都有對應的後台頁面，可查資料、改設定、看紀錄，不必記指令。</p>
+<ul><li><strong>權限分層</strong>：管理員看得到全部；一般管理帳號只看得到被勾選的模組。</li><li><strong>多伺服器切換</strong>：一個後台管理多台 Discord 伺服器，切換即可。</li><li><strong>清單好用</strong>：40 列以上自動出現搜尋、欄位篩選、排序與每頁筆數。</li><li><strong>顯示伺服器暱稱</strong>：玩家欄位自動補上該伺服器的暱稱，不會只看到一串帳號名。</li><li><strong>PWA</strong>：可安裝到手機桌面，開起來像獨立 App。</li></ul>
+<hr>
+<h2>訂閱制度</h2>
+<p>每台伺服器、<strong>每隻機器人各自一份訂閱</strong>（買了秘書不代表管家也能用），方案內容在後台自由調整。</p>
+<ul><li>付費牆做在<strong>指令註冊層</strong>：方案沒包含的功能，指令根本不會出現在那台伺服器—— 玩家看不到也點不到，比「點下去才說要付費」乾淨得多。</li><li>到期自動降級成免費版，<strong>不刪任何資料</strong>；續費後原樣恢復，進度不重置。</li><li>續費、升降級即時生效，不必重啟。</li><li>基本指令（<code>/幫助</code>、<code>/錢包</code>、<code>/簽到</code>）任何方案都能用。</li></ul>
+<h3>方案與內容</h3>
+<p>秘書與管家<strong>用同一套方案級距、同一組價格</strong>：免費版 → 14 天試用 → 標準版 → 專業版。兩隻各自計費，可以只買一隻，也可以一隻專業版、一隻停在免費版。</p>
+<div class="tw"><table><thead><tr><th>方案</th><th>秘書（社群管理）</th><th>管家（冒險經濟）</th><th>價格（每台伺服器）</th></tr></thead><tbody>
+<tr><td><strong>免費版</strong></td><td>歡迎訊息、投票、關鍵字回覆、公告發布</td><td>採集冒險、家園、圖鑑稱號、冒險面板、指令說明</td><td>免費</td></tr>
+<tr><td><strong>試用版</strong></td><td colspan="2">全功能開放 14 天</td><td>免費</td></tr>
+<tr><td><strong>標準版</strong></td><td>免費版 ＋ 生日祝賀、表情身分組、抽獎、轉盤、聊天等級、排程提醒</td><td>免費版 ＋ 農地種植、牧場、廚房料理、家具、玩家交易</td><td class="ask">NT$99 / 月<br>NT$990 / 年</td></tr>
+<tr><td><strong>專業版</strong></td><td><strong>全功能</strong>：再加音樂播放、客服單、論壇整理、通知提醒、自訂機器人外觀</td><td><strong>全功能</strong>：再加股市、稅務、銀行信貸、拍賣會、慈善基金會、大賽、魚缸、寵物、角色好感度、同居技能、特殊商店、設施擴充、自訂外觀</td><td class="ask">NT$199 / 月<br>NT$1,990 / 年</td></tr>
+</tbody></table></div>
+<p>年繳等於送兩個月。方案內容由後台調整，實際以開通當下的設定為準。</p>
+<hr>
+<h2 id="buy">怎麼購買／開通</h2>
+<p>目前是<strong>邀請制</strong>：先把機器人邀進伺服器試玩免費版，要開通付費方案再聯繫作者。</p>
+<ol>
+<li><strong>先邀請進來</strong>——用上面的邀請連結，兩隻各邀一次，免費版功能立刻可以用。</li>
+<li><strong>聯繫作者開通</strong>——告訴作者你的伺服器名稱、要哪一隻、要哪個方案；作者核准伺服器並開一組專屬後台帳號給你。</li>
+<li><strong>登入後台管理</strong>——之後續費、升降級都在 <a href="https://white.crownai.ink" target="_blank" rel="noopener">white.crownai.ink</a> 處理，即時生效、不必重邀也不必重啟。</li>
+</ol>
+<div class="invite-box" id="contact">
+<h3>聯絡方式</h3>
+<p>報價、試用、客製需求都可以直接問作者；已經開通的伺服器，續費與升降級直接在後台操作。</p>
+<div class="invite-links"><a class="entry cta" href="https://white.crownai.ink" target="_blank" rel="noopener">登入管理後台<span>↗</span></a><!-- TODO 待補：Discord 私訊帳號、官方伺服器 discord.gg 連結 --></div>
+</div>
+<hr>
+<h2>加入新伺服器</h2>
+<ol><li>用邀請連結把機器人加進去——<strong>兩隻要各邀一次</strong>（秘書和管家是不同的應用程式）：<a href="https://discord.com/oauth2/authorize?client_id=1528399550006689882&scope=bot%20applications.commands&permissions=1099783466050" target="_blank" rel="noopener">邀請秘書</a>、<a href="https://discord.com/oauth2/authorize?client_id=1545612660656185344&scope=bot%20applications.commands&permissions=1099783466050" target="_blank" rel="noopener">邀請管家</a>。</li><li>陌生伺服器會被<strong>白名單</strong>擋下（機器人自動退出並通知管理者），核准後再邀一次。</li><li>上線時自動註冊指令到該伺服器，數量再依訂閱方案過濾，不必手動處理。</li></ol>
+<hr>
+<h2>穩定性</h2>
+<ul><li>單一功能出錯不會拖垮整隻機器人。</li><li>Discord 斷線、重連、恢復都有紀錄。</li><li>記憶體超標自動重啟、開機自動啟動。</li><li>連不上 Discord 超過一定時間會主動重啟自救。</li></ul>
+    </article>
+    <footer>璃白Yu光 White2　功能介紹　·　https://white.crownai.ink<br>本頁依系統實際功能撰寫；主管機關公告之給付單價、支付碼與評鑑指標，請依當年度規定核對。</footer>
+  </main>
+  <nav class="toc" id="toc" aria-label="章節目錄"></nav>
+</div>
+
+
+<div class="dock" id="dock">
+  <div class="dock-panel" id="dockPanel">
+    <div class="t">邀請進你的伺服器</div>
+    <a href="https://discord.com/oauth2/authorize?client_id=1528399550006689882&scope=bot%20applications.commands&permissions=1099783466050" target="_blank" rel="noopener">璃白Yu光秘書<span>↗</span></a>
+    <a href="https://discord.com/oauth2/authorize?client_id=1545612660656185344&scope=bot%20applications.commands&permissions=1099783466050" target="_blank" rel="noopener">璃白Yu光管家<span>↗</span></a>
+    <a href="#buy">購買／洽詢開通<span>→</span></a>
+    <div class="t">兩隻各邀一次；核准後才會正式進駐</div>
+  </div>
+  <button class="dock-btn" id="dockBtn" aria-expanded="false" aria-controls="dockPanel">邀請機器人</button>
+</div>
+
+<script>
+(function(){
+  var d=document.getElementById('dock'),b=document.getElementById('dockBtn');
+  b.addEventListener('click',function(e){
+    e.stopPropagation();
+    var o=d.classList.toggle('open');
+    b.setAttribute('aria-expanded',o?'true':'false');
+  });
+  document.addEventListener('click',function(e){
+    if(!d.contains(e.target)){d.classList.remove('open');b.setAttribute('aria-expanded','false');}
+  });
+  document.addEventListener('keydown',function(e){
+    if(e.key==='Escape'){d.classList.remove('open');b.setAttribute('aria-expanded','false');}
+  });
+})();
+</script>
+
+<script src="js/intro-toc.js" defer></script>
+</body>
+</html>

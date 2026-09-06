@@ -185,6 +185,7 @@ app.get('/sw.js', (req, res) => {
 });
 
 app.get('/intro', (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'intro.html')));
+app.get('/features', (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'features.html')));
 
 // 公開的玩家規則手冊（給 Discord 玩家看，不需登入）；不快取，改了手冊玩家立刻看到新版
 app.get('/rules', (req, res) => { res.set('Cache-Control', 'no-cache'); res.sendFile(path.join(__dirname, '..', 'public', 'rules.html')); });

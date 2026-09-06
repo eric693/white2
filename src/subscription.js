@@ -65,9 +65,9 @@ const DEFAULT_PLANS = [
     features: '*' },
   { role: 'butler', code: 'free', name: '免費版', price_month: 0, price_year: 0, sort: 0,
     features: 'gather,help,panel,home,dex' },
-  { role: 'butler', code: 'basic', name: '基礎遊戲', price_month: 99, price_year: 990, sort: 1,
+  { role: 'butler', code: 'basic', name: '標準版', price_month: 99, price_year: 990, sort: 1,
     features: 'gather,crops,ranch,home,dex,kitchen,furniture,trades,help,panel' },
-  { role: 'butler', code: 'advanced', name: '進階遊戲', price_month: 199, price_year: 1990, sort: 2,
+  { role: 'butler', code: 'advanced', name: '專業版', price_month: 199, price_year: 1990, sort: 2,
     features: '*' }
 ];
 const seedPlan = db.prepare(`INSERT OR IGNORE INTO plans
