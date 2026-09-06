@@ -18,8 +18,10 @@ function calcAge(y, m, d) {
   return age;
 }
 
-const fillBtn = (label = '填寫生日') => new ActionRowBuilder().addComponents(
-  new ButtonBuilder().setCustomId('bday_verify').setLabel(label).setStyle(ButtonStyle.Primary));
+// 私訊裡的互動沒有 i.guild，所以按鈕要自己把伺服器 ID 帶著走（頻道面板可省略）。
+const fillBtn = (label = '填寫生日', gid = '') => new ActionRowBuilder().addComponents(
+  new ButtonBuilder().setCustomId(gid ? `bday_verify:${gid}` : 'bday_verify')
+    .setLabel(label).setStyle(ButtonStyle.Primary));
 
 // 6.2 發布驗證面板
 async function postVerifyPanel(client, channelId, gid) {
@@ -83,7 +85,7 @@ function init(client) {
     const mode = c.join_prompt_mode || 'dm';
     if (mode === 'panel') return;          // 只靠驗證頻道的常駐面板，不主動發
 
-    const payload = { content: c.prompt_text, components: [fillBtn('填寫生日並驗證')] };
+    const payload = { content: c.prompt_text, components: [fillBtn('填寫生日並驗證', member.guild.id)] };
 
     // 一律優先「私訊本人」＝真正只有本人看得到。Discord 無法在頻道發只有某人看得到的訊息，
     // 所以私訊失敗時不再公開 @ 對方洗版，改由驗證頻道的常駐面板讓他自己點。
@@ -100,8 +102,9 @@ function init(client) {
   });
 
   client.on('interactionCreate', async (i) => {
-    if (i.isButton() && i.customId === 'bday_verify') {
-      const modal = new ModalBuilder().setCustomId('bday_modal').setTitle('生日資料');
+    if (i.isButton() && i.customId.split(':')[0] === 'bday_verify') {
+      const gid = i.customId.split(':')[1] || (i.guild && i.guild.id) || '';
+      const modal = new ModalBuilder().setCustomId(gid ? `bday_modal:${gid}` : 'bday_modal').setTitle('生日資料');
       const y = new TextInputBuilder().setCustomId('y').setLabel('出生年（西元，如 2000）').setStyle(TextInputStyle.Short).setMinLength(4).setMaxLength(4).setRequired(true);
       const m = new TextInputBuilder().setCustomId('m').setLabel('出生月（1-12）').setStyle(TextInputStyle.Short).setMaxLength(2).setRequired(true);
       const d = new TextInputBuilder().setCustomId('d').setLabel('出生日（1-31）').setStyle(TextInputStyle.Short).setMaxLength(2).setRequired(true);
@@ -113,10 +116,17 @@ function init(client) {
       return i.showModal(modal).catch(() => {});
     }
 
-    if (i.isModalSubmit() && i.customId === 'bday_modal') {
-      if (!i.guild) return;
+    if (i.isModalSubmit() && i.customId.split(':')[0] === 'bday_modal') {
+      // 私訊送出時 i.guild / i.member 都是 null，改用按鈕帶來的伺服器 ID 去撈成員。
+      // 之前這裡直接 return，玩家在私訊填完只會看到「互動失敗」。
+      const gid = i.customId.split(':')[1] || (i.guild && i.guild.id) || '';
+      if (!gid) return i.reply({ content: '找不到對應的伺服器，請改到伺服器的驗證頻道點按鈕。', flags: MessageFlags.Ephemeral }).catch(() => {});
+      let member = i.member;
+      if (!member) {
+        const g = client.guilds.cache.get(gid) || await client.guilds.fetch(gid).catch(() => null);
+        member = g ? await g.members.fetch(i.user.id).catch(() => null) : null;
+      }
       try {
-        const gid = i.guild.id;
         const c = verifyCfg(gid);
 
         // 曾被判未成年 → 直接拒絕，不給他改年份重填
@@ -125,8 +135,8 @@ function init(client) {
           if (bad && bad.blocked) {
             db.prepare('UPDATE verify_underage SET attempts = attempts + 1, updated_at = datetime(\'now\',\'localtime\') WHERE id = ?').run(bad.id);
             await i.reply({ content: '你先前的年齡驗證未通過，無法再次填寫。如有疑問請聯繫管理員。', flags: MessageFlags.Ephemeral }).catch(() => {});
-            if (c.kick_underage && i.member) {
-              setTimeout(() => i.member.kick('年齡驗證黑名單').catch(() => {}), 1500);
+            if (c.kick_underage && member) {
+              setTimeout(() => member.kick('年齡驗證黑名單').catch(() => {}), 1500);
             }
             return;
           }
@@ -145,20 +155,20 @@ function init(client) {
         if (c.enabled && age < c.min_age) {
           recordUnderage(gid, i.user, y, m, d, age);   // 留檔，之後不准換個年份再試
           await i.reply({ content: `很抱歉，本伺服器僅開放滿 ${c.min_age} 歲者加入。`, flags: MessageFlags.Ephemeral }).catch(() => {});
-          if (c.kick_underage && i.member) {
-            setTimeout(() => i.member.kick(`未滿 ${c.min_age} 歲，生日驗證未通過`).catch(() => {}), 1500);
+          if (c.kick_underage && member) {
+            setTimeout(() => member.kick(`未滿 ${c.min_age} 歲，生日驗證未通過`).catch(() => {}), 1500);
           }
           return;
         }
 
         saveBirthday(gid, i.user, y, m, d);
-        if (c.enabled && c.pass_role && i.member) await i.member.roles.add(c.pass_role).catch(() => {});
+        if (c.enabled && c.pass_role && member) await member.roles.add(c.pass_role).catch(() => {});
         await i.reply({
           content: c.enabled ? `驗證通過（${age} 歲），歡迎加入！生日資料已登記。` : `生日已登記為 ${y}/${m}/${d}，生日當天見！`,
           flags: MessageFlags.Ephemeral
         });
       } catch (e) {
-        logError(i.guild && i.guild.id, '生日登記失敗：', e && e.stack ? e.stack : e);
+        logError(gid, '生日登記失敗：', e && e.stack ? e.stack : e);
         if (!i.replied && !i.deferred) i.reply({ content: '登記時發生錯誤，請稍後再試一次。', flags: MessageFlags.Ephemeral }).catch(() => {});
       }
       return;

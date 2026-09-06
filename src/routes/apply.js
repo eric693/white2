@@ -46,7 +46,7 @@ router.post('/apply', rateLimit({ windowMs: 60 * 60 * 1000, max: 5, prefix: 'app
 router.use(requireAuth(), guardModule('guilds'));
 
 router.get('/applications', (req, res) => {
-  res.json(db.prepare('SELECT * FROM guild_applications ORDER BY (status = "pending") DESC, id DESC LIMIT 200').all());
+  res.json(db.prepare(`SELECT * FROM guild_applications ORDER BY (status = 'pending') DESC, id DESC LIMIT 200`).all());
 });
 
 // 核准＝順手把伺服器加進白名單（有 ID 才做得到；只有邀請連結就留給作者手動處理）
