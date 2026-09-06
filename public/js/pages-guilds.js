@@ -5,7 +5,8 @@ App.page('guilds', {
     "steps": [
       "朋友把伺服器邀請連結給你，貼進「用邀請連結授權」就能預先核准。",
       "已加入的伺服器可以在清單直接核准或撤銷。",
-      "最上面那排數字就是「有多少人邀請過」：待核准＝邀過但還沒開通的。"
+      "最上面那排數字就是「有多少人邀請過」：待核准＝邀過但還沒開通的。",
+      "訪客從功能介紹頁送出的開通申請，會出現在「線上申請」那張表。"
     ],
     "notes": [
       "未核准的伺服器加進去也不能用，會顯示聯繫訊息。",
@@ -15,9 +16,11 @@ App.page('guilds', {
   title: '伺服器管理', sub: '控管哪些伺服器可以邀請這隻機器人', module: 'guilds',
   async render(el) {
     const d = await GET('/guild-admin');
+    const apps = await GET('/applications').catch(() => []);
 
     const st = d.stats || {};
     const ROLE_NAME = { secretary: '秘書', butler: '管家' };
+    const PLAN_NAME = { trial: '試用版（14 天）', standard: '標準版', pro: '專業版' };
     const roleTags = (v) => (v || '').split(',').filter(Boolean)
       .map(r => `<span class="tag">${ROLE_NAME[r] || r}</span>`).join(' ') || '—';
 
@@ -43,6 +46,31 @@ App.page('guilds', {
         <div class="field"><label>邀請連結（給朋友）</label>
           <input value="${UI.esc(d.invite)}" readonly onclick="this.select()">
           <div class="hint">朋友邀請後，若還沒核准，機器人會先自動退出並通知你。你在下面核准後請他重新邀請一次即可。</div></div>
+      </div>
+
+      <div class="card">
+        <div class="toolbar"><h3 style="margin:0">線上申請（${apps.filter(a => a.status === 'pending').length} 筆待處理）</h3>
+          <div class="spacer"></div>
+          <span class="hint">來自功能介紹頁的「線上申請開通」表單</span></div>
+        <div class="table-wrap"><table class="list">
+          <thead><tr><th>時間</th><th>伺服器</th><th>要哪隻</th><th>方案</th><th>聯絡方式</th><th>備註</th><th>狀態</th><th></th></tr></thead>
+          <tbody>${apps.length ? apps.map(a => `
+            <tr><td class="wrap">${UI.esc(a.created_at || '')}</td>
+              <td class="wrap"><strong>${UI.esc(a.guild_name || '（未填）')}</strong>
+                ${a.guild_id ? `<br><code>${UI.esc(a.guild_id)}</code>` : ''}
+                ${a.invite ? `<br><span class="hint">${UI.esc(a.invite)}</span>` : ''}</td>
+              <td>${roleTags(a.bots)}</td>
+              <td>${UI.esc(PLAN_NAME[a.plan] || a.plan || '—')}</td>
+              <td class="wrap">${UI.esc(a.contact || '—')}</td>
+              <td class="wrap">${UI.esc(a.note || '—')}</td>
+              <td>${a.status === 'pending' ? '<span class="tag danger">待處理</span>'
+                   : a.status === 'approved' ? '<span class="tag ok">已核准</span>' : '<span class="tag">已婉拒</span>'}</td>
+              <td>${a.status === 'pending'
+                ? `<button class="btn tiny" data-app-ok="${a.id}">核准</button>
+                   <button class="btn tiny secondary" data-app-no="${a.id}">婉拒</button>` : ''}
+                <button class="btn tiny danger" data-app-del="${a.id}">刪除</button></td></tr>`).join('')
+            : '<tr><td colspan="8" class="empty">目前沒有申請</td></tr>'}
+          </tbody></table></div>
       </div>
 
       <div class="card">
@@ -97,6 +125,20 @@ App.page('guilds', {
           App.go('guilds');
         } catch (err) { UI.err(err.message); return false; }
       }
+    });
+
+    el.querySelectorAll('[data-app-ok]').forEach(b => b.onclick = async () => {
+      await PUT('/applications/' + b.dataset.appOk, { status: 'approved' });
+      UI.ok('已核准，記得通知對方重新邀請機器人'); App.go('guilds');
+    });
+    el.querySelectorAll('[data-app-no]').forEach(b => b.onclick = async () => {
+      await PUT('/applications/' + b.dataset.appNo, { status: 'rejected' });
+      UI.ok('已婉拒'); App.go('guilds');
+    });
+    el.querySelectorAll('[data-app-del]').forEach(b => b.onclick = async () => {
+      if (!await UI.confirm('刪除這筆申請紀錄？')) return;
+      await DEL('/applications/' + b.dataset.appDel);
+      UI.ok('已刪除'); App.go('guilds');
     });
 
     el.querySelectorAll('[data-approve]').forEach(b => b.onclick = async () => {

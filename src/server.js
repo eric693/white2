@@ -136,6 +136,7 @@ app.put('/api/settings', requireAuth(), (req, res) => {
 });
 
 // ---- 功能路由 ----
+app.use('/api', require('./routes/apply'));   // 開通申請：POST /api/apply 公開，其餘要登入
 app.use('/api', require('./routes/discord'));
 app.use('/api', require('./routes/keywords'));
 app.use('/api', require('./routes/alerts'));

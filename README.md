@@ -220,7 +220,7 @@ client._jobHandlers.run_tax = ({ guildId, opts }) => runGuild(client, guildId, o
 
 ```
 # 璃白Yu光秘書
-https://discord.com/oauth2/authorize?client_id=1528399550006689882&scope=bot%20applications.commands&permissions=1099783466050
+https://discord.com/oauth2/authorize?client_id=1546031775606775818&scope=bot%20applications.commands&permissions=1099783466050
 
 # 璃白Yu光管家
 https://discord.com/oauth2/authorize?client_id=1545612660656185344&scope=bot%20applications.commands&permissions=1099783466050

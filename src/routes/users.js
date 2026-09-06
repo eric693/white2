@@ -24,6 +24,18 @@ router.get('/users', (req, res) => {
   res.json(db.prepare('SELECT id, username, name, role, permissions, guild_ids, active, created_at FROM admin_users ORDER BY id').all());
 });
 
+
+// 黑名單是作者專用的隱藏鑰匙：只有總管理員能授出去。
+// 前端已經藏起這個勾，這裡再擋一層——直接打 API 也繞不過。
+function sanitizePerms(actor, raw, keepFrom) {
+  const list = (Array.isArray(raw) ? raw.join(',') : (raw || '')).split(',').map(s => s.trim()).filter(Boolean);
+  if (actor.role === 'admin') return list.join(',');
+  const had = String((keepFrom && keepFrom.permissions) || '').split(',').includes('blacklist');
+  const out = list.filter(k => k !== 'blacklist');
+  if (had) out.push('blacklist');   // 非總管理員動別人時，不刪掉原本就有的
+  return out.join(',');
+}
+
 router.post('/users', (req, res) => {
   const b = req.body || {};
   if (!b.username || !b.password) return res.status(400).json({ error: '請填帳號與密碼' });
@@ -34,7 +46,7 @@ router.post('/users', (req, res) => {
   const info = db.prepare(
     `INSERT INTO admin_users (username, password_hash, name, role, permissions, guild_ids, active) VALUES (?, ?, ?, ?, ?, ?, 1)`
   ).run(b.username, bcrypt.hashSync(b.password, 10), b.name || b.username, b.role === 'admin' ? 'admin' : 'staff',
-    Array.isArray(b.permissions) ? b.permissions.join(',') : (b.permissions || ''), guildIds);
+    sanitizePerms(req.user, b.permissions), guildIds);
   audit(req.user.name, `新增後台帳號：${b.username}`);
   res.json({ id: info.lastInsertRowid });
 });
@@ -44,7 +56,7 @@ router.put('/users/:id', (req, res) => {
   const id = parseInt(req.params.id);
   const target = db.prepare('SELECT * FROM admin_users WHERE id=?').get(id);
   if (!target) return res.status(404).json({ error: '找不到帳號' });
-  const perms = Array.isArray(b.permissions) ? b.permissions.join(',') : (b.permissions || '');
+  const perms = sanitizePerms(req.user, b.permissions, target);
   const guildIds = Array.isArray(b.guild_ids) ? b.guild_ids.join(',') : (b.guild_ids || '');
   db.prepare('UPDATE admin_users SET name=?, role=?, permissions=?, guild_ids=?, active=? WHERE id=?')
     .run(b.name || target.name, b.role === 'admin' ? 'admin' : 'staff', perms, guildIds, b.active ? 1 : 0, id);
