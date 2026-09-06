@@ -188,8 +188,22 @@ app.get('/sw.js', (req, res) => {
 app.get('/intro', (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'intro.html')));
 app.get('/features', (req, res) => res.sendFile(path.join(__dirname, '..', 'public', 'features.html')));
 
-// 公開的玩家規則手冊（給 Discord 玩家看，不需登入）；不快取，改了手冊玩家立刻看到新版
-app.get('/rules', (req, res) => { res.set('Cache-Control', 'no-cache'); res.sendFile(path.join(__dirname, '..', 'public', 'rules.html')); });
+// 公開的玩家規則手冊（給 Discord 玩家看，不需登入）；不快取，改了手冊玩家立刻看到新版。
+// 手冊裡的品牌名不寫死：改後台的機器人暱稱（管家優先）就會跟著變。
+const RULES_BRAND_PLACEHOLDER = '璃白Yu光';
+function rulesBrand() {
+  return getSetting('bot_name_butler', '') || getSetting('bot_name', '') || RULES_BRAND_PLACEHOLDER;
+}
+app.get('/rules', (req, res) => {
+  res.set('Cache-Control', 'no-cache');
+  const file = path.join(__dirname, '..', 'public', 'rules.html');
+  const brand = rulesBrand();
+  if (brand === RULES_BRAND_PLACEHOLDER) return res.sendFile(file);   // 沒改過名字就原樣送，省一次讀檔
+  try {
+    const html = require('fs').readFileSync(file, 'utf8').split(RULES_BRAND_PLACEHOLDER).join(brand);
+    res.type('html').send(html);
+  } catch { res.sendFile(file); }
+});
 
 // ---- 首頁（後台 SPA）：動態注入版本號做快取破壞（cache-busting）----
 // 手機瀏覽器會把 /js/*.js 舊版本快取住不更新，導致改了後台看不到、甚至顯示過期的狀態。
