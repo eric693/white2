@@ -129,14 +129,14 @@ const HOME_GUILD = process.env.GUILD_ID || '';
 // 這個帳號可以管理哪些伺服器：
 // - admin（總管理員）→ 全部啟用中的伺服器
 // - staff 有綁定 → 只有綁定且啟用中的那幾台
-// - staff 沒綁定 → 只有主伺服器（避免看到全部）
+// - staff 沒綁定 → 什麼都看不到（fail closed）
+//   以前這裡會退回主伺服器，結果是「綁定被清掉的客戶帳號」直接看到作者自己的伺服器。
+//   寧可讓他看到空白畫面來問你，也不能讓他看到別人的資料。
 function allowedGuildsFor(user) {
   const active = db.prepare('SELECT guild_id FROM guilds WHERE active = 1').all().map(r => r.guild_id);
   if (user.role === 'admin') return active.length ? active : [HOME_GUILD];
   const bound = String(user.guild_ids || '').split(',').map(s => s.trim()).filter(Boolean);
-  if (!bound.length) return active.includes(HOME_GUILD) ? [HOME_GUILD] : active.slice(0, 1);
-  const allow = bound.filter(g => active.includes(g));
-  return allow.length ? allow : (active.includes(HOME_GUILD) ? [HOME_GUILD] : active.slice(0, 1));
+  return bound.filter(g => active.includes(g));
 }
 
 // 登入驗證中介層（同時解析目前操作的伺服器）
@@ -154,7 +154,8 @@ function requireAuth() {
     const allowed = allowedGuildsFor(user);
     req.allowedGuilds = allowed;
     const gid = (req.headers['x-guild-id'] || '').trim();
-    req.guildId = (gid && allowed.includes(gid)) ? gid : (allowed[0] || HOME_GUILD);
+    // 沒有任何允許的伺服器時，總管理員退回主伺服器；一般管理員留空＝查不到任何資料
+    req.guildId = (gid && allowed.includes(gid)) ? gid : (allowed[0] || (user.role === 'admin' ? HOME_GUILD : ''));
     // 把目前伺服器放進上下文，讓底下所有 audit() 不用改呼叫端就能記到正確的伺服器
     guildCtx.run({ guildId: req.guildId }, next);
   };
@@ -184,5 +185,5 @@ function guardModule(mod) {
 module.exports = {
   COOKIE, MODULES, MODULE_KEYS, MODULE_GROUPS, parsePermissions,
   signToken, setAuthCookie, clearAuthCookie, requireAuth, requireModule, guardModule,
-  loginLockedMinutes, loginFailed, loginSucceeded, rateLimit, clientIp
+  loginLockedMinutes, loginFailed, loginSucceeded, rateLimit, clientIp, allowedGuildsFor
 };
