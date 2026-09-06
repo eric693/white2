@@ -8,7 +8,7 @@ const { brandColor } = require('../../util/brand');
 const { nameOf, displayName } = require('../../util/names');
 // 行情倍率：財經新聞會改變「賣價」（買價不受影響）。新聞系統關閉時 livePrice 就等於基準價。
 const { livePrice, priceTag } = require('../../util/market');
-const { userBuffs, itemBoost } = require('../../util/buffs');
+const { userBuffs, itemBoost, buffPct } = require('../../util/buffs');
 const { bump: bumpAch } = require('../../util/achievements');
 
 const cfg = (gid) => guildConfig('gather_config', gid);
@@ -943,6 +943,13 @@ function craftRecipe(gid, uid, uname, recipeId, times = 1) {
   const mats = readMaterials(r);
   if (!mats.length) return { error: '這個配方還沒設定材料，請管理員補上。' };
 
+  // 幸運值（稱號／寵物／家具／料理 + 幸運符）直接加在成功率上：
+  // 本來 100% 的配方沒差，愈難做的配方愈吃幸運。上限 99%，不讓它變成穩賺。
+  const luck = buffPct(gid, uid, 'luck_pct') + activeLuck(gid, uid);
+  const baseRate = Math.max(0, (r.success_rate ?? 100) - failExtra);
+  const finalRate = Math.min(99, baseRate + luck);
+  const luckGain = Math.max(0, Math.round(finalRate - baseRate));
+
   // 先確認材料與貨幣都夠做 times 次，不夠就整批不做（避免做到一半材料用光）
   const lack = [];
   for (const m of mats) {
@@ -965,7 +972,7 @@ function craftRecipe(gid, uid, uname, recipeId, times = 1) {
   let ok = 0, fail = 0;
   const tx = db.transaction(() => {
     for (let n = 0; n < times; n++) {
-      const success = Math.random() * 100 < Math.max(0, (r.success_rate ?? 100) - failExtra);
+      const success = baseRate >= 100 ? true : Math.random() * 100 < finalRate;
       // 失敗且設定不保留材料 → 材料照樣扣掉（這是刻意的風險設計）
       if (success || !r.fail_keep) {
         for (const m of mats) {
@@ -1013,6 +1020,7 @@ function craftRecipe(gid, uid, uname, recipeId, times = 1) {
       (ok && PLOT_HINT[r.result_type] ? `\n${PLOT_HINT[r.result_type]} +${(r.result_count || 1) * ok} 格，去 \`${PLOT_USE[r.result_type]}\` 使用` : '') +
       (toolCapped ? '\nℹ️ 道具同款只會有一件，這次只做了 1 次（材料也只扣 1 份）' : '') +
       (fail && !r.fail_keep ? '\n⚠️ 失敗的材料已消耗' : '') +
+      (luckGain && baseRate < 100 ? `\n🍀 幸運 +${luck}%：成功率 ${baseRate}% → **${finalRate}%**` : '') +
       (totalCost ? `\n花費 ${money(c, totalCost)}` : '')) };
 }
 
@@ -2150,6 +2158,13 @@ function init(client) {
         if (!list.length) return i.reply({ content: `「${cat.name}」分類目前沒有配方。`, flags: MessageFlags.Ephemeral });
 
         const KCOLOR = { craft: 0x5865f2, forge: 0xe67e22 };
+        // 幸運值會加在成功率上，清單直接顯示「你自己的」成功率，不要讓玩家自己心算
+        const myLuck = buffPct(gid, uid, 'luck_pct') + activeLuck(gid, uid);
+        const rateTxt = (base) => {
+          const b = Math.max(0, (base ?? 100) - Math.max(0, Math.min(90, c.craft_fail_extra || 0)));
+          if (b >= 100 || !myLuck) return `成功率 ${b}%`;
+          return `成功率 ${b}% → 🍀 ${Math.min(99, b + myLuck)}%`;
+        };
         const embeds = [];
         const opts = [];
         let embed = null, fields = 0, page = 0;
@@ -2172,11 +2187,11 @@ function init(client) {
           const res = resultOf(r);
           embed.addFields({
             name: `${enough ? '✅' : '❌'} ${r.emoji || ''} ${r.name}`,
-            value: `${matTxt || '（未設材料）'}${r.cost ? ` ＋ ${money(c, r.cost)}` : ''}\n→ ${res.name ? (res.emoji || '') + res.name : '？'} ×${r.result_count || 1}　成功率 ${r.success_rate}%`
+            value: `${matTxt || '（未設材料）'}${r.cost ? ` ＋ ${money(c, r.cost)}` : ''}\n→ ${res.name ? (res.emoji || '') + res.name : '？'} ×${r.result_count || 1}　${rateTxt(r.success_rate)}`
           });
           if (mats.length) opts.push({
             label: `${r.rkind === 'forge' ? '鍛造' : '製作'}：${r.name}`.slice(0, 100),
-            description: `${enough ? '材料足夠' : '材料不足'}｜→ ${res.name || '？'} ×${r.result_count || 1}　成功率 ${r.success_rate}%`.slice(0, 100),
+            description: `${enough ? '材料足夠' : '材料不足'}｜→ ${res.name || '？'} ×${r.result_count || 1}　${rateTxt(r.success_rate)}`.slice(0, 100),
             value: String(r.id), emoji: r.emoji || (r.rkind === 'forge' ? '🔨' : '🛠️')
           });
         }
@@ -2470,4 +2485,4 @@ function init(client) {
   console.log('  ↳ 釣魚挖礦模組已載入（冷卻/稀有掉落/商店道具/圖鑑/經濟）');
 }
 
-module.exports = { init, wallet, addCoins, logCoins, addToBag, seedGuild, seedMaterials, staminaState, staminaBoughtToday, bumpPoints, addPointsBonus, menuResult, safeMenu, RARITY, RARITY_LABEL, sellAllBag, buyThing, doGather, cmdPerm, categories, seedCategories, catOf, recipeCatOf, DEFAULT_CATEGORIES, toStorage, toBag, storageRows, bagCount, storeCount };
+module.exports = { init, rollItem, activeLuck, currentTool, wallet, addCoins, logCoins, addToBag, seedGuild, seedMaterials, staminaState, staminaBoughtToday, bumpPoints, addPointsBonus, menuResult, safeMenu, RARITY, RARITY_LABEL, sellAllBag, buyThing, doGather, cmdPerm, categories, seedCategories, catOf, recipeCatOf, DEFAULT_CATEGORIES, toStorage, toBag, storageRows, bagCount, storeCount };

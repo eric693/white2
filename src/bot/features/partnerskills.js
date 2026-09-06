@@ -196,20 +196,29 @@ function passivePct(gid, uid, code) {
 // ---------- 每日結算 ----------
 
 /** 隨機給某個種類的素材 ×n（挖礦／伐木／釣魚／採集／狩獵助手共用） */
+// 跟玩家自己 /釣魚 /挖礦 走同一支 rollItem：吃稀有度權重，也吃稱號／寵物／家具的
+// 稀有加成與幸運符。以前是從物品池均勻亂抽，等於 SSR 跟雜魚同機率、加成全部無效。
+// 助手一樣不扣耐久、不扣體力，只是抽法與加成跟本人一致。
 function giveRandomItems(gid, uid, itemKind, n) {
-  const { addToBag } = require('./gather');
-  const pool = db.prepare('SELECT id, name, emoji FROM gather_items WHERE guild_id=? AND kind=? AND enabled=1').all(gid, itemKind);
-  if (!pool.length || n <= 0) return [];
+  const { addToBag, rollItem, activeLuck, currentTool } = require('./gather');
+  if (n <= 0) return [];
+  // 釣竿／鎬子的幸運值也算進去（助手是拿你的工具去做的），但一樣不扣耐久；
+  // 工具壞了就只剩徒手的 0 幸運 —— 想要加成就去 /修理。
+  const tool = currentTool(gid, uid, itemKind) || {};
+  const luck = activeLuck(gid, uid) + (tool.luck || 0);
   const got = new Map();
+  const meta = new Map();
   for (let k = 0; k < n; k++) {
-    const it = pool[Math.floor(Math.random() * pool.length)];
+    const it = rollItem(gid, itemKind, luck, uid);
+    if (!it) return [];
+    meta.set(it.id, it);
     got.set(it.id, (got.get(it.id) || 0) + 1);
   }
   const lines = [];
   db.transaction(() => {
     for (const [id, c] of got) {
       addToBag(gid, uid, id, c);
-      const it = pool.find(x => x.id === id);
+      const it = meta.get(id);
       lines.push(`${it.emoji || ''}${it.name} ×${c}`);
     }
   })();
