@@ -1,6 +1,6 @@
 const express = require('express');
 const { ChannelType } = require('discord.js');
-const { requireAuth } = require('../auth');
+const { requireAuth, requireModule } = require('../auth');
 const bot = require('../bot');
 const { db, audit, getSetting, setSetting, ensureGuild, resetGuildData } = require('../db');
 
@@ -41,7 +41,10 @@ router.get('/guilds', (req, res) => {
 });
 
 // ---- 伺服器白名單管理（只給朋友使用）----
-router.get('/guild-admin', (req, res) => {
+// 這支要掛模組守衛：它回的是「所有伺服器」的名稱、擁有者、成員數與邀請連結，
+// 等於整份客戶名單。底下的寫入動作本來就只給總管理員，但讀取以前完全沒擋，
+// 沒有伺服器管理模組的客戶帳號直接打 API 就拿得到。
+router.get('/guild-admin', requireModule('guilds'), (req, res) => {
   const live = new Map((bot.guildList ? bot.guildList() : []).map(g => [g.id, g]));
   const rows = db.prepare('SELECT * FROM guilds ORDER BY approved DESC, joined_at DESC').all();
   const guilds = rows.map(r => ({ ...r, online: live.has(r.guild_id), members: (live.get(r.guild_id) || {}).members || 0 }));
