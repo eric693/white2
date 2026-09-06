@@ -36,8 +36,16 @@ function run(args, { timeout = 60000 } = {}) {
       clearTimeout(t);
       if (code === 0) return resolve(out.trim());
       // 把 YouTube 反機器人訊息轉成看得懂的中文
-      if (/Sign in to confirm|not a bot/i.test(err)) {
-        return reject(new Error('此來源要求登入驗證，已跳過（請改用 SoundCloud 搜尋或貼 SoundCloud 連結）'));
+      if (/Sign in to confirm|not a bot|Use --cookies/i.test(err)) {
+        // 機房 IP 被 YouTube 擋（cookie 也會過期）。標記起來，讓呼叫端自動改用 SoundCloud 找同一首。
+        const e = new Error('YouTube 要求登入驗證（機房 IP 被擋）');
+        e.code = 'LOGIN_REQUIRED';
+        return reject(e);
+      }
+      if (/DRM protected/i.test(err)) {
+        const e = new Error('這首有 DRM 保護（多半是 SoundCloud Go+ 會員限定），放不了');
+        e.code = 'DRM';
+        return reject(e);
       }
       reject(new Error((err.split('\n').find(l => l.startsWith('ERROR')) || 'yt-dlp 失敗').slice(0, 150)));
     });
@@ -94,7 +102,28 @@ async function resolve(query, requestedBy) {
   const isRealPlaylist = isUrl && (/\/sets\//.test(query) || /youtube\.com\/playlist/.test(query));
   const args = ['-J', '--no-warnings', '--flat-playlist'];
   if (isUrl && !isRealPlaylist) args.push('--no-playlist');
-  const raw = await run([...args, target], { timeout: 45000 });
+  let raw;
+  try {
+    raw = await run([...args, target], { timeout: 45000 });
+  } catch (e) {
+    // 貼的是 YouTube 連結但機房 IP 被擋 → 拿 oEmbed 標題去 SoundCloud 找同一首，
+    // 不要只丟一句「要求登入驗證」給點歌的人。
+    if (e.code === 'LOGIN_REQUIRED' && isUrl) {
+      const title = await youtubeTitle(query);
+      if (title) {
+        const alt = await searchCandidates(title, requestedBy, 6).catch(() => []);
+        if (alt.length) {
+          const top = alt[0];
+          top.alts = alt.slice(1);
+          top.query = title;
+          top.swappedFrom = 'youtube';
+          return { songs: [top] };
+        }
+      }
+      throw new Error(`YouTube 這首需要登入驗證（機房 IP 被擋）${title ? `，SoundCloud 上也找不到「${title}」` : ''}。請改貼 SoundCloud 連結，或直接打歌名點歌。`);
+    }
+    throw e;
+  }
   let data;
   try { data = JSON.parse(raw); } catch { throw new Error('無法解析搜尋結果'); }
 
@@ -114,6 +143,25 @@ async function resolve(query, requestedBy) {
     return { songs, playlist: (data.title && data.entries.length > 1) ? data.title : null };
   }
   return { songs: [mkSong(data, requestedBy)] };
+}
+
+// YouTube 被擋住時還是拿得到標題：oEmbed 是公開端點，不需要 cookie 也不吃反機器人檢查。
+// 有了標題就能去 SoundCloud 找同一首，玩家不會只收到一句「要求登入驗證」。
+function youtubeTitle(url) {
+  return new Promise((resolve) => {
+    if (!/youtube\.com|youtu\.be/i.test(url)) return resolve('');
+    const req = require('https').get(
+      `https://www.youtube.com/oembed?url=${encodeURIComponent(url)}&format=json`,
+      { timeout: 8000 },
+      (res) => {
+        if (res.statusCode !== 200) { res.resume(); return resolve(''); }
+        let body = '';
+        res.on('data', d => body += d);
+        res.on('end', () => { try { resolve(JSON.parse(body).title || ''); } catch { resolve(''); } });
+      });
+    req.on('timeout', () => { req.destroy(); resolve(''); });
+    req.on('error', () => resolve(''));
+  });
 }
 
 // 換一個音源平台重搜（預設 scsearch → 改用 ytsearch，反之亦然）。
@@ -160,4 +208,4 @@ function available() {
   return fs.existsSync(BIN);
 }
 
-module.exports = { resolve, resolveFallback, searchCandidates, stream, getAudioUrl, available, hasRuntime: () => fs.existsSync(DENO), hasCookies: () => !!(COOKIES && fs.existsSync(COOKIES)) };
+module.exports = { resolve, resolveFallback, searchCandidates, stream, getAudioUrl, youtubeTitle, available, hasRuntime: () => fs.existsSync(DENO), hasCookies: () => !!(COOKIES && fs.existsSync(COOKIES)) };

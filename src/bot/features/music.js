@@ -88,10 +88,20 @@ async function resolvePlayable(song) {
 
   // 同平台備選都不行 → 換另一個平台重搜（原本是關鍵字點歌才有 query，貼網址的就用標題找）
   // 歌單展開出來的曲目常常沒有標題，這種就別用「未知標題」去亂搜，直接讓它跳過。
-  const query = song.query || (song.title && song.title !== '未知標題' ? song.title : '');
+  let query = song.query || (song.title && song.title !== '未知標題' ? song.title : '');
+  // YouTube 被擋（機房 IP）時連標題都取不到，改用公開的 oEmbed 補標題，才有東西可以拿去搜。
+  if (!query && /youtube\.com|youtu\.be/i.test(song.url || '')) {
+    query = await ytdlp.youtubeTitle(song.url).catch(() => '');
+  }
   if (query) {
+    // 被擋的是 YouTube → 一定要往 SoundCloud 找；否則才用「換另一個平台」那套。
+    // （預設搜尋來源是 SoundCloud，resolveFallback 會往 YouTube 找，對這種情況剛好是反方向）
+    const ytBlocked = firstErr && (firstErr.code === 'LOGIN_REQUIRED' || /youtube\.com|youtu\.be/i.test(song.url || ''));
     try {
-      for (const s of await ytdlp.resolveFallback(query, song.requestedBy)) {
+      const cands = ytBlocked
+        ? await ytdlp.searchCandidates(query, song.requestedBy, 5)
+        : await ytdlp.resolveFallback(query, song.requestedBy);
+      for (const s of cands) {
         try { await ytdlp.getAudioUrl(s.url); adopt(s); return; } catch (e) { lastErr = e; }
       }
     } catch (e) { lastErr = e; }
@@ -473,6 +483,11 @@ async function addAndPlay(guildId, user, channelId, songs, playlist) {
     text = playlist
       ? `已加入歌單 **${playlist}**，共 ${added.length} 首（目前清單 ${q.songs.length - 1} 首待播）。`
       : `已加入清單：**${added[0].title}**　\`${fmtDur(added[0].duration)}\`　排隊第 ${q.songs.length - 1} 位`;
+  }
+  // 貼 YouTube 連結但被擋、系統自動換成 SoundCloud 的同一首 —— 要講一聲，
+  // 不然玩家會覺得「我明明點 A，怎麼跑出 B」。
+  if (added.some(s => s.swappedFrom === 'youtube')) {
+    text += '\n（YouTube 目前擋住機器人所在的機房 IP，已自動改用 SoundCloud 上的同一首）';
   }
   updatePanel(guildId).catch(() => {});
   return text;
