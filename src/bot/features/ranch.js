@@ -548,23 +548,12 @@ function init(client) {
           return `${a.emoji || '🐾'} **${a.name}**　${money(gc, a.price)}\n　　每 ${iv < 60 ? Math.round(iv) + ' 分' : (iv / 60).toFixed(1) + ' 小時'}產 1 × ${p ? (p.emoji || '') + p.name : '產物'}（每個賣 ${p ? livePrice(gid, p) : '?'}${p ? priceTag(gid, p) : ''}）\n　　📦 最多囤 **${cap}** 個，**滿了就停止生產**，記得去 \`/收成\` 才會繼續${a.description ? `　${a.description}` : ''}`;
         };
         const produce = animals.filter(a => a.guard_pct <= 0);
-        const guardsList = animals.filter(a => a.guard_pct > 0);
         const embeds = [new EmbedBuilder().setColor(brandColor()).setTitle('🛒 畜牧商店')
           .setDescription(`點下方選單直接買一隻養進牧場（也可以打 \`/飼養 動物名稱\`）。\n你的餘額：**${w.coins.toLocaleString('en-US')} ${gc.currency_name}**　牧場格：**${effRanchSlots(gid, uid, c)}**（用 \`/設施商店\` 擴充）`)];
         if (produce.length) embeds.push(new EmbedBuilder().setColor(0xf1c40f)
           .setTitle('🥚 生產動物').setDescription(produce.map(line).join('\n').slice(0, 4000)));
-        // 看門動物已改由寵物提供（不佔牧場格子），商店只留說明、不再販售
-        embeds.push(new EmbedBuilder().setColor(0x5865f2)
-          .setTitle('🛡️ 防竊改看寵物了')
-          .setDescription('看門動物已經**搬進家裡變成寵物**，不再佔用牧場格子 —— 牧場的每一格都能拿去生產。\n\n'
-            + '去 `/寵物` 領養守衛寵物，能力分得很細：\n'
-            + '　🪿 看門鵝　牧場防護 +8%\n'
-            + '　🐕 牧羊犬　牧場防護 +15%\n'
-            + '　🐅 虎斑貓　魚缸防護 +15%\n'
-            + '　🪶 蒼鷺　　魚缸防護 +22%\n'
-            + '　🦡 獴　　　反擊 +25%（小偷會掉星幣賠你）\n'
-            + '　🐺 雪狼　　全域防竊 +18%（牧場魚缸一起顧）\n\n'
-            + '防護是**扣小偷的成功率**，跟 `/設施商店` 的牧場等級可以疊加；寵物要餵、親密度越高效果越足。'));
+        // 看門動物已改由寵物提供（不佔牧場格子），商店只賣生產動物。
+        // 搬家公告曾經整段掛在這裡，玩家早就習慣了，留著只是每次開商店都被洗一次版 —— 已移除。
         const opts = produce.map(a => ({
           label: a.name.slice(0, 100),
           description: `${a.price.toLocaleString('en-US')} ${gc.currency_name}｜${a.guard_pct > 0 ? `看門 ${a.guard_pct}%` : `每天 ${a.produce_per_day} 產`}`.slice(0, 100),
