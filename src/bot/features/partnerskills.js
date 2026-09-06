@@ -148,6 +148,37 @@ function skillText(skill, level) {
   return skill.name;
 }
 
+// ---- 能力的分階段揭露 ----
+//
+// 玩家反映「禮物很貴，卻要先把人娶回家才知道她會什麼」——等於砸大錢賭一個看不見的東西。
+// 改成跟著好感度逐步揭露：送禮的錢有回饋，但完整數值仍然要同居才知道，稀有感還在。
+//   Lv.0-2  ???（完全不知道）
+//   Lv.3    只給大方向（生產類／冒險類／…）
+//   Lv.4-5  給能力名稱，不給數值
+//   Lv.6↑ 或已同居  名稱＋數值全開
+const REVEAL = { hint: 3, name: 4, full: 6 };
+/**
+ * 玩家在好感度 level 之下「看得到」的能力描述。
+ * owned=true（已經同居）一律全開。
+ */
+function skillPreview(gid, roleId, level = 0, owned = false) {
+  const sk = designatedSkill(gid, roleId);
+  if (!sk) return '（管理員尚未設定）';
+  const lv = Math.max(0, Number(level) || 0);
+  const a = ABILITIES[sk.code];
+  if (owned || lv >= REVEAL.full) return skillText(sk, lv) + (a && a.desc ? `\n${a.desc}` : '');
+  if (lv >= REVEAL.name) {
+    // 有數值的能力（每日 ×N／星幣／%）留到最後一階才給；沒有數值的就留「實際會做什麼」
+    const rest = a && a.unit && a.unit !== 'none' ? '實際數值' : '實際會做什麼';
+    return `${sk.name}（好感 Lv.${REVEAL.full} 後才看得到${rest}）`;
+  }
+  if (lv >= REVEAL.hint) {
+    const kind = a ? (KIND_LABEL[a.kind] || '特殊') : '特殊';
+    return `擅長的是 **${kind}** 的事（好感 Lv.${REVEAL.name} 後會知道是哪一項）`;
+  }
+  return `??? （好感 Lv.${REVEAL.hint} 後會透露大方向）`;
+}
+
 /** 某位角色可用的能力清單（後台勾選的；沒勾就是全部啟用中的能力都能選） */
 function skillsForRole(gid, roleId) {
   // code 是空的都是舊制留下來的資料（隨機 % 加成），沒有對應的行為實作 —— 不給玩家選
@@ -721,6 +752,6 @@ function notifyChannel(client, gid) {
 }
 
 module.exports = { WORK_AREAS, AREA_SKILLS, areaOfSkill, areaOfRole, migrateMergedSkills, MERGE_MAP, runArea, areaAssignments, assignArea, designatedSkill, workLog, workCountToday,
-  init, ABILITIES, KIND_LABEL, seedSkills, valueFor, skillText,
+  init, ABILITIES, KIND_LABEL, seedSkills, valueFor, skillText, skillPreview, REVEAL,
   skillsForRole, skillById, activeSkill, passivePct, runDaily, DEFAULT_SKILLS
 };

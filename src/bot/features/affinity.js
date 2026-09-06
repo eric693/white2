@@ -445,9 +445,11 @@ function partnerPanel(gid, uid, uname) {
   const cands = partnerCandidates(gid, uid);
   const full = slots <= 0;   // 沒有數量上限了，只剩「房屋等級不夠」這一種不能邀請的情況
   if (!full && cands.length && def && def.visit_ok) {
+    const { skillPreview } = require('./partnerskills');
     rows.push(...selectRows('partnerpick', cands.map(x => ({
       label: x.name.slice(0, 100),
-      description: `${levelName(gid, x.level)}（Lv.${x.level}）　好感 ${x.points.toLocaleString('en-US')}`.slice(0, 100),
+      // 挑同居對象前先看得到「她擅長什麼」，不用娶回家才知道
+      description: `${levelName(gid, x.level)}｜${skillPreview(gid, x.role_id, x.level).replace(/\*\*/g, '').replace(/\n/g, '　')}`.slice(0, 100),
       value: String(x.role_id)
     })), '選一位請他搬進來', { maxRows: 2 }));
   }
@@ -876,6 +878,13 @@ function roleCard(gid, uid, role, extra) {
       { name: '累積點數', value: a.points.toLocaleString('en-US'), inline: true },
       { name: '下一階', value: next ? `還差 ${(next.need - a.points).toLocaleString('en-US')} 點` : '已滿', inline: true });
   if (role.image_url) embed.setThumbnail(absUrl(role.image_url));
+  // 專屬能力：好感度越高看到越多（Lv.3 大方向 → Lv.4 能力名稱 → Lv.6／同居 連數值）。
+  // 以前完全不透露，玩家得先花大錢把人娶回家才知道會什麼，送禮像在賭。
+  try {
+    const { skillPreview } = require('./partnerskills');
+    const owned = !!db.prepare('SELECT 1 FROM home_partners WHERE guild_id=? AND user_id=? AND role_id=?').get(gid, uid, role.id);
+    embed.addFields({ name: '✨ 專屬能力', value: skillPreview(gid, role.id, a.level, owned) });
+  } catch {}
   if (extra) embed.addFields({ name: '　', value: extra });
   return embed;
 }
