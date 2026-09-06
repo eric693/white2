@@ -25,14 +25,17 @@ router.get('/users', (req, res) => {
 });
 
 
-// 黑名單是作者專用的隱藏鑰匙：只有總管理員能授出去。
-// 前端已經藏起這個勾，這裡再擋一層——直接打 API 也繞不過。
+// 作者專用的隱藏鑰匙：只有總管理員能授出去。
+// blacklist  — 不想讓客戶發現有這個功能
+// appearance — 機器人的暱稱與頭像是自己的招牌，不開放客戶改
+// 前端已經藏起這些勾，這裡再擋一層——直接打 API 也繞不過。
+const OWNER_ONLY = ['blacklist', 'appearance'];
 function sanitizePerms(actor, raw, keepFrom) {
   const list = (Array.isArray(raw) ? raw.join(',') : (raw || '')).split(',').map(s => s.trim()).filter(Boolean);
   if (actor.role === 'admin') return list.join(',');
-  const had = String((keepFrom && keepFrom.permissions) || '').split(',').includes('blacklist');
-  const out = list.filter(k => k !== 'blacklist');
-  if (had) out.push('blacklist');   // 非總管理員動別人時，不刪掉原本就有的
+  const had = String((keepFrom && keepFrom.permissions) || '').split(',');
+  const out = list.filter(k => !OWNER_ONLY.includes(k));
+  for (const k of OWNER_ONLY) if (had.includes(k)) out.push(k);   // 不刪掉對方原本就有的
   return out.join(',');
 }
 

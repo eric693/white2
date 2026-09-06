@@ -511,9 +511,10 @@ App.page('users', {
   title: '帳號權限', sub: '管理後台帳號與可用功能', module: 'users',
   async render(el) {
     const [users, me] = [await GET('/users'), App.me];
-    // 黑名單是作者專用的隱藏鑰匙：只有總管理員在這頁看得到這個勾，
-    // 免得開帳號給客戶時手滑勾下去，被對方發現有這個功能。
-    const mods = (me.all_modules || []).filter(m => m.key !== 'blacklist' || me.role === 'admin');
+    // 作者專用的隱藏鑰匙：只有總管理員在這頁看得到這些勾，免得開帳號給客戶時手滑勾下去。
+    // blacklist 不想讓客戶知道有這功能；appearance 是機器人的暱稱與頭像，不開放客戶改。
+    const OWNER_ONLY = ['blacklist', 'appearance'];
+    const mods = (me.all_modules || []).filter(m => !OWNER_ONLY.includes(m.key) || me.role === 'admin');
     const guilds = ((await GET('/guilds')).guilds) || [];
     el.innerHTML = `
       <div class="toolbar"><button class="btn" id="add">＋ 新增帳號</button>
