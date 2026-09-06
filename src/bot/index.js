@@ -565,7 +565,13 @@ function start() {
 
 function isReady() { return ready; }
 // 指定 guildId 時回該伺服器，否則回主伺服器（相容舊呼叫）
-function mainGuild(guildId) { return client.guilds.cache.get(guildId || process.env.GUILD_ID); }
+// 傳空字串＝「這個帳號沒有任何可管理的伺服器」，必須回 null。
+// 以前空字串會被 || 吃掉、退回 .env 的主伺服器，害客戶的後台顯示作者自己的伺服器名稱與人數。
+// 只有完全沒傳參數（undefined/null）時才用主伺服器當預設。
+function mainGuild(guildId) {
+  const id = (guildId === undefined || guildId === null) ? process.env.GUILD_ID : guildId;
+  return id ? client.guilds.cache.get(id) : null;
+}
 // 機器人目前所在的伺服器清單（供後台切換）
 function guildList() {
   return [...client.guilds.cache.values()].map(g => ({
