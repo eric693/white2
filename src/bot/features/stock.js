@@ -9,7 +9,7 @@ const {
   EmbedBuilder, MessageFlags, ActionRowBuilder,
   StringSelectMenuBuilder, ButtonBuilder, ButtonStyle
 } = require('discord.js');
-const { selectRows, isSelect } = require('../../util/menu');
+const { selectRows, isSelect, safeEmoji } = require('../../util/menu');
 // 錢包明細：買賣股票要記帳（延後 require，避免和 gather.js 互相 require 卡住）
 const logCoins = (...a) => require('./gather').logCoins(...a);
 const cron = require('node-cron');
@@ -23,12 +23,8 @@ const gcfg = (gid) => guildConfig('gather_config', gid);
 const csv = (s) => String(s || '').split(/[\n,]/).map(x => x.trim()).filter(Boolean);
 const money = (c, n) => `${c.currency_emoji || '🪙'} ${Number(n).toLocaleString('en-US')} ${c.currency_name || '星幣'}`;
 const num = (n) => Number(n || 0).toLocaleString('en-US');
-// 下拉選單的 emoji：自訂表情 <:name:id> 要轉成物件，unicode 直接用，空的回 undefined
-const selEmoji = (e) => {
-  if (!e) return undefined;
-  const m = /^<(a)?:([^:]+):(\d+)>$/.exec(String(e).trim());
-  return m ? { id: m[3], name: m[2], animated: !!m[1] } : e;
-};
+// 下拉選單的 emoji：自訂表情轉物件、太新的 emoji 拿掉（Discord 會整份退回，見 util/menu.js）
+const selEmoji = (e) => safeEmoji(e);
 
 const UP = 0x2C6455, DOWN = 0x9C3F37;   // 與 rules.html 的 --deep / --thorn 同色系
 
