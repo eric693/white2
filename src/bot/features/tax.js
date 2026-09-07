@@ -481,24 +481,58 @@ function payRelief(gid, period, list) {
 // 期間代碼：同一期只課一次（用結算日的日期字串當代碼）
 function periodCode() { return localToday(); }
 
-// 這一刻是否輪到這台伺服器課稅
-function isDue(c) {
+// 這台伺服器「最近一次應該結算的日期」（YYYY-MM-DD），還沒到第一次就回 ''。
+//
+// 以前是拿「現在幾點幾分」去跟 run_time 對字串，只要那一分鐘沒跑到 —— 排程被別的
+// 每小時工作卡住、機器人剛好在重啟、主機忙一下 —— 這一期就整個跳過，週結算要再等
+// 一週（2026-09-07 就是這樣整天沒扣到稅）。改成算「該結算的那一天」，只要那一期還
+// 沒跑過就補跑，晚幾分鐘照樣課得到。
+const CATCH_UP_DAYS = 1;   // 最多回補幾天前的：避免機器人停機一週後突然把舊帳一次課下去
+function pad2(n) { return String(n).padStart(2, '0'); }
+function ymd(y, mo, d) { return `${y}-${pad2(mo)}-${pad2(d)}`; }
+function scheduledDate(c) {
   const p = parts();
-  if (`${p.hh}:${p.mm}` !== (c.run_time || '09:00')) return false;
-  if (c.period === 'day') return true;
-  if (c.period === 'month') return p.d === (c.dom || 1);
-  return p.dow === (c.dow ?? 1);
+  const dayMs = 86400000;
+  const passed = `${p.hh}:${p.mm}` >= (c.run_time || '09:00');   // 今天的結算時間到了沒
+  const base = Date.UTC(p.y, p.mo - 1, p.d);                     // 只做「天」的加減，時區無關
+  const fmt = (ms) => { const d = new Date(ms); return ymd(d.getUTCFullYear(), d.getUTCMonth() + 1, d.getUTCDate()); };
+  if (c.period === 'day') return passed ? ymd(p.y, p.mo, p.d) : fmt(base - dayMs);
+  if (c.period === 'month') {
+    const inMonth = (y, mo) => new Date(Date.UTC(y, mo, 0)).getUTCDate();     // 那個月有幾天
+    const domOf = (y, mo) => Math.min(Math.max(1, c.dom || 1), inMonth(y, mo));
+    const thisDom = domOf(p.y, p.mo);
+    if (p.d > thisDom || (p.d === thisDom && passed)) return ymd(p.y, p.mo, thisDom);
+    const py = p.mo === 1 ? p.y - 1 : p.y, pmo = p.mo === 1 ? 12 : p.mo - 1;
+    return ymd(py, pmo, domOf(py, pmo));
+  }
+  const want = c.dow ?? 1;
+  let back = (p.dow - want + 7) % 7;
+  if (back === 0 && !passed) back = 7;    // 今天就是結算日但還沒到時間 → 上一次是上週
+  return fmt(base - back * dayMs);
+}
+
+// 這一刻該不該課：回傳要結算的期別代碼，不用課就回 null
+function dueNow(c) {
+  const target = scheduledDate(c);
+  if (!target) return null;
+  if ((c.last_period || '') >= target) return null;              // 這一期已經課過
+  // 回補上限：停機太久（或剛開徵）就不追舊帳，只把基準推到最近一期
+  const today = parts();
+  const ageDays = Math.round((Date.UTC(today.y, today.mo - 1, today.d) - Date.parse(target + 'T00:00:00Z')) / 86400000);
+  if (ageDays > CATCH_UP_DAYS) return null;
+  return target;
 }
 
 // 對一台伺服器結算。force=true 給後台「立即試算/課徵」用，會略過時間與去重檢查。
 async function runGuild(client, gid, { force = false, dryRun = false } = {}) {
   const c = cfg(gid);
   if (!c.enabled && !force) return null;
+  let period = periodCode();
   if (!force) {
-    if (!isDue(c)) return null;
-    if (c.last_period === periodCode()) return null;   // 同一期已經課過
+    const due = dueNow(c);
+    if (!due) return null;
+    period = due;          // 期別用「應該結算的那一天」，晚幾分鐘補跑也不會標錯期
   }
-  const period = periodCode();
   // 本期捐款榜要先抓：結算會把 last_run_at 推到現在，之後就查不到「本期」捐款了
   const charity = require('./charity');
   const donTop = charity.cfg(gid).enabled ? charity.periodTop(gid, 5) : [];
