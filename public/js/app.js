@@ -85,7 +85,7 @@ const App = {
   // 遊戲區獨立成一塊，每個頁面各自一把權限鑰匙，才能只把其中一兩頁交給某個管理員。
   groups: [
     { name: '', keys: ['dashboard'] },
-    { name: '互動', keys: ['keywords', 'mentions', 'alerts', 'warnings', 'welcome', 'birthday', 'forum', 'tickets', 'levels'] },
+    { name: '互動', keys: ['keywords', 'mentions', 'alerts', 'warnings', 'welcome', 'birthday', 'forum', 'tickets', 'levels', 'spellbook'] },
     { name: '活動', keys: ['announcements', 'polls', 'giveaways', 'wheels', 'postwheel', 'reminders', 'music'] },
     { name: '遊戲區', keys: ['gather', 'currency', 'contest', 'ranch', 'aquarium', 'crops', 'home', 'special', 'tax', 'charity', 'auction', 'loans', 'stock', 'news'] },
     { name: '設定', keys: ['blacklist', 'media', 'appearance', 'perms', 'system', 'guilds', 'bots', 'subscriptions', 'users'] }

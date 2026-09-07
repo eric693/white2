@@ -672,7 +672,9 @@ const GUILD_TABLES = [
   'level_roles', 'user_xp', 'member_events', 'birthdays', 'birthday_history', 'birthday_sends',
   'blacklist', 'feature_perms', 'reaction_role_maps', 'forum_posts', 'music_logs', 'audit_log',
   'uploads',       // 媒體庫改為分伺服器（各台獨立、重置時清除）
-  'custom_emojis'  // 自訂圖示（連結按鈕圖標）同樣分伺服器
+  'custom_emojis', // 自訂圖示（連結按鈕圖標）同樣分伺服器
+  // 咒語簿：設定、開通名單與玩家自己的資料夾／內容（重置伺服器時一起清掉）
+  'spell_config', 'spell_access', 'spell_folders', 'spell_entries', 'spell_shares'
 ];
 
 // 對每張表加 guild_id 欄位，並把現有資料回填為主伺服器
@@ -770,7 +772,7 @@ function guildConfig(table, guildId) {
 }
 
 // 新伺服器加入時，確保 8 張設定表各有一筆
-const SETTING_TABLES = ['warn_config', 'welcome_config', 'birthday_config', 'verify_config', 'music_config', 'xp_config', 'ticket_config', 'forum_config', 'gather_config', 'ranch_config', 'special_config', 'crop_config', 'aquarium_config', 'tax_config', 'charity_config', 'loan_config'];
+const SETTING_TABLES = ['warn_config', 'welcome_config', 'birthday_config', 'verify_config', 'music_config', 'xp_config', 'ticket_config', 'forum_config', 'gather_config', 'ranch_config', 'special_config', 'crop_config', 'aquarium_config', 'tax_config', 'charity_config', 'loan_config', 'spell_config'];
 function ensureGuild(guildId, name, icon) {
   if (!guildId) return;
   db.prepare('INSERT INTO guilds (guild_id, name, icon, active) VALUES (?, ?, ?, 1) ON CONFLICT(guild_id) DO UPDATE SET name=excluded.name, icon=excluded.icon, active=1')

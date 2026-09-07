@@ -22,6 +22,7 @@ const MODULES = [
   { key: 'forum',        label: '論壇整理',          group: '互動' },
   { key: 'tickets',      label: '客服單',            group: '互動' },
   { key: 'levels',       label: '經驗值等級',        group: '互動' },
+  { key: 'spellbook',    label: '咒語簿開通',        group: '互動' },
 
   { key: 'announcements',label: '公告',              group: '活動' },
   { key: 'polls',        label: '投票',              group: '活動' },

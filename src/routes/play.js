@@ -415,12 +415,17 @@ router.get('/play/:token/login', (req, res) => {
   res.redirect('https://discord.com/oauth2/authorize?' + p.toString());
 });
 
+// 回呼共用給咒語簿（/spell）：state 帶 `spell.` 前綴就是它送來的。
+// 共用一組 Redirect URI，Discord 開發者後台才不必為每個小 App 再加一條。
 router.get('/play/auth/callback', async (req, res) => {
-  const token = String(req.query.state || '');
+  const state = String(req.query.state || '');
+  const forSpell = state.startsWith('spell.');
+  const token = forSpell ? state.slice('spell.'.length) : state;
   const t = parseToken(token);
   if (!t) return res.status(400).type('html').send('<h2 style="font-family:sans-serif">登入狀態無效</h2><p>請回 Discord 用 /遊戲 重新取得連結。</p>');
   const code = req.query.code;
-  const back = (m) => res.redirect(`/play/${token}?msg=${encodeURIComponent(m)}`);
+  const home = forSpell ? `/spell/${token}` : `/play/${token}`;
+  const back = (m) => res.redirect(`${home}?msg=${encodeURIComponent(m)}`);
   if (!code) return back('已取消登入。');
   try {
     const form = new URLSearchParams({
@@ -436,7 +441,11 @@ router.get('/play/auth/callback', async (req, res) => {
     const meRes = await fetch('https://discord.com/api/users/@me', { headers: { Authorization: `Bearer ${tok.access_token}` } });
     const me = await meRes.json();
     if (!me || !me.id) return back('讀不到 Discord 帳號，請再試一次。');
-    if (me.id !== t.uid) return res.status(403).type('html').send('<h2 style="font-family:sans-serif">帳號不符</h2><p>你登入的 Discord 帳號跟這個連結綁定的不是同一人，無法代為操作。請用自己的 /遊戲 連結。</p>');
+    if (me.id !== t.uid) return res.status(403).type('html').send('<h2 style="font-family:sans-serif">帳號不符</h2><p>你登入的 Discord 帳號跟這個連結綁定的不是同一人，無法代為操作。請用自己的連結。</p>');
+    if (forSpell) {
+      require('./spell').setSessionCookie(res, t.gid, t.uid);
+      return res.redirect(home);
+    }
     res.setHeader('Set-Cookie',
       `play_sess=${makeSession(t.gid, t.uid)}; Path=/play; Max-Age=${SESS_MAX_AGE}; HttpOnly; Secure; SameSite=Lax`);
     return back('🔓 已登入，現在可以在這裡買賣操作了！');

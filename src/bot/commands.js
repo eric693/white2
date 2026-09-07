@@ -254,6 +254,8 @@ const builders = [
   new SlashCommandBuilder().setName('持股').setDescription('查看我的投資組合、市值與損益'),
   new SlashCommandBuilder().setName('股神榜').setDescription('（管理員）全伺服器的股票損益排行')
     .setDefaultMemberPermissions(PermissionFlagsBits.ManageGuild),
+  // 咒語簿：常用台詞剪貼庫（網頁 App），要後台開通才能用
+  new SlashCommandBuilder().setName('咒語簿').setDescription('取得你的咒語簿連結（常用台詞剪貼庫，可加到手機主畫面）'),
 ];
 
 

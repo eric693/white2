@@ -1979,3 +1979,78 @@ CREATE TABLE IF NOT EXISTS gift_dex (
   first_at   TEXT NOT NULL DEFAULT (datetime('now','localtime')),
   PRIMARY KEY (guild_id, user_id, role_id, item)
 );
+
+-- ===== 咒語簿（Spellbook）=====
+-- 玩家自己的「常用台詞剪貼庫」：資料夾 → 內容，點一下複製，切回 Discord 貼上。
+-- 網頁版在 /spell/:token，手機可加到主畫面當 PWA。
+-- ⚠️ 不是人人都有：要後台在「開通名單」加人（或設身分組白名單）才打得開。
+
+-- 每台伺服器的咒語簿設定（單例，用 guildConfig 取）
+CREATE TABLE IF NOT EXISTS spell_config (
+  id            INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id      TEXT NOT NULL DEFAULT '' UNIQUE,
+  enabled       INTEGER NOT NULL DEFAULT 0,    -- 這台伺服器有沒有開這個功能（預設關）
+  role_ids      TEXT NOT NULL DEFAULT '',      -- 身分組白名單（逗號分隔），有其一就自動有權限
+  max_folders   INTEGER NOT NULL DEFAULT 30,   -- 每人資料夾數上限
+  max_entries   INTEGER NOT NULL DEFAULT 200,  -- 每個資料夾的內容則數上限
+  max_len       INTEGER NOT NULL DEFAULT 4000, -- 單則內容字數上限（Discord 一則上限 2000，留點餘裕）
+  share_enabled INTEGER NOT NULL DEFAULT 1,    -- 允不允許用分享碼把資料夾傳給別人
+  notice        TEXT NOT NULL DEFAULT ''       -- 顯示在 App 首頁的公告（可空）
+);
+
+-- 開通名單：後台一個一個加，沒在名單（也沒有白名單身分組）就打不開
+CREATE TABLE IF NOT EXISTS spell_access (
+  guild_id   TEXT NOT NULL DEFAULT '',
+  user_id    TEXT NOT NULL,
+  username   TEXT NOT NULL DEFAULT '',
+  note       TEXT NOT NULL DEFAULT '',
+  granted_by TEXT NOT NULL DEFAULT '',      -- 哪個後台帳號開通的
+  expires_at INTEGER NOT NULL DEFAULT 0,    -- unix 秒；0 ＝ 永久
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  PRIMARY KEY (guild_id, user_id)
+);
+
+CREATE TABLE IF NOT EXISTS spell_folders (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id   TEXT NOT NULL DEFAULT '',
+  user_id    TEXT NOT NULL,
+  name       TEXT NOT NULL DEFAULT '',
+  emoji      TEXT NOT NULL DEFAULT '📁',
+  pinned     INTEGER NOT NULL DEFAULT 0,
+  sort       INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_spell_folders ON spell_folders(guild_id, user_id);
+
+CREATE TABLE IF NOT EXISTS spell_entries (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id   TEXT NOT NULL DEFAULT '',
+  user_id    TEXT NOT NULL,
+  folder_id  INTEGER NOT NULL,
+  title      TEXT NOT NULL DEFAULT '',
+  content    TEXT NOT NULL DEFAULT '',
+  pinned     INTEGER NOT NULL DEFAULT 0,
+  sort       INTEGER NOT NULL DEFAULT 0,
+  copies     INTEGER NOT NULL DEFAULT 0,    -- 被複製過幾次（自己看的小統計）
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+  updated_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_spell_entries ON spell_entries(guild_id, user_id, folder_id);
+
+-- 資料夾分享：產生一組分享碼，對方輸入碼＋密碼就能把整個資料夾匯入自己的咒語簿。
+-- 有設密碼時 payload 是 AES-256-GCM 密文，伺服器自己也讀不出內容（金鑰由密碼推導）。
+CREATE TABLE IF NOT EXISTS spell_shares (
+  code       TEXT PRIMARY KEY,
+  guild_id   TEXT NOT NULL DEFAULT '',
+  user_id    TEXT NOT NULL,               -- 分享的人
+  folder_name TEXT NOT NULL DEFAULT '',
+  payload    TEXT NOT NULL DEFAULT '',    -- JSON 或 base64 密文
+  salt       TEXT NOT NULL DEFAULT '',    -- 密碼推導金鑰用
+  iv         TEXT NOT NULL DEFAULT '',
+  tag        TEXT NOT NULL DEFAULT '',
+  encrypted  INTEGER NOT NULL DEFAULT 0,
+  uses       INTEGER NOT NULL DEFAULT 0,
+  expires_at INTEGER NOT NULL DEFAULT 0,  -- unix 秒；0 ＝ 不過期
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);

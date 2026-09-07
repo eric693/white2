@@ -1,0 +1,106 @@
+/* 咒語簿 App（/spell/:token）。手機優先：一隻手拿著、拇指按得到。 */
+:root{
+  --bg:#f7f4ff; --card:#fff; --ink:#2b2440; --muted:#8b85a3; --line:#ece7f7;
+  --brand:#6f5bd7; --brand2:#e879b9; --ok:#2f9e44; --danger:#e03131;
+}
+*{box-sizing:border-box}
+html,body{margin:0;padding:0}
+body{
+  background:var(--bg); color:var(--ink); font-size:16px;
+  font-family:system-ui,-apple-system,"Noto Sans TC","PingFang TC","Microsoft JhengHei",sans-serif;
+  -webkit-tap-highlight-color:transparent;
+  padding-bottom:env(safe-area-inset-bottom);
+}
+.msg-page{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px}
+.msg{background:var(--card);border-radius:18px;padding:26px 22px;max-width:420px;box-shadow:0 8px 30px rgba(80,60,150,.08)}
+.msg h2{margin:0 0 10px;font-size:19px}
+.msg p{margin:0;color:var(--muted);line-height:1.7;font-size:14px}
+
+/* ---- 頂部列（左：返回／右：新增）---- */
+.top{
+  position:sticky;top:0;z-index:20;display:flex;align-items:center;gap:8px;
+  padding:calc(env(safe-area-inset-top) + 12px) 14px 12px;
+  background:linear-gradient(135deg,var(--brand),var(--brand2));color:#fff;
+}
+.top h1{flex:1;margin:0;font-size:17px;font-weight:700;text-align:center;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.top button{
+  min-width:40px;height:38px;padding:0 10px;border:0;border-radius:12px;
+  background:rgba(255,255,255,.2);color:#fff;font-size:15px;font-weight:700;cursor:pointer;
+}
+.top button:active{background:rgba(255,255,255,.34)}
+.wrap{padding:14px;max-width:640px;margin:0 auto;display:flex;flex-direction:column;gap:10px}
+.notice{background:#fff8e1;border:1px solid #ffe8a3;border-radius:14px;padding:10px 12px;font-size:13px;line-height:1.6}
+.hintbar{color:var(--muted);font-size:12.5px;line-height:1.6;padding:0 2px}
+
+/* ---- 列（資料夾／內容）：底下藏一個「置頂」，向右滑就露出來 ---- */
+.swipe{position:relative;border-radius:16px;overflow:hidden;background:#efe9ff}
+.swipe .behind{position:absolute;inset:0;display:flex;align-items:center;padding-left:18px;
+  color:var(--brand);font-weight:700;font-size:14px}
+.row{
+  position:relative;background:var(--card);border:1px solid var(--line);border-radius:16px;
+  padding:14px;display:flex;align-items:center;gap:12px;cursor:pointer;
+  transition:transform .18s ease;will-change:transform;
+}
+.row.dragging{transition:none}
+.row .ic{font-size:22px;width:30px;text-align:center;flex:none}
+.row .mid{flex:1;min-width:0}
+.row .t{font-weight:700;font-size:15px;display:flex;align-items:center;gap:6px}
+.row .t .pin{font-size:12px}
+.row .s{color:var(--muted);font-size:12.5px;margin-top:3px;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;white-space:pre-wrap;word-break:break-word}
+.row .more{flex:none;width:34px;height:34px;border:0;border-radius:10px;background:#f4f1fc;color:var(--muted);font-size:16px;cursor:pointer}
+.row .more:active{background:#e9e3fb}
+.empty{color:var(--muted);text-align:center;padding:34px 10px;font-size:14px;line-height:1.8}
+
+.fab{
+  position:fixed;right:16px;bottom:calc(env(safe-area-inset-bottom) + 16px);z-index:25;
+  border:0;border-radius:99px;padding:14px 20px;font-size:15px;font-weight:700;color:#fff;cursor:pointer;
+  background:linear-gradient(135deg,var(--brand),var(--brand2));box-shadow:0 8px 22px rgba(111,91,215,.4);
+}
+.fab:active{opacity:.86}
+
+/* ---- 底部彈出面板（新增／編輯／選單／分享）---- */
+.mask{position:fixed;inset:0;background:rgba(30,20,60,.45);z-index:40;display:flex;align-items:flex-end;justify-content:center}
+.sheet{
+  background:var(--card);width:100%;max-width:640px;border-radius:20px 20px 0 0;padding:18px 16px;
+  padding-bottom:calc(env(safe-area-inset-bottom) + 18px);max-height:88vh;overflow:auto;
+  animation:up .18s ease-out;
+}
+@keyframes up{from{transform:translateY(18px);opacity:.6}to{transform:none;opacity:1}}
+.sheet h3{margin:2px 0 14px;font-size:16px}
+.sheet label{display:block;font-size:13px;color:var(--muted);margin:0 0 6px}
+.sheet input,.sheet textarea,.sheet select{
+  width:100%;padding:12px;border:1px solid var(--line);border-radius:12px;font-size:16px;
+  background:#fdfcff;color:var(--ink);font-family:inherit;margin-bottom:12px;
+}
+.sheet textarea{min-height:150px;resize:vertical;line-height:1.7}
+.sheet .btns{display:flex;gap:10px;margin-top:4px}
+.btn{flex:1;padding:13px;border:0;border-radius:14px;font-size:15px;font-weight:700;cursor:pointer;
+  background:linear-gradient(135deg,var(--brand),var(--brand2));color:#fff}
+.btn.gray{background:#f1eefb;color:var(--muted)}
+.btn.danger{background:#ffe9e9;color:var(--danger)}
+.btn:active{opacity:.85}
+.menu-item{display:block;width:100%;text-align:left;padding:14px 12px;border:0;border-bottom:1px solid var(--line);
+  background:none;font-size:15px;color:var(--ink);cursor:pointer;font-family:inherit}
+.menu-item:last-child{border-bottom:0}
+.menu-item.danger{color:var(--danger)}
+.code{font-size:22px;font-weight:800;letter-spacing:3px;text-align:center;background:#f4f1fc;
+  border-radius:14px;padding:16px;margin-bottom:12px;word-break:break-all}
+
+.toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom) + 84px);transform:translateX(-50%);
+  background:rgba(43,36,64,.94);color:#fff;padding:11px 18px;border-radius:99px;font-size:14px;z-index:60;
+  max-width:88vw;text-align:center}
+
+/* ---- 內容列：左邊標題、右邊要貼的字（照著使用者慣用的那種剪貼 App 排）---- */
+.row.entry{align-items:stretch;padding:12px 12px 12px 14px}
+.row.entry .ttl{
+  flex:none;width:31%;max-width:130px;font-weight:700;font-size:14.5px;line-height:1.5;
+  padding-right:11px;margin-right:11px;border-right:1px solid var(--line);
+  word-break:break-word;display:flex;align-items:center;
+}
+.row.entry .txt{
+  flex:1;min-width:0;font-size:14.5px;line-height:1.6;color:#463c63;white-space:pre-wrap;word-break:break-word;
+  display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;align-self:center;
+}
+.row.entry .more{align-self:center;margin-left:8px}

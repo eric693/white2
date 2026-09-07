@@ -11,7 +11,8 @@
 
 const SECRETARY_FEATURES = [
   'keywords', 'alerts', 'forum', 'reactionroles', 'welcome', 'birthday',
-  'announcements', 'poll', 'giveaway', 'wheel', 'postwheel', 'reminder', 'music', 'tickets', 'xp'
+  'announcements', 'poll', 'giveaway', 'wheel', 'postwheel', 'reminder', 'music', 'tickets', 'xp',
+  'spellbook'
 ];
 
 const BUTLER_FEATURES = [
