@@ -16,9 +16,15 @@ router.get('/spellbook', (req, res) => {
   res.json({ ...c, role_ids: String(c.role_ids || '').split(',').filter(Boolean) });
 });
 
-router.put('/spellbook', (req, res) => {
+router.put('/spellbook', async (req, res) => {
   const out = sb.saveConfig(req.guildId, req.body || {});
   audit(req.user.name, `更新咒語簿設定（${out.enabled ? '啟用' : '停用'}）`, 'spellbook', '', req.guildId);
+  // 「在 Discord 顯示指令」勾／取消要立刻生效：重新註冊那台伺服器的指令清單。
+  // 只有扮演秘書的那個行程管得到（/咒語簿 是秘書的指令）。
+  try {
+    const { botRole } = require('../bot/roles');
+    if (botRole() === 'secretary' || botRole() === 'both') await require('../bot').refreshGuildCommands(req.guildId);
+  } catch (e) { console.error('重整指令清單失敗：', e.message); }
   res.json({ ok: true });
 });
 

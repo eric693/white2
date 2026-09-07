@@ -8,7 +8,7 @@
 // 權限：**不是人人都有**。要嘛後台把人加進開通名單，要嘛他身上有白名單身分組，
 // 兩者皆無就打不開（連結被轉傳也沒用，因為要本人 Discord 登入）。
 const crypto = require('crypto');
-const { db, guildConfig } = require('./db');
+const { db, guildConfig, ensureColumns } = require('./db');
 const { nowUnix } = require('./util/time');
 
 const int = (v, d = 0, min = 0, max = Number.MAX_SAFE_INTEGER) => {
@@ -18,13 +18,24 @@ const int = (v, d = 0, min = 0, max = Number.MAX_SAFE_INTEGER) => {
 const csv = (s) => String(s || '').split(',').map(x => x.trim()).filter(Boolean);
 const now = () => nowUnix();
 
+// 舊資料庫補欄位（show_command 是後來才加的）
+ensureColumns('spell_config', { show_command: 'INTEGER NOT NULL DEFAULT 0' });
+
 // ---- 設定 ----
 function config(gid) { return guildConfig('spell_config', gid) || {}; }
+
+/** 這台伺服器要不要把 /咒語簿 指令註冊上去。
+ *  預設「不要」——功能開了也只有拿到連結的人知道有這回事，別人的指令列不會多出一個。 */
+function commandVisible(gid) {
+  const c = config(gid);
+  return !!(c.enabled && c.show_command);
+}
 
 function saveConfig(gid, b = {}) {
   config(gid);   // 確保有那一列
   db.prepare(`UPDATE spell_config SET enabled=@enabled, role_ids=@role_ids, max_folders=@max_folders,
-      max_entries=@max_entries, max_len=@max_len, share_enabled=@share_enabled, notice=@notice
+      max_entries=@max_entries, max_len=@max_len, share_enabled=@share_enabled, notice=@notice,
+      show_command=@show_command
     WHERE guild_id=@guild_id`).run({
     enabled: b.enabled ? 1 : 0,
     role_ids: Array.isArray(b.role_ids) ? b.role_ids.join(',') : String(b.role_ids || ''),
@@ -32,6 +43,7 @@ function saveConfig(gid, b = {}) {
     max_entries: int(b.max_entries, 200, 1, 2000),
     max_len: int(b.max_len, 4000, 100, 20000),
     share_enabled: b.share_enabled ? 1 : 0,
+    show_command: b.show_command ? 1 : 0,
     notice: String(b.notice || '').slice(0, 500),
     guild_id: gid
   });
@@ -280,7 +292,7 @@ function usageStats(gid) {
 }
 
 module.exports = {
-  config, saveConfig, listAccess, grant, revoke, inList, access, accessAsync, DENY_TEXT,
+  config, saveConfig, commandVisible, listAccess, grant, revoke, inList, access, accessAsync, DENY_TEXT,
   folders, addFolder, editFolder, delFolder, pinFolder,
   entries, addEntry, editEntry, delEntry, pinEntry, bumpCopy,
   shareFolder, importShare, exportAll, importAll, usageStats

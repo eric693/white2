@@ -112,7 +112,8 @@
             </div>
             <button class="more" data-fmore="${f.id}">⋯</button>
           </div></div>`).join('')
-        : `<div class="empty">還沒有資料夾。<br>按右上角的 ＋ 建一個吧（例如「開場白」「常用招呼」）。</div>`}
+        : `<div class="empty">還沒有資料夾。<br>先按右上角的 ＋ 建一個（例如「開場白」「常用招呼」），<br>再進去新增你常打的那幾段字。
+             <br><br><button class="btn" id="guide" style="max-width:220px;margin:0 auto">❓ 看怎麼用</button></div>`}
     </div>
     <button class="fab" id="fab">＋ 新增資料夾</button>`;
 
@@ -125,6 +126,8 @@
     document.getElementById('add').onclick = folderForm;
     document.getElementById('fab').onclick = folderForm;
     document.getElementById('menu').onclick = mainMenu;
+    const g = document.getElementById('guide');
+    if (g) g.onclick = guideSheet;
     app.querySelectorAll('.row[data-fid]').forEach(row => {
       const fid = Number(row.dataset.fid);
       const f = d.folders.find(x => x.id === fid);
@@ -163,7 +166,7 @@
               <div class="txt">${esc(e.content)}</div>
               <button class="more" data-emore="${e.id}">⋯</button>
             </div></div>`).join('')
-          : `<div class="empty">這個資料夾還沒有內容。<br>按右上角的 ＋ 新增一則。</div>`}
+          : `<div class="empty">這個資料夾還沒有東西。<br>按右上角的 ＋ 新增一則：<br>上面填標題（自己認的），下面貼你要用的那段字。</div>`}
       </div>
       <button class="fab" id="fab">＋ 新增內容</button>`;
     document.getElementById('back').onclick = load;
@@ -286,14 +289,42 @@
     });
   }
 
-  // ---- 主選單：分享匯入／備份／安裝說明／登出 ----
+  // ---- 使用說明（第一次用的人看這個就夠）----
+  function guideSheet() {
+    sheet(`<h3>❓ 咒語簿怎麼用</h3>
+      <div style="font-size:14px;line-height:1.95;color:#463c63">
+        <b>1. 先建一個資料夾</b><br>
+        按右上角的 <b>＋</b>，取個分類名字（例如「開場白」「常用招呼」）。<br><br>
+        <b>2. 進資料夾，新增內容</b><br>
+        點資料夾進去，再按右上角 <b>＋</b>。上面「標題」是給自己認的（例如：早安），
+        下面「內容」貼你每次都要打的那段字。<br><br>
+        <b>3. 要用的時候</b><br>
+        進資料夾，<b>點那一列就複製好了</b>，切回 Discord 在打字框長按 →「貼上」。<br><br>
+        <b>4. 常用的往上放</b><br>
+        在那一列<b>向右滑</b>就會置頂，永遠排在最前面。<br><br>
+        <b>5. 改或刪</b><br>
+        按那一列右邊的 <b>⋯</b>，可以編輯、刪除、複製、置頂。<br><br>
+        <b>6. 分享給朋友</b><br>
+        資料夾的 <b>⋯</b> →「分享」，會產生一組分享碼（可以另外設密碼）。
+        朋友在自己的咒語簿按 <b>☰ →「用分享碼匯入」</b>，輸入那組碼就整個資料夾拿到手。<br><br>
+        <b>7. 變成手機 App</b><br>
+        iPhone 用 Safari 開這一頁 → 底下分享鍵 →「加入主畫面」；
+        Android 用 Chrome ⋮ →「安裝應用程式」。桌面就多一顆圖示，開起來沒有網址列。
+      </div>
+      <div class="btns" style="margin-top:16px"><button class="btn" data-ok>知道了</button></div>`,
+      (el) => { el.querySelector('[data-ok]').onclick = close; });
+  }
+
+  // ---- 主選單：使用說明／分享匯入／備份／安裝說明／登出 ----
   function mainMenu() {
     sheet(`<h3>更多</h3>
+      <button class="menu-item" data-guide>❓ 怎麼用（第一次看這裡）</button>
       ${S.share ? '<button class="menu-item" data-imp>📥 用分享碼匯入資料夾</button>' : ''}
       <button class="menu-item" data-exp>💾 匯出備份（JSON 檔）</button>
       <button class="menu-item" data-impjson>📂 匯入備份檔</button>
       <button class="menu-item" data-how>📱 怎麼加到主畫面</button>
       <button class="menu-item danger" data-out>登出</button>`, (el) => {
+      el.querySelector('[data-guide]').onclick = guideSheet;
       const imp = el.querySelector('[data-imp]');
       if (imp) imp.onclick = importForm;
       el.querySelector('[data-exp]').onclick = guard(async () => {

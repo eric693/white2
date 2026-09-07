@@ -1995,6 +1995,7 @@ CREATE TABLE IF NOT EXISTS spell_config (
   max_entries   INTEGER NOT NULL DEFAULT 200,  -- 每個資料夾的內容則數上限
   max_len       INTEGER NOT NULL DEFAULT 4000, -- 單則內容字數上限（Discord 一則上限 2000，留點餘裕）
   share_enabled INTEGER NOT NULL DEFAULT 1,    -- 允不允許用分享碼把資料夾傳給別人
+  show_command  INTEGER NOT NULL DEFAULT 0,    -- 要不要在這台伺服器註冊 /咒語簿 指令（預設不要＝別人看不到有這功能）
   notice        TEXT NOT NULL DEFAULT ''       -- 顯示在 App 首頁的公告（可空）
 );
 

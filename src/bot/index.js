@@ -28,6 +28,9 @@ function resolveAvatar(v) {
 function allowedCommands(guildId) {
   const role = botRole();
   return commandsFor(role).filter(c => {
+    // 咒語簿：預設不註冊 —— 那是「拿到連結的人才知道有這功能」的東西，
+    // 沒必要讓整台伺服器的人在指令列看到它。要露出來就到後台勾「在 Discord 顯示指令」。
+    if (c.name === '咒語簿' && !require('../spellbook').commandVisible(guildId)) return false;
     const key = commandFeature(c.name);
     return !key || hasFeature(guildId, role, key);
   });
