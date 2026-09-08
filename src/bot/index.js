@@ -91,6 +91,8 @@ client.once('clientReady', async () => {
   try { await client.application.commands.set([]); } catch (e) { console.error('清除全域指令失敗：', e.message); }
   for (const [, g] of client.guilds.cache) await registerGuildCommands(g.id, g.name);
   applyAppearance().catch(() => {});
+  guardNicknames().catch(() => {});
+  setInterval(() => { guardNicknames().catch(() => {}); }, 30 * 60000);
   startExpiryWatch();
   startJobWatch();
 });
@@ -258,6 +260,41 @@ async function applyAppearance() {
     });
   } catch (e) { console.warn('設定機器人狀態失敗：', e.message); }
 }
+
+// ---- 暱稱守衛：有人幫機器人改暱稱就自動改回來 ----
+// 伺服器裡任何有「管理暱稱」權限的人，都能把機器人改成別的名字（真的發生過：
+// 秘書被改成「手機訊息通知」），改完之後那個伺服器裡所有公告、抽獎、提醒都掛著那個名字，
+// 而且只有那一台看得到，管理員常常找不到原因。
+// 預設鎖住：把暱稱清掉＝顯示應用程式本名（要改名就到後台改 bot_name）。
+// 真的想讓某台自己取名，把設定 bot_nick_lock（或 bot_nick_lock_<角色>）設成 0 就放行。
+const nickLocked = () => (getSetting(`bot_nick_lock_${botRole()}`, '') || getSetting('bot_nick_lock', '1')) !== '0';
+
+async function clearNickname(guild) {
+  const me = guild.members.me || await guild.members.fetchMe().catch(() => null);
+  if (!me || !me.nickname) return false;
+  const was = me.nickname;
+  try {
+    await me.setNickname(null, '機器人名稱只能從後台改（暱稱鎖定）');
+    console.log(`  ↳ 已清掉 ${guild.name} 幫機器人取的暱稱「${was}」`);
+    return true;
+  } catch (e) {
+    console.warn(`清除 ${guild.name} 的機器人暱稱失敗（需要「變更暱稱」權限）：`, e.message);
+    return false;
+  }
+}
+
+/** 全部伺服器掃一次（上線時與每 30 分鐘各一次，補掉離線期間被改的） */
+async function guardNicknames() {
+  if (!nickLocked()) return;
+  for (const [, g] of client.guilds.cache) await clearNickname(g);
+}
+
+// 被改的當下就改回來（有 GuildMembers intent，所以收得到自己的成員更新）
+client.on('guildMemberUpdate', (_old, m) => {
+  if (!client.user || m.id !== client.user.id || !m.nickname) return;
+  if (!nickLocked()) return;
+  clearNickname(m.guild).catch(() => {});
+});
 
 // ---- 訂閱付費牆（第二層）：執行時攔截 ----
 // 為什麼還要這層：指令清單有 Discord 端快取，到期後玩家的舊清單可能還點得到；
