@@ -42,7 +42,11 @@ function safeEmoji(e) {
   if (!raw) return undefined;
   const m = /^<(a)?:([^:]+):(\d+)>$/.exec(raw);
   if (m) return { id: m[3], name: m[2], animated: !!m[1] };
-  return emojiTooNew(raw) ? undefined : raw;
+  // 本身就是彩色 emoji 的字元後面又跟著 VS16（U+FE0F）時，Discord 會判 Invalid emoji
+  // 並退回整份元件 —— 手機輸入法很容易打出這種（☕️ = ☕ + VS16）。
+  // 真正需要 VS16 才會顯示成彩色的（♻️ ⛏️ 🕵️…）不能動，所以用 Emoji_Presentation 精準判斷。
+  const clean = raw.replace(/(\p{Emoji_Presentation})\uFE0F/gu, '$1');
+  return emojiTooNew(clean) ? undefined : clean;
 }
 
 
