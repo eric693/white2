@@ -162,6 +162,9 @@ function syncTitles(gid, uid, uname) {
     if (t.cat === 'contest') continue;
     // 限定日期稱號同理：只有當天簽到才發（grantEventTitles），這裡不能靠進度撿到
     if (t.event_day) continue;
+    // 門檻 0 的稱號一律不靠進度發：限定日期稱號的日期萬一在後台被清空，
+    // need=0 會讓「任何進度 >= 0」成立，變成全服人手一個還附帶解鎖獎金。
+    if (!(t.need > 0)) continue;
     let have = 0;
     // metric 有填就走成就指標（任務式），沒填才是舊的收集型判定
     if (t.metric) have = metricValue(gid, uid, t.metric);

@@ -502,7 +502,9 @@ function init(client) {
         // ＋ 守衛寵物（魚缸防護／全域防竊）。寵物住家裡，不佔魚缸格子。
         const petResist = buffPct(gid, to.id, 'aqua_resist_pct') + buffPct(gid, to.id, 'steal_resist_pct');
         const resist = facilityBonus(gid, to.id, 'aquarium').resist + petResist;
-        const successPct = Math.max(0, c.steal_success_pct - resist);
+        // 小偷的「偷竊成功率」加成，跟牧場偷竊同一套（以前兩邊都沒讀，稱號寫了也沒效）
+        const thiefBonus = buffPct(gid, uid, 'steal_pct');
+        const successPct = Math.max(0, c.steal_success_pct + thiefBonus - resist);
         if (Math.random() * 100 >= successPct) {
           bumpAch(gid, to.id, 'defend_success', 1);   // 被偷者守住了（魚缸等級＋守衛寵物）
           // 偷失敗被抓 → 罰款（星幣可為負）。可設定賠給受害者或直接沒收。

@@ -152,6 +152,9 @@ const TABLES = {
       reward_coins: int(b.reward_coins, 0, 0), hint: str(b.hint), description: str(b.description || b.hint),
       // 限定日期（YYYY-MM-DD）：填了就變成「那天有簽到才拿得到」，不吃條件／門檻
       event_day: /^\d{4}-\d{2}-\d{2}$/.test(str(b.event_day).trim()) ? str(b.event_day).trim() : '',
+      // cat=event 卻沒有日期，就是一個「條件永遠成立」的稱號 —— 擋在這裡，別讓它存進去
+      ...(str(b.cat).trim() === 'event' && !/^\d{4}-\d{2}-\d{2}$/.test(str(b.event_day).trim())
+        ? { __reject: '這是限定日期稱號（分類 event），請填限定日期（YYYY-MM-DD），否則會變成全服都能拿。' } : {}),
       sort: int(b.sort, 0, 0), enabled: b.enabled ? 1 : 0
     })
   },
@@ -204,8 +207,17 @@ for (const [path, def] of Object.entries(TABLES)) {
     res.json(db.prepare(`SELECT * FROM ${def.table} WHERE guild_id=? ORDER BY ${def.order}`).all(req.guildId));
   });
 
+  // fields() 可以回一個 __reject 訊息：代表這組設定本身不合理（例如限定日期稱號沒填日期），
+  // 擋在寫入之前，並把原因原封不動講給管理員聽。
+  const reject = (res, f) => {
+    if (!f.__reject) return false;
+    res.status(400).json({ error: f.__reject });
+    return true;
+  };
+
   router.post('/' + path, (req, res) => {
     const f = def.fields(req.body || {});
+    if (reject(res, f)) return;
     if ('name' in f && !f.name) return res.status(400).json({ error: '請填名稱' });
     const keys = Object.keys(f);
     const r = db.prepare(
@@ -217,6 +229,7 @@ for (const [path, def] of Object.entries(TABLES)) {
 
   router.put('/' + path + '/:id', (req, res) => {
     const f = def.fields(req.body || {});
+    if (reject(res, f)) return;
     if ('name' in f && !f.name) return res.status(400).json({ error: '請填名稱' });
     const keys = Object.keys(f);
     const r = db.prepare(

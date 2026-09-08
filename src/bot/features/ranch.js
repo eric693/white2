@@ -700,7 +700,10 @@ function init(client) {
         // 守衛寵物是為了讓玩家不必再拿生產格子去養看門鵝 —— 寵物住家裡，不佔牧場。
         const petResist = buffPct(gid, to.id, 'ranch_resist_pct') + buffPct(gid, to.id, 'steal_resist_pct');
         const resist = facilityBonus(gid, to.id, 'ranch').resist + petResist;
-        const successPct = Math.max(0, c.steal_success_pct - resist);
+        // 小偷自己的「偷竊成功率」加成（稱號／料理／同居能力）——
+        // 這個 buff 一直有人在發（荒野霸主 +3%…），但判定從來沒讀它，等於白寫。
+        const thiefBonus = buffPct(gid, uid, 'steal_pct');
+        const successPct = Math.max(0, c.steal_success_pct + thiefBonus - resist);
         const animalPct = Math.max(0, c.steal_animal_pct - resist);
         const success = Math.random() * 100 < successPct;
         if (!success) {
