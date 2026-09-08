@@ -480,6 +480,10 @@ App.page('home', {
               <div class="field"><label>解鎖獎金</label><input name="reward_coins" type="number" min="0" value="${r.reward_coins ?? 0}"></div>
             </div>
             <div class="field"><label>任務提示（顯示在進度條旁）</label><input name="hint" value="${UI.esc(r.hint || '')}" placeholder="挖礦 300 次"></div>
+            <div class="field"><label>🎂 限定日期（週年紀念這種，留空＝一般成就）</label>
+              <input name="event_day" type="date" value="${UI.esc(r.event_day || '')}"></div>
+            <div class="hint">填了日期就變成「限定稱號」：只有<b>那一天當天有簽到</b>的人會拿到，上面的解鎖條件與門檻一律不看。
+              錯過就永遠沒有，所以日期填錯要趁當天改。</div>
             <div class="form-row">
               <div class="field"><label>加成一</label>${buffSelect('buff_type', r.buff_type)}</div>
               <div class="field"><label>%</label><input name="buff_pct" type="number" min="0" value="${r.buff_pct ?? 0}"></div>
@@ -498,8 +502,8 @@ App.page('home', {
             <thead><tr><th>成就</th><th>解鎖條件</th><th>門檻</th><th>加成</th><th>獎金</th><th>狀態</th><th></th></tr></thead>
             <tbody>${rows.map(r => `<tr>
               <td>${UI.esc((r.emoji || '') + r.name)}<div class="hint" style="font-size:12px">${UI.esc(r.hint || r.description || '')}</div></td>
-              <td>${r.metric ? UI.esc(metricLabel(r.metric)) : `收集數（${UI.esc(r.cat || '')}）`}</td>
-              <td>${Number(r.need).toLocaleString('en-US')}</td>
+              <td>${r.event_day ? `🎂 ${UI.esc(r.event_day)} 當天簽到` : r.metric ? UI.esc(metricLabel(r.metric)) : `收集數（${UI.esc(r.cat || '')}）`}</td>
+              <td>${r.event_day ? '—' : Number(r.need).toLocaleString('en-US')}</td>
               <td style="font-size:13px">${[
             r.buff_pct ? `${UI.esc(buffLabel(r.buff_type))} +${r.buff_pct}%` : '',
             r.buff2_pct ? `${UI.esc(buffLabel(r.buff2_type))} +${r.buff2_pct}%` : ''].filter(Boolean).join('<br>') || '—'}</td>

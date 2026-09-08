@@ -60,7 +60,12 @@ function buildEmbed(ga) {
 
   // 分欄資訊（建立者、獎品數量、參加人數、結束時間）
   const fields = [];
-  if (ga.creator) fields.push({ name: '建立者', value: ga.creator, inline: true });
+  // 有存 ID 就交給 Discord 渲染（永遠是對方目前的暱稱，也不會被長暱稱撐爛版面）；
+  // 舊資料只有文字，就把換行壓掉再截短，至少不會把欄位擠壞。
+  const creatorText = ga.creator_id
+    ? `<@${ga.creator_id}>`
+    : String(ga.creator || '').replace(/\s+/g, ' ').trim().slice(0, 32);
+  if (creatorText) fields.push({ name: '建立者', value: creatorText, inline: true });
   fields.push({ name: '獎品數量', value: `${ga.winners} 位`, inline: true });
   fields.push({ name: '參加人數', value: `${entries} 人`, inline: true });
   // 「不限制」是常態，不必特別公告；只有真的有鎖定時才顯示，避免版面多一行
@@ -288,10 +293,11 @@ function init(client) {
         return i.reply({ content: '持續時間格式不對。例如 `30s`、`5m`、`2h`（最低 1 秒、最高 24 小時）。', flags: MessageFlags.Ephemeral });
       }
       const info = db.prepare(
-        `INSERT INTO giveaways (guild_id, title, prize, winners, channel_id, started, end_unix, creator, void_if_insufficient, mention_roles, win_lock_hours)
-         VALUES (?, '', ?, ?, ?, 1, ?, ?, ?, ?, ?)`
+        `INSERT INTO giveaways (guild_id, title, prize, winners, channel_id, started, end_unix, creator, creator_id, void_if_insufficient, mention_roles, win_lock_hours)
+         VALUES (?, '', ?, ?, ?, 1, ?, ?, ?, ?, ?, ?)`
       ).run(i.guild.id, prize, Math.max(1, count), ch.id, nowUnix() + sec,
-        (i.member && i.member.displayName) || i.user.globalName || i.user.username, voidIfShort, mentionRole ? mentionRole.id : '', lockHours);
+        (i.member && i.member.displayName) || i.user.globalName || i.user.username, i.user.id,
+        voidIfShort, mentionRole ? mentionRole.id : '', lockHours);
       const ga = getGa(info.lastInsertRowid);
       try {
         await postGiveaway(client, ga);

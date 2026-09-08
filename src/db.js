@@ -252,12 +252,20 @@ ensureColumns('tax_config', {
   house_pet:     'INTEGER NOT NULL DEFAULT 150'    // 每隻寵物加課
 });
 
+// 抽獎「建立者」原本只存建立當下的暱稱字串：對方之後改暱稱就對不起來，
+// 而且社群暱稱很長（顏文字＋分隔線＋一串頭銜）會把 embed 的欄位撐到折行，看起來像壞掉。
+// 改存 Discord 使用者 ID，顯示時用 <@id> 讓 Discord 自己去渲染成目前的暱稱。
+ensureColumns('giveaways', { creator_id: "TEXT NOT NULL DEFAULT ''" });
+
 // 稱號改成「成就」：解鎖條件從三種寫死的分類，換成 util/achievements.js 的 metric
 // （metric 留空＝沿用舊的 cat 判定，既有稱號不會壞）
 ensureColumns('title_defs', {
   metric: "TEXT NOT NULL DEFAULT ''",       // 例：gather_mine、checkin_best、defend_success
   reward_coins: 'INTEGER NOT NULL DEFAULT 0', // 解鎖時一次性發的獎金
-  hint: "TEXT NOT NULL DEFAULT ''"          // 顯示給玩家的任務提示
+  hint: "TEXT NOT NULL DEFAULT ''",         // 顯示給玩家的任務提示
+  // 限定日期稱號（週年紀念這種）：填 YYYY-MM-DD，只有「那一天有簽到」的人拿得到。
+  // 有填就完全不吃 metric／need 判定，錯過當天就永遠沒有，這是刻意的。
+  event_day: "TEXT NOT NULL DEFAULT ''"
 });
 
 // 寵物能力分類：素材加成要能指定「哪一種素材」（碎石＋X%、橡木＋X%），

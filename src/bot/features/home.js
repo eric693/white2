@@ -298,7 +298,10 @@ function doCheckin(gid, uid, uname) {
     db.prepare(`UPDATE home_checkin SET last_day=?, streak=?, best=MAX(best,?), total=total+1, week_mask=?
                 WHERE guild_id=? AND user_id=?`).run(today, streak, streak, mask, gid, uid);
   })();
-  return { coins, streak, base: c.checkin_base || 0, streakBonus, homeBonus, full, weekBonus: full ? (c.checkin_week || 0) : 0, mask, home };
+  // 限定日期稱號（週年紀念這種）：只有「那一天真的來簽到」的人拿得到
+  let eventTitles = [];
+  try { eventTitles = require('./dex').grantEventTitles(gid, uid, uname, today); } catch { /* 紀念稱號壞掉不該擋住簽到 */ }
+  return { coins, streak, base: c.checkin_base || 0, streakBonus, homeBonus, full, weekBonus: full ? (c.checkin_week || 0) : 0, mask, home, eventTitles };
 }
 
 /** 簽到面板：畫出本週七格，跟你們要的「週一~週日打勾」一樣 */
@@ -502,7 +505,12 @@ function init(client) {
             + `　基礎 ${out.base.toLocaleString('en-US')}`
             + `　連續 ${out.streak} 天 +${out.streakBonus.toLocaleString('en-US')}`
             + `　房屋 Lv.${out.home.level} +${out.homeBonus.toLocaleString('en-US')}`
-            + (out.full ? `\n🎉 本週七天全勤！額外 +${out.weekBonus.toLocaleString('en-US')}` : ''),
+            + (out.full ? `\n🎉 本週七天全勤！額外 +${out.weekBonus.toLocaleString('en-US')}` : '')
+            + ((out.eventTitles || []).length
+              ? '\n' + out.eventTitles.map(t => `🎁 限定稱號到手：**${t.emoji || '🏅'}${t.name}**（只有今天簽到才有）`
+                + (t.reward_coins > 0 ? `，另外送 ${t.reward_coins.toLocaleString('en-US')}` : '')).join('\n')
+                + '\n　去 `/成就` 裝備起來。'
+              : ''),
           flags: MessageFlags.Ephemeral
         }).catch(() => {});
       }

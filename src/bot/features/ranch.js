@@ -292,10 +292,15 @@ function sellAnimal(gid, uid, uname, slot) {
 }
 
 // 把一顆蛋放進孵化室。/孵化 指令與孵化室的下拉選單共用。
-/** 放蛋。qty 可以一次放多顆（有幾格放幾顆，蛋不夠就放到沒蛋為止）。 */
-function hatchEgg(gid, uid, uname, eggItemId, qty = 1) {
+/**
+ * 放蛋。qty 可以一次放多顆（有幾格放幾顆，蛋不夠就放到沒蛋為止）。
+ * defId：同一種蛋可以設定成孵出不同動物（鵝蛋→鵝／鵝蛋→蝴蝶結），
+ * 選單會指定是哪一筆；沒指定（/孵化 指令、同居自動放蛋）就用排序第一筆。
+ */
+function hatchEgg(gid, uid, uname, eggItemId, qty = 1, defId = 0) {
   const c = rcfg(gid);
-  const def = hatchList(gid).find(d => d.egg_item_id === eggItemId);
+  const list = hatchList(gid);
+  const def = (defId && list.find(d => d.id === defId)) || list.find(d => d.egg_item_id === eggItemId);
   if (!def) return { error: '這顆蛋現在不能孵化。' };
   const inv = db.prepare('SELECT count FROM gather_inventory WHERE guild_id=? AND user_id=? AND item_id=?').get(gid, uid, def.egg_item_id);
   if (!inv || inv.count < 1) return { error: `你的背包裡沒有 ${def.egg_emoji || '🥚'}${def.egg_name}。` };
@@ -379,9 +384,13 @@ function init(client) {
     // 孵化室的放蛋選單：選好蛋之後再選要放幾顆（以前一次只能放一顆，格子多的人要點很多次）
     if (i.isStringSelectMenu() && i.customId === 'hatchput') {
       const gid = i.guildId, uid = i.user.id, c = rcfg(gid);
-      const eggId = parseInt(i.values[0], 10);
-      const def = hatchList(gid).find(d => d.egg_item_id === eggId);
+      // value 是「孵化設定」的 id，不是蛋的 id ——
+      // 同一種蛋可以孵出不同動物（鵝蛋→鵝／鵝蛋→蝴蝶結），用蛋當 value 會兩個選項撞在一起，
+      // Discord 會整張選單退件（COMPONENT_OPTION_VALUE_DUPLICATED），/孵化室 就整個開不起來。
+      const defId = parseInt(i.values[0], 10);
+      const def = hatchList(gid).find(d => d.id === defId);
       if (!def) return i.update({ content: '這顆蛋現在不能孵化。', components: [], embeds: [] }).catch(() => {});
+      const eggId = def.egg_item_id;
       const have = (db.prepare('SELECT count FROM gather_inventory WHERE guild_id=? AND user_id=? AND item_id=?').get(gid, uid, eggId) || {}).count || 0;
       const hMax = effHatchSlots(gid, uid, c);
       const usedN = db.prepare('SELECT COUNT(*) n FROM ranch_incubator WHERE guild_id=? AND user_id=?').get(gid, uid).n;
@@ -395,7 +404,7 @@ function init(client) {
       }
       // 一顆、幾顆、全部放滿都給選項
       const amounts = [...new Set([1, 3, 5, 10, cap].filter(n => n >= 1 && n <= cap))].sort((a, b) => a - b);
-      const menu = new StringSelectMenuBuilder().setCustomId(`hatchqty:${eggId}`).setPlaceholder('要放幾顆？')
+      const menu = new StringSelectMenuBuilder().setCustomId(`hatchqty:${eggId}:${def.id}`).setPlaceholder('要放幾顆？')
         .addOptions(amounts.slice(0, 25).map(n => ({
           label: n === cap ? `放滿（${n} 顆）` : `放 ${n} 顆`,
           description: `${def.hatch_minutes} 分／顆${def.fail_pct ? `　失敗率 ${def.fail_pct}%` : ''}`.slice(0, 100),
@@ -408,9 +417,11 @@ function init(client) {
       }).catch(() => {});
     }
     if (i.isStringSelectMenu() && i.customId.startsWith('hatchqty:')) {
-      const eggId = parseInt(i.customId.split(':')[1], 10);
+      const [, eggRaw, defRaw] = i.customId.split(':');
+      const eggId = parseInt(eggRaw, 10);
+      const defId = parseInt(defRaw || '0', 10) || 0;
       const qty = parseInt(i.values[0], 10);
-      return safeMenu(i, '放蛋孵化', () => hatchEgg(i.guildId, i.user.id, i.user.username, eggId, qty));
+      return safeMenu(i, '放蛋孵化', () => hatchEgg(i.guildId, i.user.id, i.user.username, eggId, qty, defId));
     }
     // 畜牧商店：選一種動物 → 選要養幾隻（可養多隻同款）
     if (i.isStringSelectMenu() && i.customId === 'ranchbuyone') {
@@ -958,7 +969,8 @@ function init(client) {
               return {
                 label: `${d.egg_name} → ${d.animal_name}`.slice(0, 100),
                 description: `背包 ${have} 顆｜${d.hatch_minutes} 分／顆${d.fail_pct ? `　失敗率 ${d.fail_pct}%` : ''}`.slice(0, 100),
-                value: String(d.egg_item_id), emoji: d.egg_emoji || '🥚'
+                // 用孵化設定的 id：同一種蛋孵出不同動物時，值才不會重複
+                value: String(d.id), emoji: d.egg_emoji || '🥚'
               };
             }))) ] : [];
         if (!owned.length && hMaxNow > 0) {

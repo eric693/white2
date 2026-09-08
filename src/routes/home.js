@@ -150,6 +150,8 @@ const TABLES = {
       buff_type: buff(b.buff_type), buff_pct: int(b.buff_pct, 0, 0),
       buff2_type: buff(b.buff2_type), buff2_pct: int(b.buff2_pct, 0, 0),
       reward_coins: int(b.reward_coins, 0, 0), hint: str(b.hint), description: str(b.description || b.hint),
+      // 限定日期（YYYY-MM-DD）：填了就變成「那天有簽到才拿得到」，不吃條件／門檻
+      event_day: /^\d{4}-\d{2}-\d{2}$/.test(str(b.event_day).trim()) ? str(b.event_day).trim() : '',
       sort: int(b.sort, 0, 0), enabled: b.enabled ? 1 : 0
     })
   },

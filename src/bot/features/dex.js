@@ -13,6 +13,7 @@ const { BUFF_TYPES } = require('../../util/buffs');
 const { metricValue, metricName, bar, METRICS } = require('../../util/achievements');
 const { seedHome, homeOf, NAV } = require('./home');
 const { selectRows, isSelect } = require('../../util/menu');
+const { localToday } = require('../../util/time');
 
 const hcfg = (gid) => guildConfig('home_config', gid);
 
@@ -159,6 +160,8 @@ function syncTitles(gid, uid, uname) {
   for (const t of defs) {
     // 大賽獎盃只能靠比賽冠軍發，不吃任何進度判定（不然 need 一被改就變成全服人手一個）
     if (t.cat === 'contest') continue;
+    // 限定日期稱號同理：只有當天簽到才發（grantEventTitles），這裡不能靠進度撿到
+    if (t.event_day) continue;
     let have = 0;
     // metric 有填就走成就指標（任務式），沒填才是舊的收集型判定
     if (t.metric) have = metricValue(gid, uid, t.metric);
@@ -172,6 +175,24 @@ function syncTitles(gid, uid, uname) {
     db.prepare('INSERT OR IGNORE INTO title_owned (guild_id,user_id,title_id,slot) VALUES (?,?,?,-1)').run(gid, uid, t.id);
     // 任務式成就可以帶一次性獎金（收集型稱號預設 0，不會誤發）
     if (t.reward_coins > 0) { try { require('./gather').addCoins(gid, uid, uname, t.reward_coins, '成就獎金', t.name); } catch {} }
+    gained.push(t);
+  }
+  return gained;
+}
+
+/**
+ * 限定日期稱號：當天有簽到才發（週年紀念這種）。
+ * 錯過那一天就真的沒有 —— 所以只在簽到成功的當下呼叫一次，別放進 syncTitles。
+ */
+function grantEventTitles(gid, uid, uname, day) {
+  if (!day) return [];
+  const defs = db.prepare('SELECT * FROM title_defs WHERE guild_id=? AND enabled=1 AND event_day=?').all(gid, day);
+  const gained = [];
+  for (const t of defs) {
+    const had = db.prepare('SELECT 1 FROM title_owned WHERE guild_id=? AND user_id=? AND title_id=?').get(gid, uid, t.id);
+    if (had) continue;
+    db.prepare('INSERT OR IGNORE INTO title_owned (guild_id,user_id,title_id,slot) VALUES (?,?,?,-1)').run(gid, uid, t.id);
+    if (t.reward_coins > 0) { try { require('./gather').addCoins(gid, uid, uname, t.reward_coins, '紀念稱號', t.name); } catch {} }
     gained.push(t);
   }
   return gained;
@@ -269,7 +290,7 @@ function titlePanel(gid, uid, uname) {
   // 差一點就拿到的成就：照完成度排序，只顯示最接近的幾個，讓人知道下一步要做什麼
   const owned = new Set(list.map(t => t.id));
   const todo = db.prepare('SELECT * FROM title_defs WHERE guild_id=? AND enabled=1').all(gid)
-    .filter(t => !owned.has(t.id) && t.metric && METRICS[t.metric] && t.need > 0)
+    .filter(t => !owned.has(t.id) && !t.event_day && t.metric && METRICS[t.metric] && t.need > 0)
     .map(t => ({ t, have: metricValue(gid, uid, t.metric) }))
     .sort((a, b) => (b.have / b.t.need) - (a.have / a.t.need))
     .slice(0, 6);
@@ -316,9 +337,13 @@ function achAllPanel(gid, uid, uname, page = 0) {
     else have = seenCount(gid, uid, t.cat);
 
     const how = t.hint || t.description
+      || (t.event_day ? `${t.event_day} 當天簽到才有` : '')
       || (t.metric && METRICS[t.metric] ? `${metricName(t.metric)} 達到 ${Number(t.need).toLocaleString('en-US')}` : `收集 ${t.need} 種（${t.cat}）`);
+    // 限定日期稱號沒有進度可言：不是拿到，就是那天沒來（或還沒到），畫進度條只會誤導
     const prog = got ? '✅ 已解鎖'
-      : `\`${bar(have, t.need)}\` ${Number(have).toLocaleString('en-US')} / ${Number(t.need).toLocaleString('en-US')}`;
+      : t.event_day
+        ? (t.event_day > localToday() ? `📅 ${t.event_day} 當天簽到就送` : `📅 已錯過（限 ${t.event_day} 當天簽到）`)
+        : `\`${bar(have, t.need)}\` ${Number(have).toLocaleString('en-US')} / ${Number(t.need).toLocaleString('en-US')}`;
     return `${got ? '✅' : '▫️'} ${t.emoji || ''}**${t.name}**　${buffText(t)}\n　${how}\n　${prog}`
       + (t.reward_coins ? `　🎁 解鎖獎金 ${Number(t.reward_coins).toLocaleString('en-US')}` : '');
   });
@@ -381,4 +406,4 @@ function init(client) {
   console.log('  ↳ 圖鑑／成就模組已載入（10 類圖鑑＋任務式成就，最多裝備 3 個）');
 }
 
-module.exports = { init, seedTitles, seedAch, markSeen, syncTitles, dexPanel, titlePanel, achAllPanel, DEX_CATS, buffText };
+module.exports = { init, seedTitles, seedAch, markSeen, syncTitles, grantEventTitles, dexPanel, titlePanel, achAllPanel, DEX_CATS, buffText };
