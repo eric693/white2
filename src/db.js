@@ -10,7 +10,10 @@ const db = new Database(path.join(DATA_DIR, 'white2.db'));
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');
 db.pragma('synchronous = NORMAL');
-db.pragma('busy_timeout = 5000');
+// 三個行程（秘書＋後台、管家）共用這個檔案，整點的排程又會同時醒來
+// （工作區域、同居能力、稅金、股市結算…），5 秒等不到鎖就直接放棄，
+// 那一位玩家的那次結算就靜靜地漏掉了。等久一點也比漏掉好。
+db.pragma('busy_timeout = 20000');
 
 const schema = fs.readFileSync(path.join(__dirname, '..', 'db', 'schema.sql'), 'utf8');
 db.exec(schema);
