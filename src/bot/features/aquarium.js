@@ -40,6 +40,17 @@ const SEED_FISH = [
   ['鯊魚', '🦈', 20000, 580, 180, '魚缸的頂點，胃口驚人']
 ];
 
+// 釣上來才能養的魚：商店買不到（price 0、也不會出現在水族商店），
+// 綁定同名的釣魚素材，釣到之後用「存進魚缸」就會變成會產星幣的觀賞魚。
+// 這三種本來只有主伺服器手動建過，其他台一直缺 —— 但存魚按鈕的說明早就寫著
+// 「釣到 🐋鯨魚／🐉皇帶魚／🧜美人魚 才能存」，玩家釣到了卻放不進去。
+// [名稱, emoji, 每日產星幣, 每次飼料費, 說明]
+const SEED_CATCH_FISH = [
+  ['鯨魚', '🐋', 120, 45, '釣上來的巨獸，養在缸裡天天生錢（商店買不到）'],
+  ['皇帶魚', '🐉', 180, 65, '深海的長條傳說，產值比鯨魚更好（商店買不到）'],
+  ['美人魚', '🧜', 260, 95, '傳說中的釣獲，魚缸裡最會賺的一位（商店買不到）']
+];
+
 function seedAquarium(gid) {
   acfg(gid);
   try {
@@ -49,6 +60,18 @@ function seedAquarium(gid) {
       SEED_FISH.forEach(([name, emoji, price, perDay, feed, desc], idx) => {
         if (has.get(gid, name)) return;
         ins.run(gid, name, emoji, price, perDay, feed, idx, desc);
+      });
+      // 釣獲魚：素材要真的存在於這台伺服器才建（沒有那種魚就跳過，不留空綁定）
+      const findItem = db.prepare("SELECT id FROM gather_items WHERE guild_id=? AND kind='fish' AND name=? ORDER BY id LIMIT 1");
+      const insCatch = db.prepare('INSERT INTO aquarium_fish (guild_id,name,emoji,price,coin_per_day,feed_cost,sort,description,catch_item_id) VALUES (?,?,?,0,?,?,?,?,?)');
+      const bind = db.prepare('UPDATE aquarium_fish SET catch_item_id=? WHERE id=? AND (catch_item_id=0 OR catch_item_id IS NULL)');
+      SEED_CATCH_FISH.forEach(([name, emoji, perDay, feed, desc], idx) => {
+        const item = findItem.get(gid, name);
+        if (!item) return;
+        const exist = has.get(gid, name);
+        // 已經有同名魚種卻沒綁到素材（管理員手動建了一半）就補綁定，不要重複建一筆
+        if (exist) { bind.run(item.id, exist.id); return; }
+        insCatch.run(gid, name, emoji, perDay, feed, SEED_FISH.length + idx, desc, item.id);
       });
       db.prepare('UPDATE aquarium_config SET seeded=1 WHERE guild_id=?').run(gid);
     })();
@@ -191,7 +214,15 @@ function depositFish(gid, uid, uname, itemIds) {
     }
   })();
   bumpAch(gid, uid, 'fish_caught', done.length);
-  if (!done.length) return { error: '沒有魚存進去：' + (skipped.join('、') || '背包裡沒有可存的釣獲魚') };
+  if (!done.length) {
+    // 一條都沒存到又沒有任何 skipped 理由，代表這幾種魚在這台伺服器根本沒開放養
+    // （後台水族館沒有綁定素材的魚種）—— 要講清楚，不要讓玩家以為自己背包空的。
+    const openable = db.prepare('SELECT COUNT(*) n FROM aquarium_fish WHERE guild_id=? AND enabled=1 AND catch_item_id>0').get(gid).n;
+    if (!skipped.length && !openable) {
+      return { error: '這台伺服器還沒開放養釣獲魚。請管理員到後台的水族館設定，把魚種綁上對應的釣魚素材。' };
+    }
+    return { error: '沒有魚存進去：' + (skipped.join('、') || '這幾種魚還沒開放養') };
+  }
   const used = slotsOf(gid, uid).length;
   return { embed: new EmbedBuilder().setColor(brandColor()).setTitle(`🎣 存了 ${done.length} 條釣獲魚`)
     .setDescription(done.map(f => `${f.emoji || '🐟'} ${f.name}　每天產 ${money(gc, f.coin_per_day)}／飼料 ${f.feed_cost}`).join('\n') +
