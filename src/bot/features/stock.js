@@ -164,6 +164,10 @@ function catchUp(gid) {
     const row = db.prepare('SELECT MAX(ts) t FROM stock_prices WHERE guild_id=?').get(gid);
     last = row?.t || now - step;
   }
+  // 一定要對齊整點再往下加，否則整串 K 棒會一直帶著偏移量（實際發生過：每根都停在 XX:31）。
+  // 偏移的後果不只是時間戳難看：結算排程在每個整點跑，下一根卻排在 18:31，
+  // 18:00 這次就什麼都不做，要等 19:00 才補 —— 玩家看到的價格等於整整慢一個小時。
+  last = alignDown(last, step);
   let n = 0;
   // 一次最多補 240 根（10 天），停太久就不要補到天荒地老
   for (let ts = last + step; ts <= now && n < 240; ts += step) { runTick(gid, ts); n++; }
