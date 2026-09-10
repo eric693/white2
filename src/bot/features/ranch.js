@@ -3,7 +3,7 @@
 // 動物用金幣在 /畜牧商店 購買，最多養 max_slots 隻（預設 6）。
 const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, ButtonStyle, MessageFlags } = require('discord.js');
 const { nameOf } = require('../../util/names');
-const { db, guildConfig, logError } = require('../../db');
+const { db, guildConfig, logError, activeGuildIds } = require('../../db');
 
 // 偷竊失敗罰金：2026-09 起全遊戲統一為固定金額（原本是「看守動物的 guard_penalty
 // 隨機抽一個數字」，同一次失敗罰 1 塊或罰 5000 全看運氣，玩家完全無法預期）。
@@ -359,8 +359,10 @@ function partnerHarvest(gid) {
 
 function init(client) {
   // 每天早上 8:30 讓「會幫忙收成」的同居角色代收一次
+  // 伺服器清單走資料庫：斷線重連的當下 client.guilds.cache 可能是空的，
+  // 這種一天只跑一次的排程剛好撞上就整天沒收成（股市也踩過同一個坑）。
   cron.schedule('30 8 * * *', () => {
-    for (const [gid] of client.guilds.cache) {
+    for (const gid of activeGuildIds()) {
       try {
         for (const r of partnerHarvest(gid)) {
           client.users.fetch(r.user_id).then(u => u.send(

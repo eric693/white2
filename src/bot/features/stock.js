@@ -13,7 +13,7 @@ const { selectRows, isSelect, safeEmoji } = require('../../util/menu');
 // 錢包明細：買賣股票要記帳（延後 require，避免和 gather.js 互相 require 卡住）
 const logCoins = (...a) => require('./gather').logCoins(...a);
 const cron = require('node-cron');
-const { db, guildConfig, logError } = require('../../db');
+const { db, guildConfig, logError, activeGuildIds } = require('../../db');
 const { brandColor } = require('../../util/brand');
 const { activeModifiers, SCOPE_LABEL, bust, normMultPct } = require('../../util/market');
 const { localToday } = require('../../util/time');
@@ -1112,23 +1112,31 @@ function init(client) {
     }
   });
 
-  // 股價結算：每個整點跑，內部自己補齊漏掉的 tick（重啟不會斷檔）
-  cron.schedule('0 * * * *', () => {
-    for (const [gid] of client.guilds.cache) {
-      try { catchUp(gid); } catch (e) { logError(gid, '股市結算失敗：', e.message); }
+  // 股價結算。兩個刻意的選擇：
+  //  ① 每 5 分鐘檢查一次，不是每個整點才跑一次 —— catchUp 只有跨過整點才會真的結算，
+  //     所以這只是「檢查」。整點那一次萬一沒跑到（機器人正在重連、事件迴圈卡住…），
+  //     以前要等下一個整點才補，玩家整整一小時看到的都是舊價（實際發生過）。
+  //  ② 伺服器清單從資料庫拿，不是 client.guilds.cache —— 斷線重連期間快取可能是空的，
+  //     那一輪就會靜靜地什麼都不做。
+  cron.schedule('*/5 * * * *', () => {
+    for (const gid of activeGuildIds()) {
+      try {
+        const n = catchUp(gid);
+        if (n > 1) console.log(`  ↳ 股市補算了 ${n} 根 K 棒（${gid}）—— 之前有整點沒跑到`);
+      } catch (e) { logError(gid, '股市結算失敗：', e.message); }
     }
   }, { timezone: 'Asia/Taipei' });
 
   // 強制清算：每天早上 10 點檢查一次（負股價死當部位、超過持股上限）
   cron.schedule('0 10 * * *', () => {
-    for (const [gid] of client.guilds.cache) {
+    for (const gid of activeGuildIds()) {
       enforceHoldings(client, gid).catch(e => logError(gid, '股市強制清算失敗：', e.message));
     }
   }, { timezone: 'Asia/Taipei' });
 
   // 新聞生效與發布：每分鐘檢查一次
   cron.schedule('* * * * *', () => {
-    for (const [gid] of client.guilds.cache) {
+    for (const gid of activeGuildIds()) {
       try { applyNews(client, gid); } catch (e) { logError(gid, '新聞發布失敗：', e.message); }
     }
   }, { timezone: 'Asia/Taipei' });
