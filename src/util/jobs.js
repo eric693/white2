@@ -36,12 +36,26 @@ async function eachSlice(items, fn, { slice = SLICE_MS } = {}) {
 // 在同一時間佔住迴圈。這裡記下當下在跑哪個排程，卡頓時就直接指名。
 let current = null;
 
-/** 包住一個排程工作：標記名稱 → 執行 → 清掉。 */
+/**
+ * 包住一個排程工作：標記名稱 → 執行 → 清掉。
+ *
+ * 這裡吞掉例外是刻意的：node-cron 不會 await 回呼，所以排程裡漏出來的例外會變成
+ * unhandledRejection（在別的地方以無頭錯誤的樣子出現，看不出是哪個排程）。
+ * 排程工作該有的行為本來就是「這輪失敗就記一筆，下一輪再來」，
+ * 所以在這裡記下是哪個工作出事並往下走，不要讓它炸到外面。
+ * 各排程內部原本的 try/catch 仍然是主要路徑，這只是最後一道網。
+ */
 async function runJob(name, fn) {
   const prev = current;
   current = { name, at: Date.now() };
-  try { return await fn(); }
-  finally { current = prev; }
+  try {
+    return await fn();
+  } catch (e) {
+    try { require('../db').logError('', '排程工作失敗：', `${name} —— ${e && e.message ? e.message : e}`); } catch {}
+    return undefined;
+  } finally {
+    current = prev;
+  }
 }
 
 /** 卡頓偵測用：現在在跑哪個排程工作（沒有就回 null） */
