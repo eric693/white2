@@ -333,6 +333,8 @@ function init(client) {
       else i.reply(msg).catch(() => {});
     }
   });
+
+  console.log('  ↳ 素材兌換所已載入（每日一批素材換素材，預設關閉，後台開啟）');
 }
 
 module.exports = { init, todayOffers, doExchange, capOf, seedOffers };
