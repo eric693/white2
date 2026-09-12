@@ -2055,3 +2055,70 @@ CREATE TABLE IF NOT EXISTS spell_shares (
   expires_at INTEGER NOT NULL DEFAULT 0,  -- unix 秒；0 ＝ 不過期
   created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 );
+
+-- ============================================================
+-- 素材兌換所：每天開出幾個「素材換素材」的兌換選項，讓囤到爛掉的低價素材有出口。
+-- 花的是素材不是星幣（素材直接由系統回收），所以不會多印錢，只會減少囤積。
+-- 清單每天換一批（照權重抽），玩家每天都有理由回來看一眼。
+-- ============================================================
+CREATE TABLE IF NOT EXISTS exchange_config (
+  guild_id         TEXT PRIMARY KEY DEFAULT '',
+  enabled          INTEGER NOT NULL DEFAULT 0,
+  daily_slots      INTEGER NOT NULL DEFAULT 3,   -- 每天開出幾個兌換選項
+  daily_per_user   INTEGER NOT NULL DEFAULT 0,   -- 每人每日總兌換次數上限（0＝不限）
+  announce_channel TEXT NOT NULL DEFAULT ''      -- 每天換清單時公告的頻道（空＝不公告）
+);
+
+-- 兌換項目池。每天從 enabled=1 的項目裡照 weight 抽出 daily_slots 個。
+CREATE TABLE IF NOT EXISTS exchange_offers (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id     TEXT NOT NULL DEFAULT '',
+  name         TEXT NOT NULL DEFAULT '',       -- 留空＝自動用「素材×N → 素材×N」當標題
+  emoji        TEXT NOT NULL DEFAULT '',
+  cost_item_id INTEGER NOT NULL DEFAULT 0,     -- 要交出的素材（gather_items.id）
+  cost_count   INTEGER NOT NULL DEFAULT 1,
+  give_item_id INTEGER NOT NULL DEFAULT 0,     -- 換到的素材
+  give_count   INTEGER NOT NULL DEFAULT 1,
+  weight       INTEGER NOT NULL DEFAULT 100,   -- 每日抽中的相對權重
+  daily_limit  INTEGER NOT NULL DEFAULT 0,     -- 每人每日這一項最多換幾次（0＝不限）
+  description  TEXT NOT NULL DEFAULT '',
+  sort         INTEGER NOT NULL DEFAULT 0,
+  enabled      INTEGER NOT NULL DEFAULT 1
+);
+CREATE INDEX IF NOT EXISTS idx_exoffers ON exchange_offers(guild_id, enabled);
+
+-- 今天開出的清單（一天一組，台北時區的 YYYY-MM-DD）
+CREATE TABLE IF NOT EXISTS exchange_daily (
+  guild_id TEXT NOT NULL DEFAULT '',
+  day      TEXT NOT NULL DEFAULT '',
+  offer_id INTEGER NOT NULL,
+  slot     INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (guild_id, day, offer_id)
+);
+
+-- 每人每日的兌換次數（每日上限用；隔天自然歸零）
+CREATE TABLE IF NOT EXISTS exchange_uses (
+  guild_id TEXT NOT NULL DEFAULT '',
+  user_id  TEXT NOT NULL,
+  day      TEXT NOT NULL DEFAULT '',
+  offer_id INTEGER NOT NULL,
+  count    INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (guild_id, user_id, day, offer_id)
+);
+
+-- 兌換紀錄（後台看哪些素材真的被消耗掉了，用來調比例）
+CREATE TABLE IF NOT EXISTS exchange_logs (
+  id         INTEGER PRIMARY KEY AUTOINCREMENT,
+  guild_id   TEXT NOT NULL DEFAULT '',
+  user_id    TEXT NOT NULL,
+  username   TEXT NOT NULL DEFAULT '',
+  offer_id   INTEGER NOT NULL DEFAULT 0,
+  offer_name TEXT NOT NULL DEFAULT '',
+  cost_name  TEXT NOT NULL DEFAULT '',
+  cost_count INTEGER NOT NULL DEFAULT 0,      -- 這一筆實際交出的總數
+  give_name  TEXT NOT NULL DEFAULT '',
+  give_count INTEGER NOT NULL DEFAULT 0,      -- 這一筆實際拿到的總數
+  times      INTEGER NOT NULL DEFAULT 1,      -- 換了幾次
+  created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+CREATE INDEX IF NOT EXISTS idx_exlogs ON exchange_logs(guild_id, id DESC);

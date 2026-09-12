@@ -58,11 +58,11 @@ const TABS = {
   shop: {
     label: '商店', emoji: '🏪', color: 0xf1c40f,
     title: '🏪 商店街',
-    desc: '要花錢的都在這裡。買工具與體力、動物、種子、魚、家具、寵物，還有設施等級（擴充格數）。',
+    desc: '要花錢的都在這裡。買工具與體力、動物、種子、魚、家具、寵物，還有設施等級（擴充格數）。\n♻️ **素材兌換所**不花錢：用囤到爛的素材換你缺的，每天一批新清單。',
     rows: [
       [['adv:store', '一般商店', '🏪', ButtonStyle.Success], ['adv:ranchshop', '畜牧商店', '🛒', ButtonStyle.Success], ['adv:cropshop', '種子商店', '🌱', ButtonStyle.Success], ['adv:aqshop', '水族商店', '🐠', ButtonStyle.Success]],
       // 家具與寵物本來只能從「我的家」進去，玩家找不到 —— 直接放進商店街
-      [['adv:facility', '設施商店', '🏗️', ButtonStyle.Success], ['adv:furniture', '家具商店', '🛋️', ButtonStyle.Success], ['adv:pets', '寵物商店', '🐾', ButtonStyle.Success]]
+      [['adv:facility', '設施商店', '🏗️', ButtonStyle.Success], ['adv:furniture', '家具商店', '🛋️', ButtonStyle.Success], ['adv:pets', '寵物商店', '🐾', ButtonStyle.Success], ['adv:exchange', '素材兌換所', '♻️', ButtonStyle.Primary]]
     ]
   },
   money: {

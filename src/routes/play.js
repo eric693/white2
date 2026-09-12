@@ -153,6 +153,18 @@ function plantableList(gid, uid) {
       .map(x => ({ id: x.seed.id, name: x.seed.name, emoji: x.seed.emoji, have: x.have, type: x.seed.plot_type }));
   } catch { return []; }
 }
+// 素材兌換所今天開出的項目（附「這位玩家還能換幾次」）
+function exchangeOffers(gid, uid) {
+  try {
+    const ex = require('../bot/features/exchange');
+    if (!guildConfig('exchange_config', gid).enabled) return [];
+    return ex.todayOffers(gid).map(o => ({
+      id: o.id, title: o.title, emoji: o.emoji,
+      cap: ex.capOf(gid, uid, o).cap
+    }));
+  } catch { return []; }
+}
+
 // 神秘商店可兌換的商品
 function redeemItems(gid) {
   try { return db.prepare('SELECT id, name, emoji, price FROM special_items WHERE guild_id=? AND enabled=1 ORDER BY sort, price').all(gid); }
@@ -252,12 +264,17 @@ function render(d, token, msg, authed) {
     return `<form method="post" action="/play/${token}/${path}" class="mini"><select name="id">${options}</select>${qty}<button class="act sm">${btn}</button></form>`;
   };
   const tools = buyableTools(d.gid, d.uid), seeds = buyableSeeds(d.gid), plantable = plantableList(d.gid, d.uid), redeems = redeemItems(d.gid);
+  const exOffers = exchangeOffers(d.gid, d.uid);
 
   const actionsBody = `
     <div class="acts">${actBtn('feed', '🍤 一鍵餵魚')}${actBtn('sellbag', '🎒 一鍵賣光背包')}</div>
     <h3>❤️ 捐款慈善基金會（可折抵所得稅）</h3>${mini('donate', '捐款金額', '捐')}
     <h3>💳 貸款／還款</h3>${mini('repay', '還款金額', '還款')}${mini('credit', '信用貸款金額（免抵押）', '借')}${mini('loan', '物資貸款金額（用工具/作物/魚抵押）', '借')}
     <h3>🛒 神秘商店兌換</h3>${selForm('redeem', redeems, r => `<option value="${r.id}">${esc((r.emoji || '') + r.name)}｜${num(r.price)}</option>`, '兌換', true)}
+    <h3>♻️ 素材兌換所（今天這批）</h3>${exOffers.length
+      ? selForm('exchange', exOffers, o => `<option value="${o.id}">${esc((o.emoji || '') + o.title)}｜可換 ${o.cap} 次</option>`, '換', true)
+        + `<p class="muted">不花星幣，用背包裡的素材換。清單每天午夜換一批。</p>`
+      : `<p class="muted">今天沒有開出兌換項目（或兌換所還沒開啟）。</p>`}
     <h3>🛠️ 買工具</h3>${selForm('buytool', tools, t => `<option value="${t.id}">${esc((t.emoji || '') + t.name)}｜${num(t.price)}</option>`, '買', false)}
     <h3>🌱 買種子</h3>${selForm('buyseed', seeds, s => `<option value="${s.id}">${esc((s.emoji || '') + s.name)}｜${num(s.seed_price)}（${s.plot_type === 'greenhouse' ? '溫室' : '農地'}）</option>`, '買', true)}
     <h3>🌾 種植（種背包裡的種子）</h3>${selForm('plant', plantable, p => `<option value="${p.id}">${esc((p.emoji || '') + p.name)}｜有 ${p.have}（${p.type === 'greenhouse' ? '溫室' : '農地'}）</option>`, '種', true)}`;
@@ -601,6 +618,15 @@ router.post('/play/:token/plant', (req, res) => doAuthedAct(req, res, (gid, uid)
   const r = require('../bot/features/crops').plantSeeds(gid, uid, uname(gid, uid), id, qty);
   return r.error ? r.error : `🌾 種好了！等成熟就能一鍵採收。`;
 }));
+// 素材兌換所：純素材進出，不碰星幣也不需要 bot client → 同步版就夠
+router.post('/play/:token/exchange', (req, res) => doAuthedAct(req, res, (gid, uid) => {
+  const id = Math.floor(Number((req.body && req.body.id) || 0));
+  const qty = Math.max(1, Math.floor(Number((req.body && req.body.qty) || 1)));
+  if (!id) return '請先選一個兌換項目。';
+  const r = require('../bot/features/exchange').doExchange(gid, uid, uname(gid, uid), id, qty);
+  return r.error ? r.error : '♻️ 兌換完成！換到的素材已經進背包。';
+}));
+
 // 神秘商店兌換：需要 bot client 與伺服器成員（限定商店資格檢查、管理員通知）→ 用 async 版
 router.post('/play/:token/redeem', (req, res) => doAuthedActAsync(req, res, async (gid, uid) => {
   const id = Math.floor(Number((req.body && req.body.id) || 0));

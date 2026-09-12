@@ -694,6 +694,7 @@ const GUILD_TABLES = [
   'ranch_config', 'ranch_animals', 'ranch_slots', 'ranch_steal', 'ranch_steal_routes',
   'ranch_hatch_defs', 'ranch_incubator', 'ranch_unlocks',
   'special_config', 'special_items', 'special_redeems', 'special_shops',
+  'exchange_config', 'exchange_offers', 'exchange_daily', 'exchange_uses', 'exchange_logs',
   'crop_config', 'crop_seeds', 'crop_plots', 'crop_unlocks', 'role_skills',
   'aquarium_config', 'aquarium_fish', 'aquarium_slots', 'aquarium_steal', 'aquarium_unlocks',
   'charity_config', 'charity_donations', 'charity_payouts',
@@ -808,7 +809,7 @@ function guildConfig(table, guildId) {
 }
 
 // 新伺服器加入時，確保 8 張設定表各有一筆
-const SETTING_TABLES = ['warn_config', 'welcome_config', 'birthday_config', 'verify_config', 'music_config', 'xp_config', 'ticket_config', 'forum_config', 'gather_config', 'ranch_config', 'special_config', 'crop_config', 'aquarium_config', 'tax_config', 'charity_config', 'loan_config', 'spell_config'];
+const SETTING_TABLES = ['warn_config', 'welcome_config', 'birthday_config', 'verify_config', 'music_config', 'xp_config', 'ticket_config', 'forum_config', 'gather_config', 'ranch_config', 'special_config', 'crop_config', 'aquarium_config', 'tax_config', 'charity_config', 'loan_config', 'spell_config', 'exchange_config'];
 function ensureGuild(guildId, name, icon) {
   if (!guildId) return;
   db.prepare('INSERT INTO guilds (guild_id, name, icon, active) VALUES (?, ?, ?, 1) ON CONFLICT(guild_id) DO UPDATE SET name=excluded.name, icon=excluded.icon, active=1')

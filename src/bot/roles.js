@@ -18,7 +18,7 @@ const SECRETARY_FEATURES = [
 const BUTLER_FEATURES = [
   'gather', 'facility', 'ranch', 'aquarium', 'special', 'trades', 'crops', 'stock',
   'tax', 'charity', 'auction', 'contest', 'loans', 'home', 'furniture', 'kitchen',
-  'dex', 'pets', 'affinity', 'partnerskills', 'bank', 'help', 'panel'
+  'dex', 'pets', 'affinity', 'partnerskills', 'bank', 'help', 'panel', 'exchange'
 ];
 
 // 目前行程扮演的角色（.env 的 BOT_ROLE）
@@ -65,7 +65,7 @@ function ownsCommand(name, role = botRole()) {
 const BUTLER_COMPONENT_PREFIXES = new Set([
   "achall", "achback", "adv", "amount", "aqbuyone", "aqbuyqty", "aqdeposit", "aqsell",
   "aucbid", "aucbuy", "aucmodal", "bagall", "bagmove", "bagset", "bank", "chr",
-  "contestme", "craftcat", "craftpick", "dexcat", "facbuy", "furnbuy", "furncash", "furncat",
+  "contestme", "craftcat", "exch", "exqty", "craftpick", "dexcat", "facbuy", "furnbuy", "furncash", "furncat",
   "furnplace", "furnqty", "furnsell", "furnstore", "gathermap", "giftnoop", "giftpage", "giftpanel",
   "giftpick", "giftqty", "giftwho", "hatchput", "hatchqty", "hatchsell", "hatchsellall", "homebuy",
   "homebuyok", "homecard", "homecheck", "homenav", "homeup", "kbuild", "kbuy", "kbuyok",
@@ -116,6 +116,8 @@ const COMMAND_FEATURE = {
   '捐款': 'charity', '基金會': 'charity', '拍賣': 'auction',
   '銀行': 'loans', '信用貸款': 'loans', '還款': 'loans',
   '特殊商店': 'special', '兌換': 'special',
+  // 素材兌換所吃的是採集素材，沒有另開訂閱功能鍵 —— 有冒險系統就有兌換所
+  '兌換所': 'gather',
   '世界動態': 'stock', '行情': 'stock', '股市': 'stock', '個股': 'stock', '買股': 'stock', '賣股': 'stock',
   '持股': 'stock', '股神榜': 'stock'
 };
@@ -147,7 +149,8 @@ const PANEL_FEATURE = {
   dex: 'dex', titles: 'dex',
   // 金錢線
   tax: 'tax', charity: 'charity', auction: 'auction', bank: 'loans', loan: 'loans',
-  trade: 'trades', shop: 'special', facility: 'facility', contest: 'contest'
+  trade: 'trades', shop: 'special', facility: 'facility', contest: 'contest',
+  exchange: 'gather'
 };
 
 const COMPONENT_PREFIX_FEATURE = {
@@ -182,6 +185,7 @@ const COMPONENT_PREFIX_FEATURE = {
   loan: 'loans', bank: 'loans',
   trade: 'trades', tradeuser: 'trades', tg: 'trades', tgq: 'trades', tw: 'trades', twq: 'trades',
   sredeem: 'special', sqty: 'special', shopgiftqty: 'special', smylog: 'special',
+  exch: 'gather', exqty: 'gather',
   facbuy: 'facility', contestme: 'contest'
 };
 

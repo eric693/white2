@@ -162,6 +162,7 @@ app.use('/api', require('./routes/ranch'));
 app.use('/api', require('./routes/crops'));
 app.use('/api', require('./routes/aquarium'));
 app.use('/api', require('./routes/special'));
+app.use('/api', require('./routes/exchange'));
 app.use('/api', require('./routes/stock'));
 app.use('/api', require('./routes/tax'));
 app.use('/api', require('./routes/charity'));

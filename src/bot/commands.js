@@ -239,6 +239,9 @@ const builders = [
     .addStringOption(o => o.setName('商品').setDescription('要兌換的獎勵名稱（用 /特殊商店 查看）').setRequired(true))
     .addIntegerOption(o => o.setName('數量').setDescription('要兌換幾份（不填＝1）').setMinValue(1).setMaxValue(25)),
 
+  // ---- 素材兌換所 ----
+  new SlashCommandBuilder().setName('兌換所').setDescription('素材兌換所：用囤著沒用的素材換你缺的（每天一批新清單）'),
+
   // ---- 世界動態 ＋ 星幣股市（後台預設關閉，開啟後才會有作用）----
   new SlashCommandBuilder().setName('世界動態').setDescription('官方公告、城市、NPC、角色、財經、活動…全世界的消息'),
   new SlashCommandBuilder().setName('行情').setDescription('查看目前的物價行情（哪些東西賣得比較貴）'),
@@ -270,7 +273,7 @@ const GAME_COMMANDS = new Set([
   '我的家', '升級家園', '家園卡', '簽到', '家園網頁', '家具', '廚房', '烹飪', '寵物', '寵物改名',
   '成就', '送禮', '邀請', '好感度', '設施商店', '稅單', '捐款', '基金會', '拍賣',
   '銀行', '信用貸款', '還款', '幫助', '冒險面板',
-  '種子商店', '種植', '農地', '溫室', '採收', '特殊商店', '兌換',
+  '種子商店', '種植', '農地', '溫室', '採收', '特殊商店', '兌換', '兌換所',
   '世界動態', '行情', '股市', '個股', '買股', '賣股', '持股', '股神榜'
 ]);
 const GAME_PREFIX = '【遊戲】';

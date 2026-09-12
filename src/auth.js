@@ -38,6 +38,7 @@ const MODULES = [
   { key: 'aquarium',     label: '魚缸',              group: '遊戲區' },
   { key: 'crops',        label: '農地溫室',          group: '遊戲區' },
   { key: 'special',      label: '特殊商店',          group: '遊戲區' },
+  { key: 'exchange',     label: '素材兌換所',        group: '遊戲區' },
   { key: 'tax',          label: '稅金',              group: '遊戲區' },
   { key: 'charity',      label: '基金會',            group: '遊戲區' },
   { key: 'loans',        label: '物資貸款',          group: '遊戲區' },
