@@ -465,9 +465,14 @@ setInterval(() => {
   lastTick = now;
   if (lag > peakLag) peakLag = lag;
   if (lag >= LAG_WARN) {
-    const busy = [...inFlight.values()].map(x => x.what).slice(0, 5).join('、') || '（沒有進行中的互動，可能是排程工作）';
+    // 以前只記「當下處理中的互動」，但那些是**被卡住的受害者**不是元凶 ——
+    // 記錄看起來像 /種植 很慢，其實是別的排程在同一時間佔住迴圈。
+    // 現在先問 util/jobs 現在在跑哪個排程，指名了才查得下去。
+    const job = require('../util/jobs').currentJob();
+    const busy = [...inFlight.values()].map(x => x.what).slice(0, 5).join('、') || '（沒有）';
     try {
-      require('../db').logError('', '機器人卡頓：', `event loop 停了 ${lag}ms，當下處理中的互動：${busy}`);
+      require('../db').logError('', '機器人卡頓：',
+        `event loop 停了 ${lag}ms｜正在跑的排程：${job || '（沒有排程在跑）'}｜被卡住的互動：${busy}`);
     } catch {}
   }
 }, LAG_TICK).unref?.();

@@ -99,26 +99,35 @@ function accrue(gid, uid) {
   const alive = []; const died = [];
   // 魚缸等級的「產量加成」：升級不只多格子，產出的星幣也變多
   const yieldPct = facilityBonus(gid, uid, 'aquarium').yield || 0;
-  for (const s of rows) {
-    const f = fishById(gid, s.fish_id);
-    if (!f) { del.run(gid, uid, s.slot); continue; }
-    const fed = s.fed_until_ms || 0;
-    if (now - fed > Math.max(1, c.starve_hours) * H) { del.run(gid, uid, s.slot); died.push(f); continue; }
-    const from = s.last_produce_ms || now;
-    const to = Math.min(now, fed);
-    if (to > from) {
-      const cap = Math.max(1, Math.floor(f.coin_per_day * (1 + yieldPct / 100))) * Math.max(1, c.max_accrue_days);
-      const perDay = Math.floor(Math.max(0, f.coin_per_day) * (1 + yieldPct / 100));
-      const earned = Math.floor((to - from) * perDay / 86400000);
-      const pending = Math.min(cap, s.pending + earned);
-      // 產滿上限就停產（跟牧場一樣，逼玩家回來領），時間指標推到已結算的位置
-      s.pending = pending;
+  // 跟牧場 accrue 同樣的兩個問題：魚種只有幾十種卻每格查一次（N+1），
+  // 而且每格一次裸 UPDATE＝每格一次獨立提交。快取＋包成一個交易。
+  const fishCache = new Map();
+  const fishOf = (id) => {
+    if (!fishCache.has(id)) fishCache.set(id, fishById(gid, id));
+    return fishCache.get(id);
+  };
+  db.transaction(() => {
+    for (const s of rows) {
+      const f = fishOf(s.fish_id);
+      if (!f) { del.run(gid, uid, s.slot); continue; }
+      const fed = s.fed_until_ms || 0;
+      if (now - fed > Math.max(1, c.starve_hours) * H) { del.run(gid, uid, s.slot); died.push(f); continue; }
+      const from = s.last_produce_ms || now;
+      const to = Math.min(now, fed);
+      if (to > from) {
+        const cap = Math.max(1, Math.floor(f.coin_per_day * (1 + yieldPct / 100))) * Math.max(1, c.max_accrue_days);
+        const perDay = Math.floor(Math.max(0, f.coin_per_day) * (1 + yieldPct / 100));
+        const earned = Math.floor((to - from) * perDay / 86400000);
+        const pending = Math.min(cap, s.pending + earned);
+        // 產滿上限就停產（跟牧場一樣，逼玩家回來領），時間指標推到已結算的位置
+        s.pending = pending;
+      }
+      // 餓肚子的時間不能事後補領：指標直接推到現在
+      s.last_produce_ms = now > fed ? now : Math.max(from, to);
+      upd.run(s.pending, s.last_produce_ms, gid, uid, s.slot);
+      alive.push(s);
     }
-    // 餓肚子的時間不能事後補領：指標直接推到現在
-    s.last_produce_ms = now > fed ? now : Math.max(from, to);
-    upd.run(s.pending, s.last_produce_ms, gid, uid, s.slot);
-    alive.push(s);
-  }
+  })();
   return { slots: alive, died };
 }
 

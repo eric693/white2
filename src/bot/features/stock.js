@@ -15,6 +15,7 @@ const logCoins = (...a) => require('./gather').logCoins(...a);
 const cron = require('node-cron');
 const { db, guildConfig, logError, activeGuildIds } = require('../../db');
 const { brandColor } = require('../../util/brand');
+const { eachSlice, runJob } = require('../../util/jobs');
 const { activeModifiers, SCOPE_LABEL, bust, normMultPct } = require('../../util/market');
 const { localToday } = require('../../util/time');
 
@@ -1118,13 +1119,13 @@ function init(client) {
   //     以前要等下一個整點才補，玩家整整一小時看到的都是舊價（實際發生過）。
   //  ② 伺服器清單從資料庫拿，不是 client.guilds.cache —— 斷線重連期間快取可能是空的，
   //     那一輪就會靜靜地什麼都不做。
-  cron.schedule('*/5 * * * *', () => {
-    for (const gid of activeGuildIds()) {
+  cron.schedule('*/5 * * * *', async () => {
+    await runJob('股市結算', () => eachSlice(activeGuildIds(), (gid) => {
       try {
         const n = catchUp(gid);
         if (n > 1) console.log(`  ↳ 股市補算了 ${n} 根 K 棒（${gid}）—— 之前有整點沒跑到`);
       } catch (e) { logError(gid, '股市結算失敗：', e.message); }
-    }
+    }));
   }, { timezone: 'Asia/Taipei' });
 
   // 強制清算：每天早上 10 點檢查一次（負股價死當部位、超過持股上限）
@@ -1135,10 +1136,10 @@ function init(client) {
   }, { timezone: 'Asia/Taipei' });
 
   // 新聞生效與發布：每分鐘檢查一次
-  cron.schedule('* * * * *', () => {
-    for (const gid of activeGuildIds()) {
+  cron.schedule('* * * * *', async () => {
+    await runJob('股市新聞發布', () => eachSlice(activeGuildIds(), (gid) => {
       try { applyNews(client, gid); } catch (e) { logError(gid, '新聞發布失敗：', e.message); }
-    }
+    }));
   }, { timezone: 'Asia/Taipei' });
 
   console.log('  ↳ 世界動態／星幣股市模組已載入（預設關閉，後台開啟）');

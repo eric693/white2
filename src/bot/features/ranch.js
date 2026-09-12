@@ -32,6 +32,7 @@ const csv = (s) => String(s || '').split(/[\n,]/).map(x => x.trim()).filter(Bool
 const money = (c, n) => `${c.currency_emoji || '🪙'} ${Number(n).toLocaleString('en-US')} ${c.currency_name || '星幣'}`;
 // 台北時區的今天。一律走 util/time，全站同一個時區來源。
 const { localToday } = require('../../util/time');
+const { eachSlice, runJob } = require('../../util/jobs');
 const today = () => localToday();
 const dayDiff = (a, b) => Math.round((Date.parse(b + 'T00:00:00Z') - Date.parse(a + 'T00:00:00Z')) / 86400000);
 
@@ -135,26 +136,38 @@ function accrue(gid, uid) {
   const yieldPct = fb.yield || 0;                          // 牧場等級 → 每次產出的量變多
   const slots = db.prepare('SELECT * FROM ranch_slots WHERE guild_id=? AND user_id=?').all(gid, uid);
   const upd = db.prepare('UPDATE ranch_slots SET pending=?, last_produce_ms=? WHERE guild_id=? AND user_id=? AND slot=?');
-  for (const s of slots) {
-    const a = animalById(gid, s.animal_id);
-    if (!a || a.guard_pct > 0) continue;                 // 看門動物不生產
-    if (!s.last_produce_ms) { upd.run(s.pending, now, gid, uid, s.slot); s.last_produce_ms = now; continue; }
-    const iv = applySpeed(intervalMs(a), speed);
-    const units = Math.floor((now - s.last_produce_ms) / iv);
-    if (units <= 0) continue;
-    // 產量加成：小數的部分用機率補一個，長期期望值剛好等於加成％。
-    // （舊寫法是 floor(units × 倍率)，units 通常是 1 → floor(1.35)=1，加成等於完全沒作用）
-    const rawGain = units * (1 + yieldPct / 100);
-    const gained = Math.max(units, Math.floor(rawGain) + (Math.random() < (rawGain % 1) ? 1 : 0));
-    // 上限也要先乘天數再套加成再取整，否則 floor(2 × 1.35)=2 跟沒加成一樣
-    const cap = Math.max(1, Math.floor(a.produce_per_day * Math.max(1, c.max_accrue_days) * (1 + yieldPct / 100)));
-    const pending = Math.min(cap, s.pending + gained);
-    const added = pending - s.pending;
-    // 未滿：時間往前推 added 個間隔（餘數保留）；已滿：計時暫停到現在，收成後才重新開始
-    const nextMs = pending >= cap ? now : s.last_produce_ms + units * iv;
-    upd.run(pending, nextMs, gid, uid, s.slot);
-    s.pending = pending; s.last_produce_ms = nextMs;
-  }
+  // 動物種類只有幾十種，格子卻可能有上千格 —— 每一格都回資料庫查一次同一隻動物
+  // 是白費的（N+1）。先快取起來，整個迴圈只查每種動物一次。
+  const animalCache = new Map();
+  const animalOf = (id) => {
+    if (!animalCache.has(id)) animalCache.set(id, animalById(gid, id));
+    return animalCache.get(id);
+  };
+  // 整批更新包成一個交易：沒包的話 1300 格就是 1300 次獨立提交，每次都要寫 WAL、
+  // 等 fsync —— 實測一位 1300 格的玩家光這裡就佔住 event loop 約 147ms，
+  // 而這段在 /收成、/牧場 與每 5 分鐘的排程都會跑到。
+  db.transaction(() => {
+    for (const s of slots) {
+      const a = animalOf(s.animal_id);
+      if (!a || a.guard_pct > 0) continue;                 // 看門動物不生產
+      if (!s.last_produce_ms) { upd.run(s.pending, now, gid, uid, s.slot); s.last_produce_ms = now; continue; }
+      const iv = applySpeed(intervalMs(a), speed);
+      const units = Math.floor((now - s.last_produce_ms) / iv);
+      if (units <= 0) continue;
+      // 產量加成：小數的部分用機率補一個，長期期望值剛好等於加成％。
+      // （舊寫法是 floor(units × 倍率)，units 通常是 1 → floor(1.35)=1，加成等於完全沒作用）
+      const rawGain = units * (1 + yieldPct / 100);
+      const gained = Math.max(units, Math.floor(rawGain) + (Math.random() < (rawGain % 1) ? 1 : 0));
+      // 上限也要先乘天數再套加成再取整，否則 floor(2 × 1.35)=2 跟沒加成一樣
+      const cap = Math.max(1, Math.floor(a.produce_per_day * Math.max(1, c.max_accrue_days) * (1 + yieldPct / 100)));
+      const pending = Math.min(cap, s.pending + gained);
+      const added = pending - s.pending;
+      // 未滿：時間往前推 added 個間隔（餘數保留）；已滿：計時暫停到現在，收成後才重新開始
+      const nextMs = pending >= cap ? now : s.last_produce_ms + units * iv;
+      upd.run(pending, nextMs, gid, uid, s.slot);
+      s.pending = pending; s.last_produce_ms = nextMs;
+    }
+  })();
   return slots;
 }
 // 某格下一單位成熟的 unix 毫秒（已滿或看門回 0）
@@ -361,8 +374,8 @@ function init(client) {
   // 每天早上 8:30 讓「會幫忙收成」的同居角色代收一次
   // 伺服器清單走資料庫：斷線重連的當下 client.guilds.cache 可能是空的，
   // 這種一天只跑一次的排程剛好撞上就整天沒收成（股市也踩過同一個坑）。
-  cron.schedule('30 8 * * *', () => {
-    for (const gid of activeGuildIds()) {
+  cron.schedule('30 8 * * *', async () => {
+    await runJob('牧場同居協助收成', () => eachSlice(activeGuildIds(), (gid) => {
       try {
         for (const r of partnerHarvest(gid)) {
           client.users.fetch(r.user_id).then(u => u.send(
@@ -372,7 +385,7 @@ function init(client) {
           )).catch(() => {});
         }
       } catch (e) { logError(gid, '同居協助收成排程失敗：', e.message); }
-    }
+    }));
   }, { timezone: 'Asia/Taipei' });
 
   for (const [gid] of client.guilds.cache) {

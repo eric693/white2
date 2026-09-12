@@ -15,6 +15,7 @@ const cron = require('node-cron');
 const { EmbedBuilder } = require('discord.js');
 const { db, guildConfig, logError, activeGuildIds } = require('../../db');
 const { brandColor } = require('../../util/brand');
+const { eachSlice, runJob } = require('../../util/jobs');
 
 const gcfg = (gid) => guildConfig('gather_config', gid);
 const today = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);   // 台北時區的今天
@@ -646,8 +647,15 @@ function workCountToday(gid, uid) {
       WHERE guild_id=? AND user_id=? AND date(created_at)=date('now','localtime')`).get(gid, uid).n;
 }
 
-/** 整個伺服器跑一次結算。mode='daily' 每日配給類；mode='hourly' 收成類。 */
-function runDaily(gid, mode = 'daily') {
+/**
+ * 整個伺服器跑一次結算。mode='daily' 每日配給類；mode='hourly' 收成類。
+ *
+ * 改成 async 是為了「切片執行」：以前是一個同步 for 迴圈把所有玩家跑完，
+ * 實測即使一件事都沒做也要佔住 event loop 100～540ms，真的有事做時更久。
+ * 這段期間 Discord 的心跳與互動全部排不進來，玩家就看到「應用程式沒有回應」。
+ * 現在每做滿一個切片就讓出一次迴圈（見 util/jobs.js），總時間幾乎不變。
+ */
+async function runDaily(gid, mode = 'daily') {
   const day = today();
   const rows = db.prepare(
     `SELECT p.*, r.name AS role_name, a.level, w.username AS user_name
@@ -659,14 +667,16 @@ function runDaily(gid, mode = 'daily') {
     + (mode === 'daily' ? ' AND p.last_run <> ?' : '')   // 收成類每輪都要能跑，不受今天已結算影響
   ).all(...(mode === 'daily' ? [gid, day] : [gid]));
   const out = [];
-  for (const p of rows) {
+  // 切片處理：每位玩家一個單位，做滿一個切片就讓出 event loop
+  // （回呼裡原本的 continue 因此改成 return —— 效果一樣是「跳過這一位」）
+  await eachSlice(rows, (p) => {
     try {
       const skill = skillById(gid, p.skill_id);
-      if (!skill || !skill.enabled) continue;
+      if (!skill || !skill.enabled) return;
       const isHourly = HOURLY_SKILLS.has(skill.code);
-      if (mode === 'hourly' ? !isHourly : isHourly) continue;   // 只跑這一輪該跑的
+      if (mode === 'hourly' ? !isHourly : isHourly) return;   // 只跑這一輪該跑的
       // 已經派在同一區＝等一下工作區域那段會跑完整流程，這裡跳過免得做兩次
-      if (mode === 'hourly' && p.work_area && FULL_AREA_OF_CODE[skill.code] === p.work_area) continue;
+      if (mode === 'hourly' && p.work_area && FULL_AREA_OF_CODE[skill.code] === p.work_area) return;
       // 每日配給類要記 last_run 免得同一天重複領；收成類本身就自帶上限，不用擋
       if (mode === 'daily') {
         db.prepare('UPDATE home_partners SET last_run=? WHERE guild_id=? AND user_id=? AND role_id=?')
@@ -678,7 +688,7 @@ function runDaily(gid, mode = 'daily') {
         logWork(gid, p.user_id, p.role_name, skill.name, lines);
       }
     } catch (e) { logError(gid, `同居能力執行失敗（${p.user_id}）：`, e.message); }
-  }
+  });
 
   // ---- 工作區域（規格 5）----
   // 跟「能力」是兩條獨立的線：能力由管理端指定、一位角色一個；
@@ -691,7 +701,8 @@ function runDaily(gid, mode = 'daily') {
          JOIN wheel_roles r ON r.id = p.role_id
          LEFT JOIN econ_wallets w ON w.guild_id=p.guild_id AND w.user_id=p.user_id
         WHERE p.guild_id=? AND p.work_area <> ''`).all(gid);
-    for (const p of areas) {
+    // 一樣切片：一位角色一個單位（runArea 是整區完整流程，最重的就在這裡）
+    await eachSlice(areas, (p) => {
       try {
         // 能力對不上就直接罷工：後台把他的能力改成別的（或本來就不是這一區的能力）時，
         // 這個人不做事，也不會偷偷幫你顧 —— 面板與明細都看得到「罷工中」。
@@ -706,7 +717,7 @@ function runDaily(gid, mode = 'daily') {
             logWork(gid, p.user_id, p.role_name, (WORK_AREAS[p.work_area] || {}).name || p.work_area,
               [`🚫 罷工中：他的能力是「${sk ? sk.name : '（沒有能力）'}」，顧不了這一區`]);
           }
-          continue;
+          return;
         }
         const lines = runArea(gid, p.user_id, p.user_name || '', p.work_area);
         if (lines.length) {
@@ -715,7 +726,7 @@ function runDaily(gid, mode = 'daily') {
           logWork(gid, p.user_id, p.role_name, job, lines);
         }
       } catch (e) { logError(gid, `工作區域執行失敗（${p.user_id}／${p.work_area}）：`, e.message); }
-    }
+    });
   }
   return out;
 }
@@ -729,7 +740,7 @@ function init(client) {
   cron.schedule('40 8 * * *', async () => {
     for (const gid of activeGuildIds()) {
       try {
-        const done = runDaily(gid);
+        const done = await runJob('同居能力每日結算', () => runDaily(gid));
         if (!done.length) continue;
         const gc = gcfg(gid);
         // 結算結果只私訊本人：以前是公開發在頻道又 tag 人，等於把每個人的
@@ -748,15 +759,18 @@ function init(client) {
   // 收成／照顧類每 5 分鐘跑一次，等於全天不間斷工作：成熟就收、收完就補種，
   // 田不會空著。這些動作都自帶上限（沒成熟收不到、沒空格種不了、魚飽了不餵），
   // 重複跑是安全的。一樣不發通知（會洗版），東西直接進背包／錢包。
+  // busy 這道閘現在更重要：runDaily 會讓出 event loop，所以下一次 cron 有機會
+  // 在上一輪還沒跑完時就觸發。沒擋的話兩輪會交錯著改同一批資料。
   let busy = false;
-  cron.schedule('*/5 * * * *', () => {
+  cron.schedule('*/5 * * * *', async () => {
     if (busy) return;          // 上一輪還沒跑完就跳過這一輪，不讓結算疊在一起
     busy = true;
     try {
-      for (const gid of activeGuildIds()) {
-        try { runDaily(gid, 'hourly'); }
+      // 伺服器之間也用切片跑：五個伺服器接著跑完一樣是一大段同步工作
+      await runJob('同居能力收成結算', () => eachSlice(activeGuildIds(), async (gid) => {
+        try { await runDaily(gid, 'hourly'); }
         catch (e) { logError(gid, '同居能力收成結算失敗：', e.message); }
-      }
+      }));
     } finally { busy = false; }
   }, { timezone: 'Asia/Taipei' });
 

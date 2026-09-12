@@ -10,6 +10,7 @@ const cron = require('node-cron');
 const { db, guildConfig, activeGuildIds, logError } = require('../../db');
 const { brandColor } = require('../../util/brand');
 const { livePrice } = require('../../util/market');
+const { eachSlice, runJob } = require('../../util/jobs');
 
 const cfg = (gid) => guildConfig('loan_config', gid);
 const gcfg = (gid) => guildConfig('gather_config', gid);
@@ -515,10 +516,10 @@ function init(client) {
 
   // 每 10 分鐘掃一次到期未還的貸款
   cron.schedule('*/10 * * * *', async () => {
-    for (const gid of activeGuildIds()) {
+    await runJob('貸款到期處理', () => eachSlice(activeGuildIds(), async (gid) => {
       try { await sweepOverdue(client, gid); }
       catch (e) { logError(gid, '貸款到期處理失敗：', e && e.stack ? e.stack : e); }
-    }
+    }));
   }, { timezone: 'Asia/Taipei' });
 
   client._sweepLoans = (gid) => sweepOverdue(client, gid);

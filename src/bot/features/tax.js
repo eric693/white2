@@ -19,6 +19,7 @@ const { nameOf } = require('../../util/names');
 const cron = require('node-cron');
 const { db, guildConfig, activeGuildIds, logError } = require('../../db');
 const { brandColor } = require('../../util/brand');
+const { eachSlice, runJob } = require('../../util/jobs');
 const { parts, localToday } = require('../../util/time');
 const { livePrice } = require('../../util/market');
 
@@ -539,12 +540,15 @@ async function runGuild(client, gid, { force = false, dryRun = false } = {}) {
   const wallets = db.prepare('SELECT user_id FROM econ_wallets WHERE guild_id=?').all(gid);
   const guild = client && client.guilds ? client.guilds.cache.get(gid) : null;
   const bills = [];
-  for (const { user_id } of wallets) {
-    if (isExempt(gid, user_id, guild && guild.members.cache.get(user_id))) continue;   // 免稅名單直接跳過
+  // 試算（唯讀）跑遍全伺服器的錢包，是這裡最長的一段同步工作 —— 切片讓步。
+  // 注意只切「試算」這段：底下真正扣錢的 db.transaction 不能中途讓步，
+  // 那會讓寫入鎖一直被抓著，其他行程全部卡在那裡等，反而更糟。
+  await eachSlice(wallets, ({ user_id }) => {
+    if (isExempt(gid, user_id, guild && guild.members.cache.get(user_id))) return;   // 免稅名單直接跳過
     const a = assess(gid, user_id);
-    if (!a || a.total < Math.max(1, c.min_total || 1)) continue;
+    if (!a || a.total < Math.max(1, c.min_total || 1)) return;
     bills.push({ userId: user_id, ...a });
-  }
+  });
 
   if (!dryRun) {
     const pay = db.transaction(() => {
@@ -901,11 +905,13 @@ function init(client) {
   });
 
   // 每分鐘檢查一次，由各伺服器自己的 period/dow/run_time 決定要不要課（多伺服器各自獨立）
+  // 每分鐘只是「檢查」，但輪到結算的那一分鐘要跑遍全伺服器的錢包，是最重的一段。
+  // 用 eachSlice 讓伺服器之間會讓出 event loop，避免整個機器人停住幾秒（見 util/jobs.js）。
   cron.schedule('* * * * *', async () => {
-    for (const gid of activeGuildIds()) {
+    await runJob('稅金結算', () => eachSlice(activeGuildIds(), async (gid) => {
       try { await runGuild(client, gid); }
       catch (e) { logError(gid, '稅金結算失敗：', e && e.stack ? e.stack : e); }
-    }
+    }));
   }, { timezone: 'Asia/Taipei' });
 
   client._runTax = (gid, opts) => runGuild(client, gid, opts);
