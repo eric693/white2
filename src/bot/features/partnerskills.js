@@ -348,7 +348,10 @@ function autoIncubate(gid, uid) {
       WHERE d.guild_id=? AND d.enabled=1 AND v.user_id=? AND v.count > 0`).all(gid, uid);
   const lines = [];
   for (const e of eggs) {
-    const r = hatchEgg(gid, uid, '', e.id, e.count);
+    // hatchEgg 的第 4 個參數是「蛋的物品 id」、第 6 個才是「孵化設定 id」。
+    // 以前這裡把 d.id（設定 id）塞在物品 id 的位置，於是 hatchList 找不到對應的蛋
+    // （或更糟：撞到另一種蛋的 item_id），一律回「這顆蛋現在不能孵化」→ 自動放蛋從來沒成功過。
+    const r = hatchEgg(gid, uid, '', e.egg_item_id, e.count, e.id);
     if (r && r.error) continue;
     lines.push(`${e.egg_emoji || '🥚'}${e.egg_name} ×${e.count}`);
   }
@@ -453,8 +456,10 @@ function runArea(gid, uid, uname, area) {
       push(tendKitchen(gid, uid, uname), '');
       break;
     case 'hatchery':
-      push(autoIncubate(gid, uid), '放蛋 ');
+      // 先領走孵好的再放新蛋：反過來的話孵化室一滿就整輪都放不進去，
+      // 等於格子永遠卡著，玩家看起來就是「孵化室不會自己放蛋」。
       push(collectHatched(gid, uid, uname), '領取 ');
+      push(autoIncubate(gid, uid), '放蛋 ');
       break;
     case 'aquarium': {
       const { feedAll, accrue } = require('./aquarium');
