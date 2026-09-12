@@ -93,7 +93,6 @@ function freeSlot(gid, uid, max) {
 function accrue(gid, uid) {
   const c = acfg(gid);
   const now = Date.now();
-  const rows = slotsOf(gid, uid);
   const upd = db.prepare('UPDATE aquarium_slots SET pending=?, last_produce_ms=? WHERE guild_id=? AND user_id=? AND slot=?');
   const del = db.prepare('DELETE FROM aquarium_slots WHERE guild_id=? AND user_id=? AND slot=?');
   const alive = []; const died = [];
@@ -107,6 +106,8 @@ function accrue(gid, uid) {
     return fishCache.get(id);
   };
   db.transaction(() => {
+    // 同牧場：last_produce_ms 的讀取也要在交易裡，否則兩個行程會把同一段時間算兩次
+    const rows = slotsOf(gid, uid);
     for (const s of rows) {
       const f = fishOf(s.fish_id);
       if (!f) { del.run(gid, uid, s.slot); continue; }
@@ -329,15 +330,19 @@ function feedAll(gid, uid, uname) {
 // 撈金：把缸裡累積的星幣領進錢包
 function collect(gid, uid, uname) {
   const gc = gcfg(gid);
-  const { slots, died } = accrue(gid, uid);
-  const total = slots.reduce((a, s) => a + s.pending, 0);
-  if (total <= 0) {
-    return { error: (died.length ? `💀 ${died.map(f => (f.emoji || '') + f.name).join('、')} 餓死了…\n` : '') + '魚缸裡還沒有可以領的星幣，魚兒們還在努力。' };
-  }
+  const { died } = accrue(gid, uid);
+  // 加總與歸零要在同一個交易裡：同居角色的排程也會領同一個魚缸，
+  // 在交易外加總的話兩邊會各自把同一筆 pending 發一次（重複給錢）。
+  let total = 0;
   db.transaction(() => {
+    total = db.prepare('SELECT COALESCE(SUM(pending),0) n FROM aquarium_slots WHERE guild_id=? AND user_id=?').get(gid, uid).n;
+    if (total <= 0) return;
     db.prepare('UPDATE aquarium_slots SET pending=0 WHERE guild_id=? AND user_id=?').run(gid, uid);
     addCoins(gid, uid, uname, total, '魚缸收成', '');
   })();
+  if (total <= 0) {
+    return { error: (died.length ? `💀 ${died.map(f => (f.emoji || '') + f.name).join('、')} 餓死了…\n` : '') + '魚缸裡還沒有可以領的星幣，魚兒們還在努力。' };
+  }
   return { embed: new EmbedBuilder().setColor(brandColor()).setTitle('🪙 撈金成功')
     .setDescription(`從魚缸領走 **${money(gc, total)}**。` + (died.length ? `\n\n💀 不過 ${died.map(f => (f.emoji || '') + f.name).join('、')} 餓死了…` : ''))
     .setFooter({ text: `餘額 ${wallet(gid, uid, uname).coins.toLocaleString('en-US')} ${gc.currency_name}` }) };

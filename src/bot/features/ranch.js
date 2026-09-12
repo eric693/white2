@@ -134,8 +134,8 @@ function accrue(gid, uid) {
   const fb = facilityBonus(gid, uid, 'ranch');
   const speed = speedFor(gid, uid, 'ranch');               // 牧場等級＋家園加成 → 產出時間縮短 %
   const yieldPct = fb.yield || 0;                          // 牧場等級 → 每次產出的量變多
-  const slots = db.prepare('SELECT * FROM ranch_slots WHERE guild_id=? AND user_id=?').all(gid, uid);
   const upd = db.prepare('UPDATE ranch_slots SET pending=?, last_produce_ms=? WHERE guild_id=? AND user_id=? AND slot=?');
+  let slots = [];
   // 動物種類只有幾十種，格子卻可能有上千格 —— 每一格都回資料庫查一次同一隻動物
   // 是白費的（N+1）。先快取起來，整個迴圈只查每種動物一次。
   const animalCache = new Map();
@@ -147,6 +147,10 @@ function accrue(gid, uid) {
   // 等 fsync —— 實測一位 1300 格的玩家光這裡就佔住 event loop 約 147ms，
   // 而這段在 /收成、/牧場 與每 5 分鐘的排程都會跑到。
   db.transaction(() => {
+    // SELECT 也要在交易裡：last_produce_ms 是「已經結算到哪一刻」的指標，
+    // 在交易外讀的話，兩個行程（管家的排程與後台／另一隻機器人）會各自讀到同一個
+    // 舊指標，然後各自把同一段時間的產量再加一次 —— 實測會多發幾百份。
+    slots = db.prepare('SELECT * FROM ranch_slots WHERE guild_id=? AND user_id=?').all(gid, uid);
     for (const s of slots) {
       const a = animalOf(s.animal_id);
       if (!a || a.guard_pct > 0) continue;                 // 看門動物不生產
@@ -183,14 +187,19 @@ function nextReadyMs(gid, s) {
 // 收成：把所有動物累積的產物放進背包。回傳 {ok, lines, value} 或 {empty:true}。Discord 與網頁共用。
 function harvest(gid, uid) {
   accrue(gid, uid);
-  const slots = db.prepare('SELECT * FROM ranch_slots WHERE guild_id=? AND user_id=? AND pending > 0').all(gid, uid);
-  if (!slots.length) return { empty: true };
   // 腐壞率：放太久的蛋奶不是每一份都好的（後台 spoil_pct，0＝全部都好）。
   // 每一份各自擲骰，壞掉的直接丟掉 —— 沒有這條，養越多就是純線性印鈔。
   const spoilPct = Math.max(0, Math.min(90, rcfg(gid).spoil_pct || 0));
   let spoiled = 0;
   const gained = new Map();
+  let found = false;
+  // 「讀 pending」與「把 pending 歸零」必須在同一個交易裡。
+  // 排程改成切片執行之後，玩家的 /收成 有機會插進兩個切片之間 ——
+  // 在交易外讀、在交易裡才歸零的話，兩邊會各自把同一批 pending 發一次（重複給獎）。
   db.transaction(() => {
+    const slots = db.prepare('SELECT * FROM ranch_slots WHERE guild_id=? AND user_id=? AND pending > 0').all(gid, uid);
+    if (!slots.length) return;
+    found = true;
     for (const s of slots) {
       const a = animalById(gid, s.animal_id);
       if (!a) continue;
@@ -207,6 +216,7 @@ function harvest(gid, uid) {
       db.prepare('UPDATE ranch_slots SET pending=0 WHERE guild_id=? AND user_id=? AND slot=?').run(gid, uid, s.slot);
     }
   })();
+  if (!found) return { empty: true };
   bumpAch(gid, uid, 'harvest_count', 1);
   let value = 0;
   const lines = [...gained.entries()].map(([itemId, n]) => {
@@ -922,12 +932,17 @@ function init(client) {
           }
           const slot = freeRanchSlot(gid, uid, effRanchSlots(gid, uid, c));
           if (slot < 0) { blocked.push({ a, slot: r.slot }); continue; }
-          const tx = db.transaction(() => {
+          // 先刪、刪得到才發動物：同居角色的「孵化室照顧」也會領同一格，
+          // 先發後刪的話兩邊都會各發一隻出去（刪不到也不會有人發現）。
+          let took = false;
+          db.transaction(() => {
+            took = db.prepare('DELETE FROM ranch_incubator WHERE guild_id=? AND user_id=? AND slot=?')
+              .run(gid, uid, r.slot).changes > 0;
+            if (!took) return;
             db.prepare('INSERT INTO ranch_slots (guild_id,user_id,slot,animal_id,pending,last_produce_ms) VALUES (?,?,?,?,0,?)')
               .run(gid, uid, slot, a.id, Date.now());
-            db.prepare('DELETE FROM ranch_incubator WHERE guild_id=? AND user_id=? AND slot=?').run(gid, uid, r.slot);
-          });
-          tx();
+          })();
+          if (!took) continue;
           hatched.push({ a, slot });
         }
 

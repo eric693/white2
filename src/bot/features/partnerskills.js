@@ -317,8 +317,11 @@ function collectHatched(gid, uid, uname) {
   db.transaction(() => {
     for (const d of done) {
       const a = db.prepare('SELECT * FROM ranch_animals WHERE guild_id=? AND id=?').get(gid, d.animal_id);
-      db.prepare('DELETE FROM ranch_incubator WHERE guild_id=? AND user_id=? AND slot=?').run(gid, uid, d.slot);
-      if (!a) continue;
+      // 刪不到＝這一格已經被玩家自己的 /孵化室 先領走了（排程切片之間玩家插得進來）。
+      // 沒有這道檢查就會照樣再發一隻動物出去。
+      const gone = db.prepare('DELETE FROM ranch_incubator WHERE guild_id=? AND user_id=? AND slot=? AND ready_at<=?')
+        .run(gid, uid, d.slot, now).changes;
+      if (!gone || !a) continue;
       const slot = free.shift();
       if (slot === undefined) {
         // 牧場沒空位 —— 規格要求「可自動賣出」，賣價用動物售價的一半（跟手動賣一致的觀感）
@@ -467,14 +470,15 @@ function runArea(gid, uid, uname, area) {
       const fed = feedAll(gid, uid, uname);
       if (fed && !fed.error) lines.push('餵了魚');
       accrue(gid, uid);
-      const total = db.prepare('SELECT COALESCE(SUM(pending),0) n FROM aquarium_slots WHERE guild_id=? AND user_id=?').get(gid, uid).n;
-      if (total > 0) {
-        db.transaction(() => {
-          db.prepare('UPDATE aquarium_slots SET pending=0 WHERE guild_id=? AND user_id=?').run(gid, uid);
-          require('./gather').addCoins(gid, uid, uname, total, '同居能力', '幫你收魚缸');
-        })();
-        lines.push(`魚缸領到 ${total.toLocaleString('en-US')} 星幣`);
-      }
+      // 加總與歸零要在同一個交易裡，否則玩家的 /魚缸 插進來時同一筆 pending 會被發兩次
+      let total = 0;
+      db.transaction(() => {
+        total = db.prepare('SELECT COALESCE(SUM(pending),0) n FROM aquarium_slots WHERE guild_id=? AND user_id=?').get(gid, uid).n;
+        if (total <= 0) return;
+        db.prepare('UPDATE aquarium_slots SET pending=0 WHERE guild_id=? AND user_id=?').run(gid, uid);
+        require('./gather').addCoins(gid, uid, uname, total, '同居能力', '幫你收魚缸');
+      })();
+      if (total > 0) lines.push(`魚缸領到 ${total.toLocaleString('en-US')} 星幣`);
       break;
     }
     default: return [];
@@ -565,12 +569,15 @@ function runOne(gid, p, skill) {
     case 'aqua_collect': {
       const { accrue } = require('./aquarium');
       accrue(gid, uid);
-      const total = db.prepare('SELECT COALESCE(SUM(pending),0) n FROM aquarium_slots WHERE guild_id=? AND user_id=?').get(gid, uid).n;
-      if (total <= 0) return null;
+      // 同上：加總與歸零要在同一個交易裡，避免同一筆 pending 被發兩次
+      let total = 0;
       db.transaction(() => {
+        total = db.prepare('SELECT COALESCE(SUM(pending),0) n FROM aquarium_slots WHERE guild_id=? AND user_id=?').get(gid, uid).n;
+        if (total <= 0) return;
         db.prepare('UPDATE aquarium_slots SET pending=0 WHERE guild_id=? AND user_id=?').run(gid, uid);
         addCoins(gid, uid, uname, total, '同居能力', '幫你收魚缸');
       })();
+      if (total <= 0) return null;
       return [`魚缸領到 ${total.toLocaleString('en-US')} 星幣`];
     }
     case 'aqua_feed': {
