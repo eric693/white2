@@ -13,6 +13,18 @@ const cfg = (gid) => guildConfig('ticket_config', gid);
 const getPanel = (id) => db.prepare('SELECT * FROM ticket_panels WHERE id = ?').get(id);
 const csv = (s) => String(s || '').split(/[\n,]/).map(x => x.trim()).filter(Boolean);
 
+/**
+ * 某個面板實際生效的客服身分組：面板有填就用面板的，沒填才退回全域。
+ * 開單建頻道時本來就是這個規則，但關單／刪頻道的判斷以前只看全域 ——
+ * 於是「只在某個面板掛了專屬客服身分組」的人（例如只負責某一區的大總管）
+ * 看得到頻道、也能在裡面講話，按下「關閉客服單」卻被擋，訊息還說他不是客服。
+ */
+function supportRolesOf(gid, panelId) {
+  const panel = panelId ? getPanel(panelId) : null;
+  const own = panel ? csv(panel.support_role_ids) : [];
+  return own.length ? own : csv(cfg(gid).support_role_ids);
+}
+
 // 組出某個面板的訊息內容（開單按鈕 + 超連結按鈕）
 // 多圖排版：Discord 要多個 embed「共用同一個 url」才會併成圖庫。
 // 但 embed 帶了 url 標題就會變成藍色超連結，所以主 embed 不掛 url，
@@ -124,8 +136,8 @@ async function openTicket(i, subject, panelId) {
     .run(gid, i.user.id, nameOf(i), subject || '', panel.id, panel.name);
   const ticketId = info.lastInsertRowid;
 
-  // 客服身分組：優先用面板自己的，沒有才用全域
-  const supportRoles = csv(panel.support_role_ids).length ? csv(panel.support_role_ids) : csv(c.support_role_ids);
+  // 客服身分組：優先用面板自己的，沒有才用全域（關單／刪頻道也走同一個判斷）
+  const supportRoles = supportRolesOf(gid, panel.id);
   const categoryId = panel.category_id || c.category_id;
 
   // 建立專屬頻道：@everyone 不可見；開單者、客服身分組、機器人可見
@@ -176,8 +188,9 @@ async function closeTicket(i, ticketId) {
   // 只有客服／管理端可以結案。開單者不能自己關，也不能刪頻道
   // —— 之前開放本人關閉，結果常有「誤按關閉」「還沒處理完就自己關掉」「吵完就關單跑掉」，
   // 客服端反而找不到單。開單者仍然可以在單內正常發言、補資料。
+  const roles = supportRolesOf(i.guild.id, t.panel_id);
   const isSupport = i.member.permissions.has('ManageChannels')
-    || i.member.roles.cache.some(r => csv(c.support_role_ids).includes(r.id));
+    || i.member.roles.cache.some(r => roles.includes(r.id));
   if (!isSupport) {
     return i.reply({
       content: '🔒 客服單只能由客服人員結案。\n若你的問題已經解決，直接在這裡說一聲，客服確認後會幫你關閉；在那之前你都還可以繼續回覆與補充資料。',
@@ -281,9 +294,10 @@ function init(client) {
       }
 
       if (i.isButton() && i.customId.startsWith('ticket:del:')) {
-        const c = cfg(i.guild.id);
+        const delTicket = db.prepare('SELECT panel_id FROM tickets WHERE id=?').get(i.customId.split(':')[2]);
+        const roles = supportRolesOf(i.guild.id, delTicket && delTicket.panel_id);
         const isSupport = i.member.permissions.has('ManageChannels')
-          || i.member.roles.cache.some(r => csv(c.support_role_ids).includes(r.id));
+          || i.member.roles.cache.some(r => roles.includes(r.id));
         if (!isSupport) return i.reply({ content: '僅客服人員可刪除頻道。', flags: MessageFlags.Ephemeral });
         await i.reply('頻道將在 5 秒後刪除。').catch(() => {});
 
