@@ -608,6 +608,15 @@ function runOne(gid, p, skill) {
 // 10:06 成熟的作物要躺到 11:05 才收，中間近一小時田是空的、沒有再播種。
 // 這些動作本身都有自然上限（沒成熟就收不到、沒空格就種不了、魚飽了就不餵），
 // 所以重複跑是安全的，不需要用 last_run 擋。
+// 「整區照顧」能力做的事，跟同名工作區域完全一樣。
+// 一位角色同時有這個能力、又被指派到同一區時，5 分鐘那一輪會先由能力跑一次、
+// 再由工作區域跑第二次 —— 明細因此每輪重複兩筆，廚房還會一輪補到 10 鍋
+// （設計是 5 鍋）。所以能力那一輪遇到「已經派在同一區」的人就跳過，交給工作區域跑。
+const FULL_AREA_OF_CODE = {
+  farm_care: 'farm', greenhouse_care: 'greenhouse', hatch_care: 'hatchery',
+  aqua_care: 'aquarium', ranch_tend: 'ranch', kitchen_cook: 'kitchen'
+};
+
 const HOURLY_SKILLS = new Set([
   'farm_harvest', 'greenhouse_harvest', 'aqua_collect', 'hatch_collect', 'ranch_tend',
   'farm_plant', 'greenhouse_plant', 'hatch_put', 'aqua_feed', 'kitchen_cook',
@@ -656,6 +665,8 @@ function runDaily(gid, mode = 'daily') {
       if (!skill || !skill.enabled) continue;
       const isHourly = HOURLY_SKILLS.has(skill.code);
       if (mode === 'hourly' ? !isHourly : isHourly) continue;   // 只跑這一輪該跑的
+      // 已經派在同一區＝等一下工作區域那段會跑完整流程，這裡跳過免得做兩次
+      if (mode === 'hourly' && p.work_area && FULL_AREA_OF_CODE[skill.code] === p.work_area) continue;
       // 每日配給類要記 last_run 免得同一天重複領；收成類本身就自帶上限，不用擋
       if (mode === 'daily') {
         db.prepare('UPDATE home_partners SET last_run=? WHERE guild_id=? AND user_id=? AND role_id=?')

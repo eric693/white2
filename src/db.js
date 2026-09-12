@@ -15,6 +15,31 @@ db.pragma('synchronous = NORMAL');
 // 那一位玩家的那次結算就靜靜地漏掉了。等久一點也比漏掉好。
 db.pragma('busy_timeout = 20000');
 
+// ---- 交易一律用 BEGIN IMMEDIATE ----
+//
+// 上面那個 busy_timeout 對「先讀再寫」的交易其實完全沒有效果。
+// better-sqlite3 的 db.transaction() 預設是 BEGIN DEFERRED：交易先以「讀」開始，
+// 等到第一個寫入才要把鎖升級成寫入鎖。在 WAL 底下這個升級一旦撞到別人正在寫，
+// SQLite 會「立刻」回 SQLITE_BUSY 而不等待 —— 因為它手上還抓著一份舊的讀取快照，
+// 再等下去只會死鎖。實測：deferred 0 毫秒就丟 database is locked，
+// 同一段改成 immediate 才真的等滿 20 秒。
+//
+// 所以三個行程（秘書＋後台、管家）的排程一起醒來時，
+// 那一位玩家的那次結算還是會靜靜地漏掉（錯誤記錄裡的「工作區域執行失敗：database is locked」）。
+// BEGIN IMMEDIATE 一開始就拿寫入鎖，沒有升級這一步，busy_timeout 才會真的排隊等。
+// 在這裡包一次，130 處呼叫點都不用改；.deferred()／.exclusive() 仍可個別指定。
+const rawTransaction = db.transaction.bind(db);
+db.transaction = function (fn) {
+  const t = rawTransaction(fn);
+  const wrapped = (...args) => t.immediate(...args);
+  wrapped.default = t.default;
+  wrapped.deferred = t.deferred;
+  wrapped.immediate = t.immediate;
+  wrapped.exclusive = t.exclusive;
+  Object.defineProperty(wrapped, 'database', { get: () => t.database });
+  return wrapped;
+};
+
 const schema = fs.readFileSync(path.join(__dirname, '..', 'db', 'schema.sql'), 'utf8');
 db.exec(schema);
 

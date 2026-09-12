@@ -701,13 +701,15 @@ function billEmbed(gid, b, period) {
 }
 
 // 冒險面板的 🧾稅務：一次講清楚「課什麼、怎麼算、何時收」，再附上自己的預估稅單
-function infoEmbed(gid, userId, username) {
+function infoEmbed(gid, userId, username, member) {
   const c = cfg(gid);
   const emb = new EmbedBuilder().setColor(brandColor()).setTitle('🧾 稅務資訊');
   if (!c.enabled) {
     return emb.setDescription('這個伺服器目前**沒有開徵稅金**，錢包不會被扣。\n開徵後這裡會顯示稅率、結算時間與你自己的預估稅單。');
   }
-  if (isExempt(gid, userId)) {
+  // member 要一起傳：免稅可以是「免稅身分組」給的，少了 member 就只認使用者名單，
+  // 靠身分組免稅的人會在這裡被告知「你要繳稅」，跟實際結算不一致。
+  if (isExempt(gid, userId, member)) {
     return emb.setDescription(`✅ 你在**免稅名單**內，這個伺服器的稅金不會扣到你。`);
   }
   // 稅率：一稅一行、精簡好讀
@@ -837,7 +839,7 @@ function init(client) {
     try {
       const gid = i.guildId, c = cfg(gid);
       if (i.customId === 'taxrules') {
-        return await i.reply({ embeds: [infoEmbed(gid, i.user.id, i.user.username)], flags: MessageFlags.Ephemeral });
+        return await i.reply({ embeds: [infoEmbed(gid, i.user.id, i.user.username, i.member)], flags: MessageFlags.Ephemeral });
       }
       if (!c.enabled) return await i.reply({ content: '這個伺服器目前沒有開徵稅金。', flags: MessageFlags.Ephemeral });
       if (isExempt(gid, i.user.id, i.member)) {
