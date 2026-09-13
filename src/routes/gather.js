@@ -318,22 +318,22 @@ router.delete('/facilities/:id', (req, res) => {
 // 只清「玩家累積出來的東西」（錢包/背包/牧場/農地/進度…），
 // 管理員設定好的內容（掉落物、道具、動物、地圖、獎池、商店、配方、任務定義）一律保留。
 const PLAYER_TABLES = [
-  'econ_wallets', 'gather_inventory', 'gather_user_tools', 'gather_cooldowns',
+  'econ_wallets', 'gather_inventory', 'gather_storage', 'gather_user_tools', 'gather_cooldowns',
   'gather_user_map', 'gather_points', 'quest_progress', 'econ_transfers',
   'lottery_draws', 'luck_buffs', 'trades',
   'ranch_slots', 'ranch_steal', 'ranch_incubator', 'ranch_unlocks',
   'crop_plots', 'crop_unlocks', 'special_redeems', 'facility_owned',
-  'aquarium_slots', 'aquarium_steal'
+  'aquarium_slots', 'aquarium_steal', 'aquarium_unlocks'
 ];
 // 分區重置：管理員勾選要清哪幾塊（整個系統重來 vs 只把股市砍掉重練，需求完全不同）
 const RESET_GROUPS = {
   wallet:    { label: '錢包與轉帳', tables: ['econ_wallets', 'econ_transfers'] },
-  bag:       { label: '背包與工具', tables: ['gather_inventory', 'gather_user_tools', 'gather_cooldowns', 'gather_user_map', 'gather_points'] },
+  bag:       { label: '背包、倉庫與工具', tables: ['gather_inventory', 'gather_storage', 'gather_user_tools', 'gather_cooldowns', 'gather_user_map', 'gather_points'] },
   quest:     { label: '任務與抽籤', tables: ['quest_progress', 'lottery_draws', 'luck_buffs'] },
   trade:     { label: '以物易物', tables: ['trades'] },
   ranch:     { label: '牧場與孵化室', tables: ['ranch_slots', 'ranch_steal', 'ranch_incubator', 'ranch_unlocks'] },
   crop:      { label: '農地與溫室', tables: ['crop_plots', 'crop_unlocks'] },
-  aquarium:  { label: '魚缸', tables: ['aquarium_slots', 'aquarium_steal'] },
+  aquarium:  { label: '魚缸', tables: ['aquarium_slots', 'aquarium_steal', 'aquarium_unlocks'] },
   facility:  { label: '設施等級', tables: ['facility_owned'] },
   shop:      { label: '兌換紀錄', tables: ['special_redeems'] },
   home:      { label: '家園／廚房／家具／寵物', tables: ['home_users', 'home_furniture_owned', 'pet_owned', 'cook_inventory', 'cook_queue', 'home_buffs', 'home_checkin'] },
