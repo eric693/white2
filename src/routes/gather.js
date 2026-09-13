@@ -323,22 +323,23 @@ const PLAYER_TABLES = [
   'lottery_draws', 'luck_buffs', 'trades',
   'ranch_slots', 'ranch_steal', 'ranch_incubator', 'ranch_unlocks',
   'crop_plots', 'crop_unlocks', 'special_redeems', 'facility_owned',
-  'aquarium_slots', 'aquarium_steal', 'aquarium_unlocks'
+  'aquarium_slots', 'aquarium_steal', 'aquarium_unlocks',
+  'bank_accounts', 'home_partners', 'gift_dex', 'exchange_uses', 'player_limits'
 ];
 // 分區重置：管理員勾選要清哪幾塊（整個系統重來 vs 只把股市砍掉重練，需求完全不同）
 const RESET_GROUPS = {
-  wallet:    { label: '錢包與轉帳', tables: ['econ_wallets', 'econ_transfers'] },
-  bag:       { label: '背包、倉庫與工具', tables: ['gather_inventory', 'gather_storage', 'gather_user_tools', 'gather_cooldowns', 'gather_user_map', 'gather_points'] },
+  wallet:    { label: '錢包、銀行存款與轉帳', tables: ['econ_wallets', 'bank_accounts', 'econ_transfers'] },
+  bag:       { label: '背包、倉庫、工具與體力加成', tables: ['gather_inventory', 'gather_storage', 'gather_user_tools', 'gather_cooldowns', 'gather_user_map', 'gather_points', 'player_limits'] },
   quest:     { label: '任務與抽籤', tables: ['quest_progress', 'lottery_draws', 'luck_buffs'] },
   trade:     { label: '以物易物', tables: ['trades'] },
   ranch:     { label: '牧場與孵化室', tables: ['ranch_slots', 'ranch_steal', 'ranch_incubator', 'ranch_unlocks'] },
   crop:      { label: '農地與溫室', tables: ['crop_plots', 'crop_unlocks'] },
   aquarium:  { label: '魚缸', tables: ['aquarium_slots', 'aquarium_steal', 'aquarium_unlocks'] },
   facility:  { label: '設施等級', tables: ['facility_owned'] },
-  shop:      { label: '兌換紀錄', tables: ['special_redeems'] },
-  home:      { label: '家園／廚房／家具／寵物', tables: ['home_users', 'home_furniture_owned', 'pet_owned', 'cook_inventory', 'cook_queue', 'home_buffs', 'home_checkin'] },
+  shop:      { label: '兌換紀錄', tables: ['special_redeems', 'exchange_uses'] },
+  home:      { label: '家園／廚房／家具／寵物／同居夥伴', tables: ['home_users', 'home_partners', 'home_furniture_owned', 'pet_owned', 'cook_inventory', 'cook_queue', 'home_buffs', 'home_checkin'] },
   ach:       { label: '成就與圖鑑', tables: ['title_owned', 'dex_seen', 'ach_stats'] },
-  affinity:  { label: '好感度與逛街體力', tables: ['affinity', 'stroll_stamina'] },
+  affinity:  { label: '好感度、送禮圖鑑與逛街體力', tables: ['affinity', 'gift_dex', 'stroll_stamina'] },
   stock:     { label: '股票持股與成交', tables: ['stock_holdings', 'stock_trades', 'stock_user_state', 'stock_violations'] },
   tax:       { label: '稅單與普發紀錄', tables: ['tax_records', 'tax_reliefs', 'tax_liquidations'] },
   loan:      { label: '貸款', tables: ['loans', 'loan_collaterals'] },
