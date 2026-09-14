@@ -1,7 +1,7 @@
 // 生日驗證（6.2）與生日慶生系統（10.1～10.8）
 const {
   EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle,
-  ModalBuilder, TextInputBuilder, TextInputStyle, MessageFlags} = require('discord.js');
+  ModalBuilder, TextInputBuilder, TextInputStyle, MessageFlags, StringSelectMenuBuilder } = require('discord.js');
 const cron = require('node-cron');
 const { db, guildConfig, activeGuildIds, logError } = require('../../db');
 const { parts } = require('../../util/time');
@@ -19,6 +19,31 @@ function calcAge(y, m, d) {
 }
 
 // 私訊裡的互動沒有 i.guild，所以按鈕要自己把伺服器 ID 帶著走（頻道面板可省略）。
+// 舊的私訊提醒按鈕沒帶伺服器 ID：找出這個人所在、有開生日功能的伺服器（沒填過的排前面）
+async function guildsForUser(client, uid) {
+  const out = [];
+  for (const [gid, g] of client.guilds.cache) {
+    if (!allowed(gid, 'birthday')) continue;
+    const m = g.members.cache.get(uid) || await g.members.fetch(uid).catch(() => null);
+    if (!m) continue;
+    const filled = !!db.prepare('SELECT 1 FROM birthdays WHERE guild_id = ? AND user_id = ?').get(gid, uid);
+    out.push({ gid, name: g.name, filled });
+  }
+  return out.sort((a, b) => a.filled - b.filled);
+}
+
+function bdayModal(gid) {
+  const modal = new ModalBuilder().setCustomId(gid ? `bday_modal:${gid}` : 'bday_modal').setTitle('生日資料');
+  const y = new TextInputBuilder().setCustomId('y').setLabel('出生年（西元，如 2000）').setStyle(TextInputStyle.Short).setMinLength(4).setMaxLength(4).setRequired(true);
+  const m = new TextInputBuilder().setCustomId('m').setLabel('出生月（1-12）').setStyle(TextInputStyle.Short).setMaxLength(2).setRequired(true);
+  const d = new TextInputBuilder().setCustomId('d').setLabel('出生日（1-31）').setStyle(TextInputStyle.Short).setMaxLength(2).setRequired(true);
+  return modal.addComponents(
+    new ActionRowBuilder().addComponents(y),
+    new ActionRowBuilder().addComponents(m),
+    new ActionRowBuilder().addComponents(d)
+  );
+}
+
 const fillBtn = (label = '填寫生日', gid = '') => new ActionRowBuilder().addComponents(
   new ButtonBuilder().setCustomId(gid ? `bday_verify:${gid}` : 'bday_verify')
     .setLabel(label).setStyle(ButtonStyle.Primary));
@@ -29,7 +54,7 @@ async function postVerifyPanel(client, channelId, gid) {
   const ch = client.channels.cache.get(channelId) || await client.channels.fetch(channelId).catch(() => null);
   if (!ch) throw new Error('找不到頻道');
   const embed = new EmbedBuilder().setColor(0x5865f2).setTitle('年齡驗證').setDescription(c.prompt_text);
-  await ch.send({ embeds: [embed], components: [fillBtn('填寫生日並驗證')] });
+  await ch.send({ embeds: [embed], components: [fillBtn('填寫生日並驗證', gid)] });
 }
 
 // 10.3 發布生日填寫面板（給已在群內的成員）
@@ -39,7 +64,7 @@ async function postBirthdayPanel(client, channelId, gid) {
   if (!ch) throw new Error('找不到頻道');
   const embed = new EmbedBuilder().setColor(0xeb459e).setTitle('生日資料登記')
     .setDescription(c.remind_text || '點下方按鈕填寫你的生日，生日當天會收到專屬祝福！');
-  await ch.send({ embeds: [embed], components: [fillBtn('填寫 / 修改生日')] });
+  await ch.send({ embeds: [embed], components: [fillBtn('填寫 / 修改生日', gid)] });
 }
 
 // 未成年攔截名單：查／記
@@ -96,7 +121,7 @@ function init(client) {
     if (!c.verify_channel) return;
     const ch = client.channels.cache.get(c.verify_channel) || await client.channels.fetch(c.verify_channel).catch(() => null);
     if (!ch) return;
-    const msg = await ch.send({ content: `<@${member.id}> ${c.prompt_text}`, components: [fillBtn('填寫生日並驗證')] }).catch(() => null);
+    const msg = await ch.send({ content: `<@${member.id}> ${c.prompt_text}`, components: [fillBtn('填寫生日並驗證', member.guild.id)] }).catch(() => null);
     const ttl = Number(c.prompt_delete_sec) || 0;
     if (msg && ttl > 0) setTimeout(() => msg.delete().catch(() => {}), ttl * 1000);
   });
@@ -104,16 +129,16 @@ function init(client) {
   client.on('interactionCreate', async (i) => {
     if (i.isButton() && i.customId.split(':')[0] === 'bday_verify') {
       const gid = i.customId.split(':')[1] || (i.guild && i.guild.id) || '';
-      const modal = new ModalBuilder().setCustomId(gid ? `bday_modal:${gid}` : 'bday_modal').setTitle('生日資料');
-      const y = new TextInputBuilder().setCustomId('y').setLabel('出生年（西元，如 2000）').setStyle(TextInputStyle.Short).setMinLength(4).setMaxLength(4).setRequired(true);
-      const m = new TextInputBuilder().setCustomId('m').setLabel('出生月（1-12）').setStyle(TextInputStyle.Short).setMaxLength(2).setRequired(true);
-      const d = new TextInputBuilder().setCustomId('d').setLabel('出生日（1-31）').setStyle(TextInputStyle.Short).setMaxLength(2).setRequired(true);
-      modal.addComponents(
-        new ActionRowBuilder().addComponents(y),
-        new ActionRowBuilder().addComponents(m),
-        new ActionRowBuilder().addComponents(d)
-      );
-      return i.showModal(modal).catch(() => {});
+      if (gid) return i.showModal(bdayModal(gid)).catch(() => {});
+      const list = await guildsForUser(client, i.user.id);
+      if (list.length === 1) return i.showModal(bdayModal(list[0].gid)).catch(() => {});
+      if (!list.length) return i.reply({ content: '找不到你所在、有開放生日登記的伺服器，請改到伺服器的驗證頻道點按鈕。', flags: MessageFlags.Ephemeral }).catch(() => {});
+      const menu = new StringSelectMenuBuilder().setCustomId('bday_pickguild').setPlaceholder('要登記到哪個伺服器？')
+        .addOptions(list.slice(0, 25).map(x => ({ label: x.name.slice(0, 100), description: x.filled ? '已填過（會改成新的生日）' : '還沒填', value: x.gid })));
+      return i.reply({ content: '你在好幾個伺服器裡，要把生日登記到哪一個？', components: [new ActionRowBuilder().addComponents(menu)], flags: MessageFlags.Ephemeral }).catch(() => {});
+    }
+    if (i.isStringSelectMenu() && i.customId === 'bday_pickguild') {
+      return i.showModal(bdayModal(i.values[0])).catch(() => {});
     }
 
     if (i.isModalSubmit() && i.customId.split(':')[0] === 'bday_modal') {
@@ -312,14 +337,14 @@ async function remindMissingGuild(client, gid) {
       const mentions = missing.map(m => `<@${m.id}>`).slice(0, 50).join(' ');
       const embed = new EmbedBuilder().setColor(0xfaa61a).setTitle('還沒填寫生日資料')
         .setDescription(c.remind_text);
-      await ch.send({ content: mentions, embeds: [embed], components: [fillBtn('填寫生日')] }).catch(() => {});
+      await ch.send({ content: mentions, embeds: [embed], components: [fillBtn('填寫生日', gid)] }).catch(() => {});
     }
   }
   // 私訊提醒
   if (c.remind_mode === 'dm' || c.remind_mode === 'both') {
     for (const [, m] of missing) {
       const embed = new EmbedBuilder().setColor(0xfaa61a).setTitle('生日資料提醒').setDescription(c.remind_text);
-      await m.send({ embeds: [embed], components: [fillBtn('填寫生日')] }).catch(() => {});
+      await m.send({ embeds: [embed], components: [fillBtn('填寫生日', gid)] }).catch(() => {});
     }
   }
   console.log(`  ↳ 已提醒 ${missing.size} 位尚未填寫生日的成員`);
