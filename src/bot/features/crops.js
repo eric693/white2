@@ -1,5 +1,5 @@
 // 種植系統：農地種作物、溫室種花卉。買種子→種下→等成熟→採收（產物進背包可 /賣出）。
-const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, MessageFlags } = require('discord.js');
+const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, MessageFlags, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 const { nameOf } = require('../../util/names');
 const { db, guildConfig, logError } = require('../../db');
 const { brandColor } = require('../../util/brand');
@@ -62,6 +62,14 @@ function seedCrops(gid) {
         if (!item) { const r = insItem.run(gid, 'farm', pName, pEmoji, 'N', 0, pPrice, `種植產物：${pName}`); item = { id: r.lastInsertRowid }; }
         insSeed.run(gid, name, emoji, type, price, mins, item.id, yield_, idx, desc);
       });
+      // 魚缸餵食認的是「魚飼料」這個物品，新伺服器沒有種它的種子就只能花星幣餵。
+      // 只要還沒有任何種子（含停用的）產出魚飼料就補一個，管理員自己建的不動。
+      let feed = findItem.get(gid, '魚飼料');
+      const hasFeedSeed = feed && db.prepare('SELECT 1 FROM crop_seeds WHERE guild_id=? AND product_item_id=?').get(gid, feed.id);
+      if (!hasFeedSeed && !findSeed.get(gid, '飼料草')) {
+        if (!feed) { const r = insItem.run(gid, 'farm', '魚飼料', '🍤', 'N', 0, 20, '餵魚用：/餵魚 會先用掉它，沒有才扣星幣'); feed = { id: r.lastInsertRowid }; }
+        insSeed.run(gid, '飼料草', '🌾', 'field', 10, 120, feed.id, 5, 99, '約 2 小時成熟，收成 5 份魚飼料');
+      }
       db.prepare('UPDATE crop_config SET seeded=1 WHERE guild_id=?').run(gid);
     });
     tx();
@@ -241,11 +249,11 @@ function init(client) {
         const cap = Math.min(afford, 999);
         const amts = [...new Set([1, 5, 10, 25, 50, 100].filter(x => x < cap).concat([cap]))].sort((a, b) => a - b);
         const menu = new StringSelectMenuBuilder().setCustomId('seedqty:' + sid).setPlaceholder('要買幾包？')
-          .addOptions(amts.slice(0, 25).map(a => ({
+          .addOptions(amts.slice(0, 24).map(a => ({
             label: a === cap && cap > 1 ? `買好買滿（${a} 包）` : `買 ${a} 包`,
             description: `${(a * price).toLocaleString('en-US')} ${gc.currency_name}`.slice(0, 100),
             value: String(a)
-          })));
+          })).concat(cap > 1 ? [{ label: '✏️ 自己輸入數量', description: `1～${cap} 包`, value: 'custom' }] : []));
         return i.update({
           content: `${seed.emoji || '🌱'}**${seed.name}**：要買幾包？（一包 ${price.toLocaleString('en-US')} ${gc.currency_name}，你買得起 ${afford.toLocaleString('en-US')} 包）\n買到的種子會進背包，之後在${PLOT[seed.plot_type]}按「🌱 種植」種下。`,
           embeds: [], components: [new ActionRowBuilder().addComponents(menu)]
@@ -291,10 +299,23 @@ function init(client) {
       const qty = parseInt(i.values[0], 10);
       return safeMenu(i, '種下種子', () => plantSeeds(i.guildId, i.user.id, i.user.username, sid, qty));
     }
-    // 選好包數 → 買進背包
+    // 選好包數 → 買進背包；選「自己輸入」就跳輸入框
     if (i.isStringSelectMenu() && i.customId.startsWith('seedqty:')) {
       const sid = parseInt(i.customId.split(':')[1], 10);
+      if (i.values[0] === 'custom') {
+        const seed = seedById(i.guildId, sid);
+        const modal = new ModalBuilder().setCustomId('seedqtymodal:' + sid).setTitle(`購買 ${seed ? seed.name : '種子'}`.slice(0, 45))
+          .addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('qty')
+            .setLabel('要買幾包？（最多 999）').setStyle(TextInputStyle.Short).setPlaceholder('例如 300').setMaxLength(3).setRequired(true)));
+        return i.showModal(modal).catch(() => {});
+      }
       const qty = parseInt(i.values[0], 10);
+      return safeMenu(i, '購買種子', () => buySeeds(i.guildId, i.user.id, i.user.username, sid, qty));
+    }
+    if (i.isModalSubmit() && i.customId.startsWith('seedqtymodal:')) {
+      const sid = parseInt(i.customId.split(':')[1], 10);
+      const qty = parseInt(String(i.fields.getTextInputValue('qty')).replace(/[,\s]/g, ''), 10);
+      if (!Number.isInteger(qty) || qty < 1) return i.reply({ content: '請輸入 1～999 的整數。', flags: MessageFlags.Ephemeral }).catch(() => {});
       return safeMenu(i, '購買種子', () => buySeeds(i.guildId, i.user.id, i.user.username, sid, qty));
     }
     const isBtn = i.isButton();

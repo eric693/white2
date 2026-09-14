@@ -917,7 +917,7 @@ function buyThing(gid, uid, uname, kind, id, qty = 1) {
 }
 
 // 一次最多做幾次（Discord 選項上限與實際執行都吃這個值）
-const MAX_CRAFT_TIMES = 99;
+const MAX_CRAFT_TIMES = 999;
 
 // 執行一次（或多次）配方。/製作 /鍛造 指令與 /配方 的下拉選單共用同一套流程。
 function craftRecipe(gid, uid, uname, recipeId, times = 1) {
