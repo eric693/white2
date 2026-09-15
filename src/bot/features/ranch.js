@@ -62,6 +62,17 @@ const SEED_HATCH = [
 ];
 
 // 建立/補齊預設動物與其產物（逐隻檢查，之後新增品種也會自動補到既有伺服器）
+// Embed 欄位上限 1024 字：孵化室一次孵出幾十隻時整段列出會超過，整個面板開不起來
+function clipField(items, sep) {
+  let out = '';
+  for (let k = 0; k < items.length; k++) {
+    const next = (out ? sep : '') + items[k];
+    if (out.length + next.length > 950) return out + `\n…還有 ${items.length - k} 項`;
+    out += next;
+  }
+  return out || '—';
+}
+
 function seedRanch(gid) {
   rcfg(gid);
   try {
@@ -345,7 +356,7 @@ function hatchEgg(gid, uid, uname, eggItemId, qty = 1, defId = 0) {
   const used = db.prepare('SELECT COUNT(*) n FROM ranch_incubator WHERE guild_id=? AND user_id=?').get(gid, uid).n;
   const short = n < qty ? `\n（你想放 ${qty} 顆，但${inv.count < qty ? '蛋只夠 ' + inv.count + ' 顆' : '只剩 ' + freeSlots.length + ' 格'}）` : '';
   return { embed: new EmbedBuilder().setColor(brandColor()).setTitle('🥚 開始孵化')
-    .setDescription(`${def.egg_emoji || '🥚'}**${def.egg_name}** ×**${n}** 放進孵化室（第 ${put.join('、')} 格），將孵出 ${def.animal_emoji || '🐾'}**${def.animal_name}**。${short}\n` +
+    .setDescription(`${def.egg_emoji || '🥚'}**${def.egg_name}** ×**${n}** 放進孵化室（第 ${put.length > 30 ? put.slice(0, 30).join('、') + ` …等 ${put.length} 格` : put.join('、')} 格），將孵出 ${def.animal_emoji || '🐾'}**${def.animal_name}**。${short}\n` +
       `預計完成：<t:${Math.floor(readyAt / 1000)}:R>（<t:${Math.floor(readyAt / 1000)}:t>）\n\n` +
       `孵化室：**${used}/${hMax} 格**已使用\n時間到用 \`/孵化室\` 領取，會直接住進牧場空格。`) };
 }
@@ -963,10 +974,10 @@ function init(client) {
         const embed = new EmbedBuilder().setColor(brandColor()).setTitle(`🐣 ${uname} 的孵化室`)
           .setDescription(lines.join('\n').slice(0, 4000));
         if (hatched.length) {
-          embed.addFields({ name: '本次孵出', value: hatched.map(h => `${h.a.emoji || '🐾'}${h.a.name} → 牧場第 ${h.slot + 1} 格`).join('\n') });
+          embed.addFields({ name: '本次孵出', value: clipField(hatched.map(h => `${h.a.emoji || '🐾'}${h.a.name} → 牧場第 ${h.slot + 1} 格`), '\n') });
         }
         if (failed.length) {
-          embed.addFields({ name: '💔 孵化失敗（蛋沒了）', value: failed.map(a => `${a.emoji || '🐾'}${a.name}`).join('、') });
+          embed.addFields({ name: '💔 孵化失敗（蛋沒了）', value: clipField(failed.map(a => `${a.emoji || '🐾'}${a.name}`), '、') });
         }
         if (blocked.length) {
           embed.addFields({ name: `⚠️ 牧場已滿，${blocked.length} 隻孵好的動物先留在孵化室`,

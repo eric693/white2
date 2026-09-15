@@ -133,6 +133,19 @@ function buySeeds(gid, uid, uname, seedId, qty) {
 }
 
 // 一口氣種多格：從背包拿 qty 包種子種進 qty 個空格（不再當場扣錢）。
+// 格號壓成區段（1～500、503），田開到上千格時逐格列出會超過 Embed 4096 字、整個種植失敗
+function slotRanges(slots) {
+  const parts = [];
+  for (let k = 0; k < slots.length;) {
+    let j = k;
+    while (j + 1 < slots.length && slots[j + 1] === slots[j] + 1) j++;
+    parts.push(j > k ? `${slots[k] + 1}～${slots[j] + 1}` : `${slots[k] + 1}`);
+    k = j + 1;
+  }
+  const txt = parts.join('、');
+  return txt.length > 300 ? txt.slice(0, 300).replace(/、[^、]*$/, '') + ` …等 ${slots.length} 格` : txt;
+}
+
 // 實際種下的數量會被「空格數」和「背包存量」夾住，不會因為選太多就整批失敗。
 function plantSeeds(gid, uid, uname, seedId, qty) {
   const c = ccfg(gid);
@@ -163,7 +176,7 @@ function plantSeeds(gid, uid, uname, seedId, qty) {
     ? `\n\n（你選了 ${qty} 格，但${free.length < qty ? `只剩 ${free.length} 個空格` : `背包只有 ${have} 包種子`}，所以種了 ${n} 格）`
     : '';
   return { embed: new EmbedBuilder().setColor(brandColor()).setTitle('🌱 種植成功')
-    .setDescription(`在${PLOT[seed.plot_type]}種下 ${seed.emoji || ''}**${seed.name}** ×**${n}**（第 ${slots.map(s => s + 1).join('、')} 格）\n` +
+    .setDescription(`在${PLOT[seed.plot_type]}種下 ${seed.emoji || ''}**${seed.name}** ×**${n}**（第 ${slotRanges(slots)} 格）\n` +
       `成熟時間：<t:${Math.floor(readyAt / 1000)}:R>（<t:${Math.floor(readyAt / 1000)}:t>）\n` +
       `成熟後用 \`/採收\` 可收成 ${seed.yield_count * n}× ${p ? (p.emoji || '') + p.name : '產物'}。\n\n` +
       `${PLOT[seed.plot_type]}：**${usedNow}/${max} 格**已使用${left ? `（還可種 ${left} 格）` : '（已滿）'}${capped}`)
