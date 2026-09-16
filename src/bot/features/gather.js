@@ -47,6 +47,8 @@ function wallet(gid, userId, username) {
 // 星幣明細：每一筆增減都留一列，玩家用 /明細 就能看到錢什麼時候進來、為什麼出去。
 // 一律在「餘額已經改完」之後呼叫，balance 直接讀當下餘額（同一個 transaction 內也讀得到）。
 // 只記實際有變動的（delta 0 不記），reason 是分類、detail 是那一筆的細節。
+const { INCOME_REASONS } = require('../../util/income');
+require('../../db').ensureColumns('econ_wallets', { period_income: 'INTEGER NOT NULL DEFAULT 0' });
 const LEDGER_KEEP = 200;   // 每人只保留最近幾筆（明細只給玩家看近況，不無限長大）
 function logCoins(gid, userId, delta, reason, detail) {
   delta = Math.round(Number(delta) || 0);
@@ -55,6 +57,11 @@ function logCoins(gid, userId, delta, reason, detail) {
     const bal = (db.prepare('SELECT coins FROM econ_wallets WHERE guild_id=? AND user_id=?').get(gid, userId) || {}).coins || 0;
     db.prepare('INSERT INTO econ_ledger (guild_id,user_id,delta,balance,reason,detail) VALUES (?,?,?,?,?,?)')
       .run(gid, userId, delta, bal, reason || '其他', detail || '');
+    // 所得稅的稅基另外累加在錢包上：明細只留最近 200 筆，大量買賣的玩家
+    // 幾個小時就會把本期的收入擠掉，稅基不能從明細回推（2026-09 所得稅歸零事故）
+    if (delta > 0 && INCOME_REASONS.has(reason)) {
+      db.prepare('UPDATE econ_wallets SET period_income = period_income + ? WHERE guild_id=? AND user_id=?').run(delta, gid, userId);
+    }
     // 超過保留筆數就砍掉最舊的（一次一筆一筆刪很慢，用 id 門檻一次砍）
     db.prepare(`DELETE FROM econ_ledger WHERE guild_id=? AND user_id=? AND id <= (
                   SELECT id FROM econ_ledger WHERE guild_id=? AND user_id=? ORDER BY id DESC LIMIT 1 OFFSET ?)`)

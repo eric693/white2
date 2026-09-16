@@ -22,6 +22,7 @@ const { brandColor } = require('../../util/brand');
 const { eachSlice, runJob } = require('../../util/jobs');
 const { parts, localToday } = require('../../util/time');
 const { livePrice } = require('../../util/market');
+const { INCOME_REASONS } = require('../../util/income');
 
 const { ensureColumns } = require('../../db');
 ensureColumns('econ_wallets', {
@@ -61,6 +62,28 @@ ensureColumns('tax_config', {
     setSetting('tax_2026_09_migrated', '1');
     console.log('  ↳ 稅制：已套用 2026-09 預設值（房屋稅調高、資產稅關閉、股票損益水位對齊）');
   } catch (e) { console.error('稅制預設值搬遷失敗：', e.message); }
+})();
+
+// 一次性：period_income 上線時先用明細算出本期已經有的收入（跟舊算法一樣的數字），
+// 否則改版當期的收入會整個歸零。明細已經被擠掉的部分救不回來，見 git log。
+(function seedPeriodIncome() {
+  const { getSetting, setSetting } = require('../../db');
+  if (getSetting('period_income_seeded', '0') === '1') return;
+  try {
+    require('../../db').ensureColumns('econ_wallets', { period_income: 'INTEGER NOT NULL DEFAULT 0' });
+    const reasons = [...INCOME_REASONS];
+    const marks = reasons.map(() => '?').join(',');
+    db.transaction(() => {
+      for (const t of db.prepare('SELECT guild_id, last_run_at FROM tax_config').all()) {
+        db.prepare(`UPDATE econ_wallets SET period_income = (
+                      SELECT COALESCE(SUM(l.delta),0) FROM econ_ledger l
+                       WHERE l.guild_id = econ_wallets.guild_id AND l.user_id = econ_wallets.user_id
+                         AND l.delta > 0 AND l.created_at > ? AND l.reason IN (${marks}))
+                    WHERE guild_id = ?`).run(t.last_run_at || '', ...reasons, t.guild_id);
+      }
+    })();
+    setSetting('period_income_seeded', '1');
+  } catch (e) { console.error('本期收入初始化失敗：', e.message); }
 })();
 
 const cfg = (gid) => guildConfig('tax_config', gid);
@@ -128,17 +151,10 @@ function isExempt(gid, userId, member) {
 }
 
 // ================== 實際獲利（所得稅的稅基） ==================
-// 「賺到」才課稅，錢換位置不課。判斷依據是星幣明細（econ_ledger）的 reason，
-// 那是一組由程式寫死的固定字串，不是玩家能自由輸入的東西，所以可以直接白名單。
-//
-// 為什麼用白名單而不是黑名單：漏掉一個新的收入來源，最多是少收一點稅；
-// 漏掉一個新的「錢換位置」項目，卻會讓玩家因為搬了一次錢就被課稅——
-// 後者是會讓人不敢玩的錯誤，寧可少收。
-const INCOME_REASONS = new Set([
-  '賣出', '賣動物', '賣魚', '賣家具', '賣料理', '魚缸收成',
-  '任務獎勵', '每日簽到', '成就獎金', '大賽獎金', '同居能力',
-  '偷魚成功', '偷偷樂成功', '抓到小偷賠償', '普發現金', '收到資助'
-]);
+// 「賺到」才課稅，錢換位置不課。認定的收入項目見 util/income.js。
+// 金額累加在 econ_wallets.period_income（記帳當下加上去，結算時扣掉已課的部分）。
+// 以前是結算時回頭掃星幣明細，但明細每人只留 200 筆，買賣頻繁的玩家本期的
+// 大筆收入會被擠掉，所得稅就整個不見。
 
 // 明確不列入所得（寫出來是為了讓「為什麼不課」有據可查，程式上白名單已經擋掉了）：
 //   轉帳給人／收到轉帳          → 資產移動
@@ -149,14 +165,11 @@ const INCOME_REASONS = new Set([
 //   繳稅／補繳欠稅／強制清算抵稅／捐款 → 支出
 //   各種罰款                    → 支出
 
-// 這一期的實際獲利。
-// 以「上次結算之後的星幣明細」為範圍，加上股票已實現損益的增量。
-function realizedIncome(gid, userId, since) {
-  const rows = since
-    ? db.prepare('SELECT reason, delta FROM econ_ledger WHERE guild_id=? AND user_id=? AND created_at > ?').all(gid, userId, since)
-    : db.prepare('SELECT reason, delta FROM econ_ledger WHERE guild_id=? AND user_id=?').all(gid, userId);
-  let income = 0;
-  for (const r of rows) if (r.delta > 0 && INCOME_REASONS.has(r.reason)) income += r.delta;
+// 這一期的實際獲利：本期累加的收入，加上股票已實現損益的增量。
+// periodIncome：結算時傳入開跑當下的快照，讓「課的」跟「結算後扣掉的」是同一個數字
+function realizedIncome(gid, userId, periodIncome) {
+  const income = periodIncome != null ? periodIncome
+    : ((db.prepare('SELECT period_income FROM econ_wallets WHERE guild_id=? AND user_id=?').get(gid, userId) || {}).period_income || 0);
 
   // 股票：只有「賣出之後」的淨損益才算所得，未實現漲跌不課。
   // stock_holdings.realized 是累計已實現損益（買賣手續費已經扣在裡面），
@@ -183,7 +196,7 @@ function progressiveTax(base, count, step = 2) {
 }
 
 // 算一個人這期該繳多少（不扣款，/稅單 的預估也走這支）
-function assess(gid, userId) {
+function assess(gid, userId, opts = {}) {
   const c = cfg(gid);
   const w = db.prepare('SELECT * FROM econ_wallets WHERE guild_id=? AND user_id=?').get(gid, userId);
   if (!w) return null;
@@ -265,8 +278,7 @@ function assess(gid, userId) {
     : 0;
 
   // ---- 所得稅 ----（只課這一期實際賺到的錢）
-  const since = c.last_run_at || '';
-  const ri = realizedIncome(gid, userId, since);
+  const ri = realizedIncome(gid, userId, opts.periodIncome);
   const base = ri.taxable;
   let income = c.income_enabled ? incomeTax(base, c.income_free || 0, brackets(c), !!c.income_flat) : 0;
 
@@ -537,15 +549,16 @@ async function runGuild(client, gid, { force = false, dryRun = false } = {}) {
   // 本期捐款榜要先抓：結算會把 last_run_at 推到現在，之後就查不到「本期」捐款了
   const charity = require('./charity');
   const donTop = charity.cfg(gid).enabled ? charity.periodTop(gid, 5) : [];
-  const wallets = db.prepare('SELECT user_id FROM econ_wallets WHERE guild_id=?').all(gid);
+  // 收入快照：試算切片期間玩家還在賺錢，結算只扣掉這一刻之前的，之後賺的留到下一期
+  const wallets = db.prepare('SELECT user_id, period_income FROM econ_wallets WHERE guild_id=?').all(gid);
   const guild = client && client.guilds ? client.guilds.cache.get(gid) : null;
   const bills = [];
   // 試算（唯讀）跑遍全伺服器的錢包，是這裡最長的一段同步工作 —— 切片讓步。
   // 注意只切「試算」這段：底下真正扣錢的 db.transaction 不能中途讓步，
   // 那會讓寫入鎖一直被抓著，其他行程全部卡在那裡等，反而更糟。
-  await eachSlice(wallets, ({ user_id }) => {
+  await eachSlice(wallets, ({ user_id, period_income }) => {
     if (isExempt(gid, user_id, guild && guild.members.cache.get(user_id))) return;   // 免稅名單直接跳過
-    const a = assess(gid, user_id);
+    const a = assess(gid, user_id, { periodIncome: period_income });
     if (!a || a.total < Math.max(1, c.min_total || 1)) return;
     bills.push({ userId: user_id, ...a });
   });
@@ -572,6 +585,9 @@ async function runGuild(client, gid, { force = false, dryRun = false } = {}) {
       }
       // 推進本期界線（全服一起，沒繳到稅的人也要推，否則下一期會重複課到同一批收入）
       db.prepare('UPDATE econ_wallets SET earned_mark = total_earned WHERE guild_id=?').run(gid);
+      // 本期收入歸零（扣掉開跑時的快照；免稅、沒達門檻的人也一樣推進）
+      const clearIncome = db.prepare('UPDATE econ_wallets SET period_income = MAX(0, period_income - ?) WHERE guild_id=? AND user_id=?');
+      for (const w of wallets) if (w.period_income) clearIncome.run(w.period_income, gid, w.user_id);
       // 股票已實現損益的水位：下一期只算這個時間點之後新實現的損益
       db.prepare(`UPDATE econ_wallets SET stock_mark = (
                     SELECT COALESCE(SUM(h.realized),0) FROM stock_holdings h
