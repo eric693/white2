@@ -175,6 +175,11 @@ function init(client) {
           return i.reply({ content: '生日格式不正確，請重新點按鈕填寫。', flags: MessageFlags.Ephemeral }).catch(() => {});
         }
         const age = calcAge(y, m, d);
+        // 算出來不到 6 歲幾乎一定是手誤（把「今年」填進出生年），不當成未成年記進黑名單，
+        // 否則一次打錯就永遠不能再填
+        if (age < 6) {
+          return i.reply({ content: `填的生日是 ${y}/${m}/${d}，算起來才 ${Math.max(0, age)} 歲，看起來是打錯了。\n請確認「出生年」填的是你出生那一年（西元，例如 2000），再點按鈕重填一次。`, flags: MessageFlags.Ephemeral }).catch(() => {});
+        }
 
         // 6.2 年齡驗證（僅在啟用驗證時擋人）
         if (c.enabled && age < c.min_age) {
