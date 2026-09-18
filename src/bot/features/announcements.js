@@ -29,6 +29,21 @@ function targetChannels(ann) {
 }
 
 // 組出訊息內容（7.2 / 7.6）
+const EMBED_DESC_MAX = 4096, EMBED_TOTAL_MAX = 6000;
+// 長文切段：優先在換行處切，找不到換行才硬切，避免把一行字切成兩半
+function splitText(text, max) {
+  const out = [];
+  let rest = String(text || '');
+  while (rest.length > max) {
+    let cut = rest.lastIndexOf('\n', max);
+    if (cut < max * 0.5) cut = max;
+    out.push(rest.slice(0, cut).replace(/\s+$/, ''));
+    rest = rest.slice(cut).replace(/^\n+/, '');
+  }
+  if (rest) out.push(rest);
+  return out;
+}
+
 function buildPayload(ann, channelId) {
   // 有設「頻道 ↔ 標記身分組」對應時，該頻道就只 @ 對應的身分組，
   // 沒對應到的頻道才退回公告本身的標記設定。
@@ -62,21 +77,32 @@ function buildPayload(ann, channelId) {
     const GALLERY_URL = 'https://white.crownai.ink/';
     const main = brandEmbed();
     if (ann.title) main.setTitle(ann.title);
-    if (ann.content) main.setDescription(ann.content);
-    if (ann.link_url) main.addFields({ name: '連結', value: ann.link_url });
+    // 一個 embed 的內文最多 4096 字：超過就接續放在下一個 embed（同一則訊息、同顏色，看起來是一篇）。
+    // 整則訊息所有 embed 的字數合計不能超過 6000，再長就只能拆成兩則公告。
+    const parts = splitText(ann.content || '', EMBED_DESC_MAX);
+    const total = (ann.title || '').length + (ann.content || '').length + (ann.footer || '').length + (ann.link_url || '').length;
+    if (total > EMBED_TOTAL_MAX) {
+      throw new Error(`公告太長：標題＋內文共 ${total.toLocaleString('en-US')} 字，Discord 一則 Embed 訊息最多 ${EMBED_TOTAL_MAX.toLocaleString('en-US')} 字，請拆成兩則公告`);
+    }
+    if (parts[0]) main.setDescription(parts[0]);
+    const textEmbeds = [main];
+    for (const part of parts.slice(1)) textEmbeds.push(brandEmbed().setThumbnail(null).setDescription(part));
+    const last = textEmbeds[textEmbeds.length - 1];
+    if (ann.link_url) last.addFields({ name: '連結', value: ann.link_url });
     // 單篇公告可自訂頁尾文字／縮圖，覆蓋 brandEmbed 的全站預設
-    if (ann.footer) main.setFooter({ text: ann.footer });
+    for (const e of textEmbeds.slice(0, -1)) e.setFooter(null).setTimestamp(null);
+    if (ann.footer) last.setFooter({ text: ann.footer });
     const thumb = safeUrl(ann.thumb);
     if (thumb) main.setThumbnail(thumb);
     // Discord 的規則：多個 embed 共用同一個 url 才會併成圖庫。但只要 embed 有 url，
     // 標題就會被畫成藍色超連結。所以多圖時不把 url 掛在主 embed 上，改成讓「圖片專用的
     // 附屬 embed」彼此共用 url —— 圖庫照樣成立，主 embed 的標題維持純文字。
-    payload.embeds = [main];
+    payload.embeds = textEmbeds;
     if (imgs.length === 1) {
-      main.setImage(imgs[0]);
+      last.setImage(imgs[0]);
     } else if (imgs.length > 1) {
       // 前 4 張排成圖庫格狀，第 5 張以後依序堆疊；Discord 一則訊息最多 10 個 embed
-      for (const url of imgs.slice(0, 9)) {
+      for (const url of imgs.slice(0, 10 - textEmbeds.length)) {
         payload.embeds.push(new EmbedBuilder().setURL(GALLERY_URL).setImage(url));
       }
     }
@@ -84,6 +110,9 @@ function buildPayload(ann, channelId) {
   } else {
     payload.content = [mentions.join(' '), ann.title ? `**${ann.title}**` : '', ann.content, ...imgs, ...extras]
       .filter(Boolean).join('\n') || '（無內容）';
+    if (payload.content.length > 2000) {
+      throw new Error(`公告太長：沒開 Embed 時一則最多 2,000 字（現在 ${payload.content.length.toLocaleString('en-US')} 字），請打開「使用 Embed」或拆成兩則公告`);
+    }
   }
 
   // 7.2 多個連結按鈕（圖標＋文字），最多 25 個
