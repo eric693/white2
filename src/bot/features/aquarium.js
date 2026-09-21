@@ -299,7 +299,8 @@ function feedAll(gid, uid, uname) {
 
   // 飼料以「魚飼料」物品優先（種植/購買取得），沒有物品才用星幣買
   const feedItem = db.prepare("SELECT id FROM gather_items WHERE guild_id=? AND name='魚飼料' AND enabled=1 ORDER BY id LIMIT 1").get(gid);
-  let feedStock = feedItem ? ((db.prepare('SELECT count FROM gather_inventory WHERE guild_id=? AND user_id=? AND item_id=?').get(gid, uid, feedItem.id) || {}).count || 0) : 0;
+  // 背包與倉庫都算：收成的飼料常被收進倉庫，只看背包會變成「有飼料卻扣星幣」
+  let feedStock = feedItem ? require('./gather').ownedCount(gid, uid, feedItem.id) : 0;
   let coins = wallet(gid, uid, uname).coins;
   const fedList = []; let spent = 0; let usedFeed = 0; let skipped = 0;
   db.transaction(() => {
@@ -313,7 +314,7 @@ function feedAll(gid, uid, uname) {
       db.prepare('UPDATE aquarium_slots SET fed_until_ms=? WHERE guild_id=? AND user_id=? AND slot=?').run(until, gid, uid, s.slot);
       fedList.push({ f, slot: s.slot, until });
     }
-    if (usedFeed > 0 && feedItem) db.prepare('UPDATE gather_inventory SET count = count - ? WHERE guild_id=? AND user_id=? AND item_id=?').run(usedFeed, gid, uid, feedItem.id);
+    if (usedFeed > 0 && feedItem) require('./gather').useItems(gid, uid, feedItem.id, usedFeed);
     if (spent > 0) { db.prepare('UPDATE econ_wallets SET coins = coins - ? WHERE guild_id=? AND user_id=?').run(spent, gid, uid); logCoins(gid, uid, -spent, '餵魚', `${fedList.length} 隻`); }
   })();
 

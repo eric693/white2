@@ -1191,6 +1191,30 @@ function toBag(gid, uid, itemId, qty) {
   return n;
 }
 
+// 背包＋倉庫的總持有量。餵魚／餵寵物這種「消耗自己的存貨」要看兩邊：
+// 收成的飼料常常被收進倉庫（一次性遷移也會搬進去），只看背包會變成
+// 「明明有飼料卻說沒有」，然後默默改扣星幣。
+const ownedCount = (gid, uid, itemId) => bagCount(gid, uid, itemId) + storeCount(gid, uid, itemId);
+
+// 消耗自己的存貨：先扣背包，不夠再扣倉庫。回傳實際扣掉幾個。
+// 呼叫端多半已經在 transaction 裡，這裡只做單純的 UPDATE。
+function useItems(gid, uid, itemId, qty) {
+  let need = Math.max(0, Math.floor(qty) || 0);
+  if (!need) return 0;
+  let used = 0;
+  const fromBag = Math.min(need, bagCount(gid, uid, itemId));
+  if (fromBag > 0) {
+    db.prepare('UPDATE gather_inventory SET count = count - ? WHERE guild_id=? AND user_id=? AND item_id=?').run(fromBag, gid, uid, itemId);
+    used += fromBag; need -= fromBag;
+  }
+  const fromStore = Math.min(need, storeCount(gid, uid, itemId));
+  if (fromStore > 0) {
+    db.prepare('UPDATE gather_storage SET count = count - ? WHERE guild_id=? AND user_id=? AND item_id=?').run(fromStore, gid, uid, itemId);
+    used += fromStore;
+  }
+  return used;
+}
+
 // 一次性遷移：把目前在「保管袋」裡的東西實際搬進倉庫。
 // 直接把倉庫留空的話，那些製作材料／種子／要孵的蛋會突然變成可以一鍵賣掉的狀態，
 // 等於改版當天幫所有人把家當清掉一次。搬過去才能維持他們現在就有的保護。
@@ -2492,4 +2516,4 @@ function init(client) {
   console.log('  ↳ 釣魚挖礦模組已載入（冷卻/稀有掉落/商店道具/圖鑑/經濟）');
 }
 
-module.exports = { init, rollItem, activeLuck, currentTool, wallet, addCoins, logCoins, addToBag, seedGuild, seedMaterials, staminaState, staminaBoughtToday, bumpPoints, addPointsBonus, menuResult, safeMenu, RARITY, RARITY_LABEL, sellAllBag, buyThing, doGather, cmdPerm, categories, seedCategories, catOf, recipeCatOf, DEFAULT_CATEGORIES, toStorage, toBag, storageRows, bagCount, storeCount };
+module.exports = { init, rollItem, activeLuck, currentTool, wallet, addCoins, logCoins, addToBag, seedGuild, seedMaterials, staminaState, staminaBoughtToday, bumpPoints, addPointsBonus, menuResult, safeMenu, RARITY, RARITY_LABEL, sellAllBag, buyThing, doGather, cmdPerm, categories, seedCategories, catOf, recipeCatOf, DEFAULT_CATEGORIES, toStorage, toBag, storageRows, bagCount, storeCount, ownedCount, useItems };

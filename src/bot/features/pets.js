@@ -165,10 +165,10 @@ function ensureFoodItem(gid) {
   }
   return it;
 }
+// 背包＋倉庫都算：玩家常把飼料收進倉庫，只看背包會變成「明明有卻說不夠」
 const foodCount = (gid, uid) => {
   const it = foodItem(gid);
-  if (!it) return 0;
-  return (db.prepare('SELECT count FROM gather_inventory WHERE guild_id=? AND user_id=? AND item_id=?').get(gid, uid, it.id) || {}).count || 0;
+  return it ? require('./gather').ownedCount(gid, uid, it.id) : 0;
 };
 
 /** 買飼料（寵物面板的按鈕） */
@@ -212,7 +212,7 @@ function feedPet(gid, uid, ownedId) {
   const lvUp = exp >= p.level * 100;
   bumpAch(gid, uid, 'feed_count', 1);
   db.transaction(() => {
-    if (need) db.prepare('UPDATE gather_inventory SET count = count - ? WHERE guild_id=? AND user_id=? AND item_id=?').run(need, gid, uid, it.id);
+    if (need) require('./gather').useItems(gid, uid, it.id, need);
     db.prepare('UPDATE pet_owned SET intimacy = MIN(100, intimacy + ?), exp = ?, level = ?, fed_ms = ? WHERE id=?')
       .run(gain, lvUp ? 0 : exp, lvUp ? p.level + 1 : p.level, now, p.id);
   })();
@@ -428,4 +428,4 @@ function init(client) {
   console.log('  ↳ 寵物模組已載入（20 種寵物／親密度／技能加成）');
 }
 
-module.exports = { init, seedPets, petPanel, petsOf };
+module.exports = { init, seedPets, petPanel, petsOf, feedPet, buyFood, foodCount };
