@@ -151,17 +151,25 @@ async function openTicket(i, subject, panelId) {
   }
 
   let channel;
+  const baseOpts = {
+    name: `ticket-${String(ticketId).padStart(4, '0')}-${i.user.username}`.slice(0, 90).toLowerCase(),
+    type: ChannelType.GuildText,
+    permissionOverwrites: overwrites,
+    topic: `客服單 #${ticketId}｜${panel.name}｜開單者 ${i.user.tag}（${i.user.id}）${subject ? `｜主旨：${subject}` : ''}`
+  };
   try {
-    channel = await i.guild.channels.create({
-      name: `ticket-${String(ticketId).padStart(4, '0')}-${i.user.username}`.slice(0, 90).toLowerCase(),
-      type: ChannelType.GuildText,
-      parent: categoryId || undefined,
-      permissionOverwrites: overwrites,
-      topic: `客服單 #${ticketId}｜${panel.name}｜開單者 ${i.user.tag}（${i.user.id}）${subject ? `｜主旨：${subject}` : ''}`
-    });
+    channel = await i.guild.channels.create({ ...baseOpts, parent: (await ticketCategory(i.guild, categoryId)) || undefined });
   } catch (e) {
-    db.prepare('DELETE FROM tickets WHERE id=?').run(ticketId);
-    throw new Error('建立頻道失敗：' + e.message + '（請確認機器人有「管理頻道」權限，且分類設定正確）');
+    // 分類滿了（Discord 一個分類最多 50 個頻道）→ 開一個續用分類再試一次，
+    // 客服單不能因為「分類滿了」就整個開不了。
+    if (isCategoryFull(e)) {
+      const next = await overflowCategory(i.guild, categoryId).catch(() => null);
+      channel = await i.guild.channels.create({ ...baseOpts, parent: next || undefined }).catch(() => null);
+    }
+    if (!channel) {
+      db.prepare('DELETE FROM tickets WHERE id=?').run(ticketId);
+      throw new Error('建立頻道失敗：' + e.message + '（請確認機器人有「管理頻道」權限，且分類設定正確）');
+    }
   }
   db.prepare('UPDATE tickets SET channel_id=? WHERE id=?').run(channel.id, ticketId);
 
@@ -178,6 +186,39 @@ async function openTicket(i, subject, panelId) {
   await channel.send({ content: `<@${i.user.id}> ${supportTags}`, embeds: [embed, ...openExtra], components: rows.slice(0, 5) }).catch(() => {});
 
   return i.editReply(`已為你開啟客服單：<#${channel.id}>`);
+}
+
+// Discord 一個分類最多 50 個頻道。滿了就換下一個「同名 ②③…」的續用分類，
+// 沒有就開一個新的（開不出來就不放分類，至少單要開得成）。
+const CATEGORY_MAX = 50;
+const isCategoryFull = (e) => /CHANNEL_PARENT_MAX_CHANNELS|Maximum number of channels in category/i.test(String(e && e.message));
+const childCount = (guild, catId) => guild.channels.cache.filter(ch => ch.parentId === catId).size;
+
+// 這次要用哪個分類：設定的那個還有空位就用它，滿了就找已經開好的續用分類
+async function ticketCategory(guild, categoryId) {
+  if (!categoryId) return null;
+  const base = guild.channels.cache.get(categoryId);
+  if (!base) return categoryId;
+  if (childCount(guild, categoryId) < CATEGORY_MAX) return categoryId;
+  const sibling = guild.channels.cache
+    .filter(ch => ch.type === ChannelType.GuildCategory && ch.id !== categoryId
+      && String(ch.name).startsWith(base.name) && childCount(guild, ch.id) < CATEGORY_MAX)
+    .sort((a, b) => a.name.localeCompare(b.name)).first();
+  return sibling ? sibling.id : categoryId;
+}
+
+// 全部滿了 → 開一個新的續用分類（權限沿用原分類）
+async function overflowCategory(guild, categoryId) {
+  const base = categoryId ? guild.channels.cache.get(categoryId) : null;
+  const baseName = base ? base.name : '客服單';
+  const used = guild.channels.cache.filter(ch => ch.type === ChannelType.GuildCategory && String(ch.name).startsWith(baseName)).size;
+  const created = await guild.channels.create({
+    name: `${baseName} ${used + 1}`.slice(0, 90),
+    type: ChannelType.GuildCategory,
+    permissionOverwrites: base ? [...base.permissionOverwrites.cache.values()].map(o => ({ id: o.id, allow: o.allow, deny: o.deny })) : undefined
+  });
+  logError(guild.id, '客服單分類已滿：', `已自動開新分類「${created.name}」接續開單（原分類 ${baseName} 已達 ${CATEGORY_MAX} 個頻道上限）`);
+  return created.id;
 }
 
 async function closeTicket(i, ticketId) {
@@ -280,13 +321,13 @@ function init(client) {
         // 點按鈕直接建單、直接給連結進去（不再跳出填主題的視窗）
         await i.deferReply({ flags: MessageFlags.Ephemeral });
         const panelId = parseInt(i.customId.split(':')[2], 10) || 0;
-        return openTicket(i, '', panelId);
+        return await openTicket(i, '', panelId);
       }
 
       if (i.isModalSubmit() && i.customId.startsWith('ticket:modal')) {
         await i.deferReply({ flags: MessageFlags.Ephemeral });
         const panelId = parseInt(i.customId.split(':')[2], 10) || 0;
-        return openTicket(i, i.fields.getTextInputValue('subject').trim(), panelId);
+        return await openTicket(i, i.fields.getTextInputValue('subject').trim(), panelId);
       }
 
       if (i.isButton() && i.customId.startsWith('ticket:close:')) {
