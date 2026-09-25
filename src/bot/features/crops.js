@@ -193,8 +193,8 @@ function plantableSeeds(gid, uid, type) {
 // 設施的「產量 +N%」套在收成數量上。yield_count 很小（2~3），直接無條件捨去會把
 // 加成整個吃掉（floor(2×1.35)=2 跟沒加成一樣），所以小數部分用機率補一個，
 // 長期期望值剛好等於加成％。農地與溫室各自看自己的設施等級。
-function yieldCountFor(gid, uid, seed) {
-  const pct = facilityBonus(gid, uid, seed.plot_type).yield || 0;
+function yieldCountFor(gid, uid, seed, pctOverride) {
+  const pct = pctOverride != null ? pctOverride : (facilityBonus(gid, uid, seed.plot_type).yield || 0);
   const base = Math.max(1, seed.yield_count || 1);
   if (pct <= 0) return base;
   const raw = base * (1 + pct / 100);
@@ -210,20 +210,29 @@ function reap(gid, uid) {
   const witherPct = Math.max(0, Math.min(90, ccfg(gid).wither_pct || 0));
   const gained = new Map();
   const withered = [];
+  // 田開到幾千格時，一格一格查種子／查設施加成／各刪一列會跑上萬次查詢（實測 5,000 格
+  // 要 570ms），排程期間整個機器人就卡在這裡。改成：種子與設施加成各查一次、
+  // 收成量先在記憶體加總、最後一次刪光成熟的格子、每種產物只寫一次背包。
+  const seedCache = new Map();
+  const seedOf = (id) => {
+    if (!seedCache.has(id)) seedCache.set(id, seedById(gid, id));
+    return seedCache.get(id);
+  };
+  const yieldPct = {};
+  const pctOf = (type) => (yieldPct[type] != null ? yieldPct[type] : (yieldPct[type] = facilityBonus(gid, uid, type).yield || 0));
   db.transaction(() => {
     for (const r of ripe) {
-      const seed = seedById(gid, r.seed_id);
-      if (!seed) { db.prepare('DELETE FROM crop_plots WHERE guild_id=? AND user_id=? AND plot_type=? AND slot=?').run(gid, uid, r.plot_type, r.slot); continue; }
+      const seed = seedOf(r.seed_id);
+      if (!seed) continue;
       if (witherPct > 0 && Math.random() * 100 < witherPct) {
         withered.push(`${seed.emoji || ''}${seed.name}`);
-        db.prepare('DELETE FROM crop_plots WHERE guild_id=? AND user_id=? AND plot_type=? AND slot=?').run(gid, uid, r.plot_type, r.slot);
         continue;
       }
-      const n = yieldCountFor(gid, uid, seed);
-      addToBag(gid, uid, seed.product_item_id, n);
+      const n = yieldCountFor(gid, uid, seed, pctOf(seed.plot_type));
       gained.set(seed.product_item_id, (gained.get(seed.product_item_id) || 0) + n);
-      db.prepare('DELETE FROM crop_plots WHERE guild_id=? AND user_id=? AND plot_type=? AND slot=?').run(gid, uid, r.plot_type, r.slot);
     }
+    db.prepare('DELETE FROM crop_plots WHERE guild_id=? AND user_id=? AND ready_at<=?').run(gid, uid, now);
+    for (const [itemId, n] of gained) addToBag(gid, uid, itemId, n);
   })();
   let value = 0;
   const lines = [...gained.entries()].map(([itemId, n]) => {

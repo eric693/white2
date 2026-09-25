@@ -267,16 +267,21 @@ function harvestPlots(gid, uid, type) {
   const ripe = db.prepare('SELECT * FROM crop_plots WHERE guild_id=? AND user_id=? AND plot_type=? AND ready_at<=?').all(gid, uid, type, now);
   if (!ripe.length) return [];
   const gained = new Map();
+  // 跟玩家自己 /採收 同一套批次寫法：種子查一次、加總後一次刪、一種產物寫一次
+  const seedCache = new Map();
+  const { yieldCountFor } = require('./crops');
+  const { facilityBonus } = require('./facility');
+  const yieldPct = facilityBonus(gid, uid, type).yield || 0;
   db.transaction(() => {
     for (const r of ripe) {
-      const seed = db.prepare('SELECT * FROM crop_seeds WHERE guild_id=? AND id=?').get(gid, r.seed_id);
-      db.prepare('DELETE FROM crop_plots WHERE guild_id=? AND user_id=? AND plot_type=? AND slot=?').run(gid, uid, r.plot_type, r.slot);
+      if (!seedCache.has(r.seed_id)) seedCache.set(r.seed_id, db.prepare('SELECT * FROM crop_seeds WHERE guild_id=? AND id=?').get(gid, r.seed_id));
+      const seed = seedCache.get(r.seed_id);
       if (!seed) continue;
-      // 跟玩家自己 /採收 走同一套產量加成，不能因為是同居角色代收就少拿
-      const n = require('./crops').yieldCountFor(gid, uid, seed);
-      addToBag(gid, uid, seed.product_item_id, n);
+      const n = yieldCountFor(gid, uid, seed, yieldPct);
       gained.set(seed.product_item_id, (gained.get(seed.product_item_id) || 0) + n);
     }
+    db.prepare('DELETE FROM crop_plots WHERE guild_id=? AND user_id=? AND plot_type=? AND ready_at<=?').run(gid, uid, type, now);
+    for (const [itemId, n] of gained) addToBag(gid, uid, itemId, n);
   })();
   return [...gained.entries()].map(([id, n]) => {
     const p = db.prepare('SELECT name, emoji FROM gather_items WHERE id=?').get(id);
