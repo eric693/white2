@@ -185,6 +185,22 @@ async function openTicket(i, subject, panelId) {
   const supportTags = supportRoles.map(id => `<@&${id}>`).join(' ');
   await channel.send({ content: `<@${i.user.id}> ${supportTags}`, embeds: [embed, ...openExtra], components: rows.slice(0, 5) }).catch(() => {});
 
+  // 紀錄到 log 頻道：開單與關單各一筆，管理端才看得出「誰開的、什麼時候開的、還沒關」
+  if (c.log_channel) {
+    const log = i.client.channels.cache.get(c.log_channel) || await i.client.channels.fetch(c.log_channel).catch(() => null);
+    if (log) {
+      await log.send({
+        embeds: [new EmbedBuilder().setColor(0x57f287).setTitle(`客服單 #${ticketId} 已開啟`)
+          .addFields(
+            { name: '開單者', value: `${nameOf(i)}　<@${i.user.id}>`, inline: true },
+            { name: '面板', value: panel.name || '（預設）', inline: true },
+            { name: '頻道', value: `<#${channel.id}>`, inline: true },
+            { name: '主旨', value: subject || '（無）' }
+          ).setTimestamp(new Date())]
+      }).catch(() => {});
+    }
+  }
+
   return i.editReply(`已為你開啟客服單：<#${channel.id}>`);
 }
 

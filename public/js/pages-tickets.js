@@ -33,7 +33,7 @@ App.page('tickets', {
         <div class="field"><label>預設分類（面板沒指定時用這個）</label>${catSelect('category_id', c.category_id)}</div>
         <div class="field"><label>預設客服身分組</label>
           ${multiBox('support_role_ids', H.roles || [], c.support_role_ids, r => '@ ' + r.name)}</div>
-        <div class="field"><label>關單紀錄頻道</label>${H.chanSelect('log_channel', c.log_channel)}</div>
+        <div class="field"><label>開單／關單紀錄頻道</label>${H.chanSelect('log_channel', c.log_channel)}</div>
         <div class="field"><label>每人同時最多開幾張單</label><input name="max_open" type="number" min="1" value="${c.max_open}"></div>
         <button class="btn" id="save">儲存全域設定</button>
       </div>
