@@ -29,7 +29,8 @@ async function eachSlice(items, fn, { slice = SLICE_MS, label = '', describe = n
     // 一個項目就做超過 SLOW_ITEM_MS 的話，切片救不了它（讓步只發生在項目之間）——
     // 記一筆才查得出是哪個玩家、哪個區域把機器人卡住。
     const spent = Date.now() - started;
-    if (spent >= SLOW_ITEM_MS) {
+    // 只記有標記的內層迴圈：外層（每台伺服器一項）自己還會再切片，時間長不代表卡住
+    if (spent >= SLOW_ITEM_MS && label) {
       try {
         const what = describe ? describe(item) : (typeof item === 'object' ? JSON.stringify(item).slice(0, 120) : String(item));
         require('../db').logError('', '排程單項過久：', `${label || '排程'}｜${what}｜${spent}ms`);
