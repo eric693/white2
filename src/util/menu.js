@@ -106,4 +106,38 @@ function selectRows(id, options, placeholder, opt = {}) {
 /** 這個 customId 是不是屬於某個分頁選單（含第 0 頁） */
 const isSelect = (customId, id) => customId === id || customId.startsWith(id + ':');
 
-module.exports = { selectRows, isSelect, safeEmoji, installEmojiGuard };
+/**
+ * Embed 長度保險：超過 Discord 上限就截斷，而不是整則訊息發不出去。
+ *
+ * Discord 的上限是標題 256、內文 4096、頁尾 2048、欄位值 1024。超過時 discord.js
+ * 直接丟「Received one or more errors」——玩家看到的是指令整個失敗（例：一位玩家
+ * 養了 3,000 條魚，餵魚訊息把每條都列出來，`/餵魚` 從此再也用不了）。
+ * 每個呼叫點各自截斷遲早會漏，所以在建構器這一層一次擋掉：寧可少顯示幾行，
+ * 也不要整個功能掛掉。只在啟動時裝一次（bot/index.js）。
+ */
+function installEmbedGuard() {
+  const { EmbedBuilder } = require('discord.js');
+  if (EmbedBuilder.prototype.__lenGuard) return;
+  const MORE = '\n…（內容太長，後面省略）';
+  const clip = (v, max, tail = '…') => {
+    const t = String(v);
+    return t.length <= max ? t : t.slice(0, max - tail.length) + tail;
+  };
+  const wrap = (name, fn) => {
+    const orig = EmbedBuilder.prototype[name];
+    if (orig) EmbedBuilder.prototype[name] = function (...args) { return orig.apply(this, fn(args)); };
+  };
+  wrap('setTitle', ([t]) => [t == null ? t : clip(t, 256)]);
+  wrap('setDescription', ([d]) => [d == null ? d : clip(d, 4096, MORE)]);
+  wrap('setFooter', ([f]) => [f && f.text ? { ...f, text: clip(f.text, 2048) } : f]);
+  wrap('setAuthor', ([a]) => [a && a.name ? { ...a, name: clip(a.name, 256) } : a]);
+  const fixFields = (fields) => fields.flat().map(f => (f && typeof f === 'object')
+    ? { ...f, name: clip(f.name == null ? '　' : f.name, 256), value: clip(f.value == null || f.value === '' ? '—' : f.value, 1024, MORE) } : f);
+  for (const name of ['addFields', 'setFields']) {
+    const orig = EmbedBuilder.prototype[name];
+    if (orig) EmbedBuilder.prototype[name] = function (...args) { return orig.apply(this, fixFields(args)); };
+  }
+  EmbedBuilder.prototype.__lenGuard = true;
+}
+
+module.exports = { selectRows, isSelect, safeEmoji, installEmojiGuard, installEmbedGuard };

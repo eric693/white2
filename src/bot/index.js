@@ -8,6 +8,8 @@ const { absUrl } = require('../util/url');
 // 後台填的 emoji 只要有一顆 Discord 不認得，整個面板就送不出去（見 util/menu.js）——
 // 啟動時先把過濾裝到 discord.js 的建構器上，所有選單與按鈕一律套用。
 require('../util/menu').installEmojiGuard();
+// Embed 超過 Discord 長度上限時自動截斷，不要讓整個指令發不出去
+require('../util/menu').installEmbedGuard();
 
 // 頭像存的是 /uploads/xxx 相對路徑；setAvatar 需要「本機檔路徑」或「完整網址」。
 // 本機檔優先（不必連外），找不到才退回公開網址。

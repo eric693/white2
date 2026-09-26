@@ -738,7 +738,7 @@ async function runDaily(gid, mode = 'daily') {
           logWork(gid, p.user_id, p.role_name, job, lines);
         }
       } catch (e) { logError(gid, `工作區域執行失敗（${p.user_id}／${p.work_area}）：`, e.message); }
-    });
+    }, { label: '同居工作區域', describe: (p) => `${p.user_name || p.user_id}／${p.work_area}` });
   }
   return out;
 }

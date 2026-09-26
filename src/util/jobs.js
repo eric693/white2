@@ -12,6 +12,8 @@
 // 為什麼是 setImmediate 而不是 setTimeout(0)：setImmediate 排在 I/O 回呼之後，
 // 剛好讓已經到達的 Discord 封包先被處理完，再回來做下一段。
 const SLICE_MS = 40;
+// 單一項目做超過這個時間就記一筆：切片只能在項目之間讓步，項目本身太大就是元凶
+const SLOW_ITEM_MS = 400;
 
 const yieldToLoop = () => new Promise(resolve => setImmediate(resolve));
 
@@ -19,10 +21,20 @@ const yieldToLoop = () => new Promise(resolve => setImmediate(resolve));
  * 把一個大迴圈拆成小段跑。fn 可以是同步或非同步。
  * 每累積超過 slice 毫秒就讓出一次 event loop。
  */
-async function eachSlice(items, fn, { slice = SLICE_MS } = {}) {
+async function eachSlice(items, fn, { slice = SLICE_MS, label = '', describe = null } = {}) {
   let since = Date.now();
   for (const item of items) {
+    const started = Date.now();
     await fn(item);
+    // 一個項目就做超過 SLOW_ITEM_MS 的話，切片救不了它（讓步只發生在項目之間）——
+    // 記一筆才查得出是哪個玩家、哪個區域把機器人卡住。
+    const spent = Date.now() - started;
+    if (spent >= SLOW_ITEM_MS) {
+      try {
+        const what = describe ? describe(item) : (typeof item === 'object' ? JSON.stringify(item).slice(0, 120) : String(item));
+        require('../db').logError('', '排程單項過久：', `${label || '排程'}｜${what}｜${spent}ms`);
+      } catch {}
+    }
     if (Date.now() - since >= slice) {
       await yieldToLoop();
       since = Date.now();
@@ -63,4 +75,4 @@ function currentJob() {
   return current ? `${current.name}（已跑 ${Date.now() - current.at}ms）` : null;
 }
 
-module.exports = { eachSlice, yieldToLoop, runJob, currentJob, SLICE_MS };
+module.exports = { eachSlice, yieldToLoop, runJob, currentJob, SLICE_MS, SLOW_ITEM_MS };
