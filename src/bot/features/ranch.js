@@ -196,6 +196,20 @@ function nextReadyMs(gid, s) {
 }
 
 // 收成：把所有動物累積的產物放進背包。回傳 {ok, lines, value} 或 {empty:true}。Discord 與網頁共用。
+// 腐壞幾份：一份一份擲骰最準，但上萬份時會拖住整個迴圈。
+// 超過 2,000 份改用常態近似（平均與變異數跟逐份擲骰一樣），玩家感受不出差別。
+function spoilCount(n, pct) {
+  const p = pct / 100;
+  if (n <= 2000) {
+    let bad = 0;
+    for (let k = 0; k < n; k++) if (Math.random() < p) bad++;
+    return bad;
+  }
+  const mean = n * p, sd = Math.sqrt(n * p * (1 - p));
+  const z = Math.sqrt(-2 * Math.log(Math.random() || 1e-9)) * Math.cos(2 * Math.PI * Math.random());
+  return Math.max(0, Math.min(n, Math.round(mean + sd * z)));
+}
+
 function harvest(gid, uid) {
   accrue(gid, uid);
   // 腐壞率：放太久的蛋奶不是每一份都好的（後台 spoil_pct，0＝全部都好）。
@@ -207,25 +221,27 @@ function harvest(gid, uid) {
   // 「讀 pending」與「把 pending 歸零」必須在同一個交易裡。
   // 排程改成切片執行之後，玩家的 /收成 有機會插進兩個切片之間 ——
   // 在交易外讀、在交易裡才歸零的話，兩邊會各自把同一批 pending 發一次（重複給獎）。
+  // 牧場開到上萬格的玩家，一格一格寫背包＋一格一格歸零要跑好幾萬次查詢
+  // （實測 21,000 格要 1.8 秒，排程期間整隻機器人就卡在這裡）。
+  // 改成：動物只查一次、產量先在記憶體加總、最後一次寫背包、一句 SQL 歸零。
+  const animalCache = new Map();
+  const animalOf = (id) => {
+    if (!animalCache.has(id)) animalCache.set(id, animalById(gid, id));
+    return animalCache.get(id);
+  };
   db.transaction(() => {
     const slots = db.prepare('SELECT * FROM ranch_slots WHERE guild_id=? AND user_id=? AND pending > 0').all(gid, uid);
     if (!slots.length) return;
     found = true;
     for (const s of slots) {
-      const a = animalById(gid, s.animal_id);
+      const a = animalOf(s.animal_id);
       if (!a) continue;
       let n = s.pending;
-      if (spoilPct > 0) {
-        let bad = 0;
-        for (let k = 0; k < n; k++) if (Math.random() * 100 < spoilPct) bad++;
-        spoiled += bad; n -= bad;
-      }
-      if (n > 0) {
-        addToBag(gid, uid, a.product_item_id, n);
-        gained.set(a.product_item_id, (gained.get(a.product_item_id) || 0) + n);
-      }
-      db.prepare('UPDATE ranch_slots SET pending=0 WHERE guild_id=? AND user_id=? AND slot=?').run(gid, uid, s.slot);
+      if (spoilPct > 0) { const bad = spoilCount(n, spoilPct); spoiled += bad; n -= bad; }
+      if (n > 0) gained.set(a.product_item_id, (gained.get(a.product_item_id) || 0) + n);
     }
+    for (const [itemId, n] of gained) addToBag(gid, uid, itemId, n);
+    db.prepare('UPDATE ranch_slots SET pending=0 WHERE guild_id=? AND user_id=? AND pending > 0').run(gid, uid);
   })();
   if (!found) return { empty: true };
   bumpAch(gid, uid, 'harvest_count', 1);
