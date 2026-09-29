@@ -6,8 +6,8 @@
 const { SlashCommandBuilder, ChannelType, PermissionFlagsBits } = require('discord.js');
 
 const builders = [
-  new SlashCommandBuilder().setName('play').setDescription('點歌並播放（歌名、SoundCloud 或 YouTube 連結）')
-    .addStringOption(o => o.setName('歌曲').setDescription('歌名，或 SoundCloud 連結').setRequired(true)),
+  new SlashCommandBuilder().setName('play').setDescription('點歌並播放（歌名、SoundCloud／YouTube／Spotify 連結）')
+    .addStringOption(o => o.setName('歌曲').setDescription('歌名，或 SoundCloud／Spotify 連結（歌曲、專輯、歌單都可以）').setRequired(true)),
   new SlashCommandBuilder().setName('join').setDescription('（管理員）讓機器人加入語音頻道')
     .addChannelOption(o => o.setName('頻道').setDescription('指定語音頻道，不填則加入你所在的頻道')
       .addChannelTypes(ChannelType.GuildVoice)),

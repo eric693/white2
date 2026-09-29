@@ -7,6 +7,7 @@ const { EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelect
 const { spawn } = require('child_process');
 const ffmpegPath = require('ffmpeg-static');
 const ytdlp = require('../../util/ytdlp');
+const spotify = require('../../util/spotify');
 const { tempReply } = require('../../util/ephemeral');
 const { db, guildConfig, activeGuildIds, logError } = require('../../db');
 const { brandColor } = require('../../util/brand');
@@ -659,6 +660,30 @@ function init(client) {
               value: String(idx)
             })));
           return i.editReply({ content: `🔎 「${query}」找到這些，選一首播放：`, components: [new ActionRowBuilder().addComponents(menu)] });
+        }
+
+        // Spotify 連結 → 先轉成「歌名＋演出者」，再到現在的音源找同一首
+        // （Spotify 不提供音訊串流，任何機器人都只能這樣做）
+        if (spotify.isSpotifyUrl(query)) {
+          const sp = await spotify.resolve(query);
+          if (!sp) return i.editReply('讀不到這個 Spotify 連結的內容。確認是公開的歌曲／專輯／歌單連結，或直接打歌名點歌。');
+          const found = [], missing = [];
+          for (const t of sp.tracks) {
+            const r = await resolveSongs(t.query, i.user.username).catch(() => null);
+            if (r && r.songs && r.songs.length) found.push(r.songs[0]);
+            else missing.push(`${t.title}${t.artist ? `／${t.artist}` : ''}`);
+            if (found.length === 1 && sp.tracks.length > 1) {
+              // 第一首找到就先回報，長歌單不用等全部搜完（其餘接著補進佇列）
+              await i.editReply(`🎧 正在從 Spotify 載入 **${sp.name}**（${sp.tracks.length} 首）…`).catch(() => {});
+            }
+          }
+          if (!found.length) return i.editReply(`Spotify 的 **${sp.name}** 讀到了，但這些歌在目前的音源上都找不到。`);
+          const text = await addAndPlay(i.guildId, i.user, i.channelId, found,
+            sp.kind === 'track' ? '' : `${sp.name}（Spotify）`);
+          const note = `\n🎧 來源：Spotify **${sp.name}**（Spotify 不能直接播，已改用目前音源找同一首）`
+            + (missing.length ? `\n⚠️ 有 ${missing.length} 首找不到：${missing.slice(0, 5).join('、')}${missing.length > 5 ? '…' : ''}` : '')
+            + (sp.tracks.length >= spotify.MAX_TRACKS ? `\n（歌單很長，只載入前 ${spotify.MAX_TRACKS} 首）` : '');
+          return i.editReply(text + note);
         }
 
         // 網址 / 歌單 → 直接解析播放
