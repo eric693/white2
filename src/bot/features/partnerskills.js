@@ -381,7 +381,10 @@ function autoIncubate(gid, uid) {
 // 換人不會動到任何資料：指派只是 home_partners.work_area 這一個欄位，
 // 設施、作物、動物、物資與進度都在玩家自己身上，跟誰在顧完全無關。
 require('../../db').ensureColumns('home_partners', {
-  work_area: "TEXT NOT NULL DEFAULT ''"
+  work_area: "TEXT NOT NULL DEFAULT ''",
+  // 玩家自己按的「暫停自動工作」。撤掉工作區域不會讓角色停手（能力是另一條線，
+  // 管理員指定、照樣每 5 分鐘跑），玩家看起來就像撤了也沒用 —— 這個開關才是真的停。
+  paused: 'INTEGER NOT NULL DEFAULT 0'
 });
 
 const WORK_AREAS = {
@@ -489,6 +492,31 @@ function runArea(gid, uid, uname, area) {
     default: return [];
   }
   return lines;
+}
+
+/** 暫停／恢復一位同居角色的自動工作（工作區域與能力都停）。回傳新的狀態。 */
+function togglePaused(gid, uid, roleId) {
+  const row = db.prepare('SELECT paused FROM home_partners WHERE guild_id=? AND user_id=? AND role_id=?').get(gid, uid, roleId);
+  if (!row) return null;
+  const next = row.paused ? 0 : 1;
+  db.prepare('UPDATE home_partners SET paused=? WHERE guild_id=? AND user_id=? AND role_id=?').run(next, gid, uid, roleId);
+  return next;
+}
+
+/** 這位角色現在實際上會自動做什麼（面板用）：暫停／工作區域／能力／什麼都不做 */
+function autoWorkText(gid, p) {
+  if (p.paused) return '⏸️ 已暫停（不會自動做任何事）';
+  const skill = p.skill_id ? skillById(gid, p.skill_id) : null;
+  if (p.work_area) {
+    const area = (WORK_AREAS[p.work_area] || {}).name || p.work_area;
+    return areaOfRole(gid, p.role_id) === p.work_area
+      ? `${area}（整區自動處理）`
+      : `🚫 罷工中：被派去${area}，但他的能力是「${skill ? skill.name : '（沒有能力）'}」`;
+  }
+  // 沒有工作區域時，能力那條照樣會跑 —— 玩家最容易誤會的就是這裡
+  if (skill && skill.enabled && HOURLY_SKILLS.has(skill.code)) return `${skill.name}（能力，仍會自動執行）`;
+  if (skill && skill.enabled) return `${skill.name}（每日配給類，每天執行一次）`;
+  return '沒有自動工作';
 }
 
 /** 這位玩家目前每個區域各派了誰（沒派就是 null） */
@@ -683,6 +711,7 @@ async function runDaily(gid, mode = 'daily') {
   // （回呼裡原本的 continue 因此改成 return —— 效果一樣是「跳過這一位」）
   await eachSlice(rows, (p) => {
     try {
+      if (p.paused) return;                                   // 玩家按了暫停：這位角色什麼都不做
       const skill = skillById(gid, p.skill_id);
       if (!skill || !skill.enabled) return;
       const isHourly = HOURLY_SKILLS.has(skill.code);
@@ -712,7 +741,7 @@ async function runDaily(gid, mode = 'daily') {
          FROM home_partners p
          JOIN wheel_roles r ON r.id = p.role_id
          LEFT JOIN econ_wallets w ON w.guild_id=p.guild_id AND w.user_id=p.user_id
-        WHERE p.guild_id=? AND p.work_area <> ''`).all(gid);
+        WHERE p.guild_id=? AND p.work_area <> '' AND p.paused = 0`).all(gid);
     // 一樣切片：一位角色一個單位（runArea 是整區完整流程，最重的就在這裡）
     await eachSlice(areas, (p) => {
       try {
@@ -796,7 +825,7 @@ function notifyChannel(client, gid) {
   return null;
 }
 
-module.exports = { WORK_AREAS, AREA_SKILLS, areaOfSkill, areaOfRole, migrateMergedSkills, MERGE_MAP, runArea, areaAssignments, assignArea, designatedSkill, workLog, workCountToday,
+module.exports = { WORK_AREAS, AREA_SKILLS, togglePaused, autoWorkText, areaOfSkill, areaOfRole, migrateMergedSkills, MERGE_MAP, runArea, areaAssignments, assignArea, designatedSkill, workLog, workCountToday,
   init, ABILITIES, KIND_LABEL, seedSkills, valueFor, skillText, skillPreview, REVEAL,
   skillsForRole, skillById, activeSkill, passivePct, runDaily, DEFAULT_SKILLS
 };

@@ -410,13 +410,12 @@ function partnerPanel(gid, uid, uname) {
       + `第 2 位 ×${step}、第 3 位 ×${step * step}…　住越多位，每一位的稅都比前一位貴一倍。`)
     .addFields({ name: `目前同居（每期同居稅合計 ${totalTax.toLocaleString('en-US')}）`, value: list.length
       ? list.map((p, idx) => {
-        const { areaOfRole } = require('./partnerskills');
-        const area = p.work_area ? (WORK_AREAS[p.work_area] || {}).name : '';
-        // 能力跟區域對不上＝罷工中，面板要講清楚，不然玩家會以為系統壞了
-        const striking = p.work_area && areaOfRole(gid, p.role_id) !== p.work_area;
-        return `💕 **${p.name}**　${levelName(gid, p.level)}（Lv.${p.level}）\n`
+        const { autoWorkText } = require('./partnerskills');
+        // 「現在自動做什麼」要一行講完：撤掉工作區域之後能力還是會自己跑，
+        // 只寫「沒有指派」會讓玩家以為已經停了（實際上照收照種）。
+        return `💕 **${p.name}**　${levelName(gid, p.level)}（Lv.${p.level}）${p.paused ? '　⏸️ 已暫停' : ''}\n`
           + `　能力：${partnerSkillText(p, gid)}\n`
-          + `　工作：${area || '沒有指派'}${striking ? '　🚫 **罷工中**（能力跟這一區對不上，換人或改能力才會做事）' : ''}\n`
+          + `　現在自動做：${autoWorkText(gid, p)}\n`
           + `　這一位每期 ${taxAt(idx + 1).toLocaleString('en-US')}`
           + (p.paid_total ? `　已繳 ${p.paid_total.toLocaleString('en-US')}` : '');
       }).join('\n')
@@ -429,6 +428,7 @@ function partnerPanel(gid, uid, uname) {
     value: Object.entries(WORK_AREAS).map(([key, a]) =>
       `${a.name}　${assigned[key] ? `**${assigned[key].name}** 負責中` : '_無人_'}\n　${a.desc}`).join('\n')
       + '\n\n_物資不足時會自動暫停（例如沒種子就不播種），補齊後下一輪自動恢復。換人不會重置任何設施、作物、動物或進度。_'
+      + '\n_⚠️ 撤掉工作區域後，角色的**能力**仍會自動執行（那是另一條線）。要完全停手請用下面的「⏸️ 暫停自動工作」。_'
   });
 
   const rows = [NAV('love')];
@@ -440,6 +440,7 @@ function partnerPanel(gid, uid, uname) {
     try { doneToday = workCountToday(gid, uid); } catch {}
     rows.push(new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId('partnerwork').setLabel('🛠️ 指派工作區域').setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId('partnerpause').setLabel('⏸️ 暫停自動工作').setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId('partnerlog').setLabel(`📒 同居明細${doneToday ? `（今天 ${doneToday} 筆）` : ''}`).setStyle(ButtonStyle.Secondary)));
   }
   const cands = partnerCandidates(gid, uid);
@@ -969,6 +970,35 @@ function init(client) {
             ...eph
           }).catch(() => {});
         }
+        // 暫停／恢復：列出同居角色，選了就切換那一位的狀態
+        if (i.isButton() && i.customId === 'partnerpause') {
+          const { autoWorkText } = require('./partnerskills');
+          const list = partnersOf(gid, uid);
+          if (!list.length) return i.reply({ content: '你目前沒有同居角色。', flags: MessageFlags.Ephemeral }).catch(() => {});
+          const menu = new StringSelectMenuBuilder().setCustomId('partnerpausepick')
+            .setPlaceholder('選一位角色來暫停／恢復自動工作')
+            .addOptions(list.slice(0, 25).map(p => ({
+              label: `${p.paused ? '▶️ 恢復' : '⏸️ 暫停'}　${p.name}`.slice(0, 100),
+              description: autoWorkText(gid, p).replace(/\*\*/g, '').slice(0, 100),
+              value: String(p.role_id)
+            })));
+          return i.reply({ content: '⏸️ **暫停自動工作**：暫停後這位角色的工作區域與能力都不會執行，隨時可以恢復。',
+            components: [new ActionRowBuilder().addComponents(menu)], flags: MessageFlags.Ephemeral }).catch(() => {});
+        }
+        if (i.isStringSelectMenu() && i.customId === 'partnerpausepick') {
+          const { togglePaused } = require('./partnerskills');
+          const roleId = parseInt(i.values[0], 10);
+          const now = togglePaused(gid, uid, roleId);
+          if (now == null) return i.update({ content: '找不到這位同居角色。', components: [] }).catch(() => {});
+          const nm = (db.prepare('SELECT name FROM wheel_roles WHERE id=?').get(roleId) || {}).name || '他';
+          return i.update({
+            content: now
+              ? `⏸️ **${nm}** 的自動工作已暫停：工作區域與能力都不會再執行，再按一次就能恢復。`
+              : `▶️ **${nm}** 恢復自動工作了，下一輪（每 5 分鐘）就會開始做事。`,
+            components: []
+          }).catch(() => {});
+        }
+
         if (i.isButton() && i.customId === 'partnerwork') {
           const assigned = areaAssignments(gid, uid);
           const menu = new StringSelectMenuBuilder().setCustomId('workarea')
