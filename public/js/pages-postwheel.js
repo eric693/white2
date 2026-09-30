@@ -30,10 +30,11 @@ App.page('postwheel', {
         抽完的每一次都會記在這裡。
       </div>
       <div class="table-wrap"><table class="list">
-        <thead><tr><th>時間</th><th>貼文</th><th>留言者</th><th>中獎</th><th>操作者</th><th></th></tr></thead>
+        <thead><tr><th>時間</th><th>獎品</th><th>貼文</th><th>留言者</th><th>中獎</th><th>操作者</th><th></th></tr></thead>
         <tbody>${rows.length ? rows.map(r => `
           <tr>
             <td>${UI.esc((r.created_at || '').replace('T', ' '))}<br>${srcTag(r.source)}</td>
+            <td class="wrap">${r.prize ? UI.esc(r.prize) : '<span style="color:var(--muted)">—</span>'}</td>
             <td class="wrap">${r.message_url ? `<a href="${UI.esc(r.message_url)}" target="_blank" rel="noopener">前往貼文</a>` : '（無連結）'}
               <br><span style="color:var(--muted)">${H.chanName(r.channel_id)}${r.post_author ? '｜作者 ' + UI.esc(r.post_author) : ''}</span></td>
             <td>${r.people} 人${r.per_message ? `<br><span style="color:var(--muted)">共 ${r.comments} 則</span>` : ''}</td>
@@ -43,7 +44,7 @@ App.page('postwheel', {
                 <button class="btn tiny secondary" data-re="${r.id}">補抽</button>
                 <button class="btn tiny danger" data-del="${r.id}">刪除</button></td>
           </tr>`).join('')
-          : '<tr><td colspan="6" class="empty">還沒有任何抽選紀錄——到 Discord 的活動貼文底下打 /貼文轉盤 就會出現在這裡</td></tr>'}
+          : '<tr><td colspan="7" class="empty">還沒有任何抽選紀錄——到 Discord 的活動貼文底下打 /貼文轉盤 就會出現在這裡</td></tr>'}
         </tbody></table></div>`;
 
     el.querySelectorAll('[data-list]').forEach(b => b.onclick = () => {

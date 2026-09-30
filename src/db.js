@@ -983,6 +983,8 @@ db.exec(`CREATE TABLE IF NOT EXISTS postwheel_draws (
   created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
 )`);
 db.exec('CREATE INDEX IF NOT EXISTS idx_postwheel_draws_guild ON postwheel_draws(guild_id)');
+// 同一則貼文可能分好幾個獎項各抽一輪，紀錄要標示這一輪抽的是什麼獎
+ensureColumns('postwheel_draws', { prize: "TEXT NOT NULL DEFAULT ''" });
 
 // ---- 跨行程工作佇列（拆成秘書／管家兩隻之後的橋）----
 // 後台網站只跑在其中一個行程（預設秘書），但有些動作只有另一隻做得到 ——

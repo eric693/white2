@@ -1,4 +1,6 @@
 // 貼文轉盤：指定一則貼文，直接從「留言的人」裡面隨機抽。
+// 同一則貼文常常有好幾個獎項（大獎、參加獎…），所以每一輪可以填「獎品名稱」，
+// 抽選結果與後台紀錄都會標示是哪個獎 —— 不然翻紀錄時只看得到一堆抽選結果。
 //
 // 跟一般抽獎的差別：不需要玩家額外按參加按鈕、不需要登記名單 —— 有留言就有資格。
 // 一個人留幾則都只算 1 個資格（預設），不然洗留言的人中獎機率會被灌大。
@@ -89,20 +91,20 @@ function drawWinners(pool, count, allowRepeat) {
 }
 
 function saveDraw({ guildId, msg, people, winners, count, operatorId, operatorName,
-                   allowRepeat, perMessage, includeReactions, source }) {
+                   allowRepeat, perMessage, includeReactions, source, prize }) {
   try {
     db.prepare(`INSERT INTO postwheel_draws
       (guild_id, channel_id, message_id, message_url, post_author, operator_id, operator_name,
-       people, comments, win_count, winners, allow_repeat, per_message, include_reactions, source)
+       people, comments, win_count, winners, allow_repeat, per_message, include_reactions, source, prize)
       VALUES (@guild_id,@channel_id,@message_id,@message_url,@post_author,@operator_id,@operator_name,
-       @people,@comments,@win_count,@winners,@allow_repeat,@per_message,@include_reactions,@source)`).run({
+       @people,@comments,@win_count,@winners,@allow_repeat,@per_message,@include_reactions,@source,@prize)`).run({
       guild_id: guildId || '', channel_id: msg.channel?.id || '', message_id: msg.id,
       message_url: msg.url || '', post_author: msg.author ? msg.author.username : '',
       operator_id: operatorId || '', operator_name: operatorName || '',
       people: people.length, comments: people.reduce((a, p) => a + p.count, 0),
       win_count: count, winners: JSON.stringify(winners.map(w => ({ id: w.id, tag: w.tag }))),
       allow_repeat: allowRepeat ? 1 : 0, per_message: perMessage ? 1 : 0,
-      include_reactions: includeReactions ? 1 : 0, source: source || 'command'
+      include_reactions: includeReactions ? 1 : 0, source: source || 'command', prize: prize || ''
     });
   } catch (e) { logError(guildId || '', '貼文轉盤存檔失敗：', e.message); }
 }
@@ -133,8 +135,9 @@ async function rerollDraw(client, drawId, { count, operatorName, excludePrevious
 
   const embed = new EmbedBuilder()
     .setColor(brandColor())
-    .setTitle('🎯 貼文轉盤補抽結果')
+    .setTitle(rec.prize ? `🎯 ${rec.prize}　補抽結果` : '🎯 貼文轉盤補抽結果')
     .setDescription(
+      (rec.prize ? `**獎品**：${rec.prize}\n` : '') +
       `**抽選來源**：[前往貼文](${msg.url})\n` +
       `**候選留言者**：${people.length} 人${excludePrevious ? '（已排除先前中過獎的人）' : ''}\n` +
       `**補抽**：${winners.length} 位\n\n` +
@@ -147,13 +150,14 @@ async function rerollDraw(client, drawId, { count, operatorName, excludePrevious
     guildId: rec.guild_id, msg, people, winners, count: winners.length,
     operatorId: '', operatorName: operatorName || '後台',
     allowRepeat: !!rec.allow_repeat, perMessage: !!rec.per_message,
-    includeReactions: !!rec.include_reactions, source: 'reroll'
+    includeReactions: !!rec.include_reactions, source: 'reroll', prize: rec.prize || ''
   });
   return { winners: winners.map(w => ({ id: w.id, tag: w.tag })), people: people.length };
 }
 
 async function handle(i) {
   const input = i.options.getString('貼文');
+  const prize = (i.options.getString('獎品名稱') || '').trim();
   const count = i.options.getInteger('抽出人數') || 1;
   const allowRepeat = i.options.getBoolean('允許重複中獎') || false;
   const includeReactions = i.options.getBoolean('表情也算留言') || false;
@@ -218,8 +222,9 @@ async function handle(i) {
 
   const embed = new EmbedBuilder()
     .setColor(brandColor())
-    .setTitle('🎯 貼文轉盤抽選結果')
+    .setTitle(prize ? `🎯 ${prize}　抽選結果` : '🎯 貼文轉盤抽選結果')
     .setDescription(
+      (prize ? `**獎品**：${prize}\n` : '') +
       `**抽選來源**：[前往貼文](${msg.url})${input ? '' : '　←　*自動抓的，請確認是不是這則*'}\n` +
       `**貼文作者**：${msg.author ? `<@${msg.author.id}>` : '—'}\n` +
       `**留言者**：${people.length} 人${perMessage ? `（共 ${people.reduce((a, p) => a + p.count, 0)} 則留言）` : ''}\n` +
@@ -233,14 +238,14 @@ async function handle(i) {
   saveDraw({
     guildId: i.guildId, msg, people, winners, count: winners.length,
     operatorId: i.user.id, operatorName: i.user.username,
-    allowRepeat, perMessage, includeReactions, source: 'command'
+    allowRepeat, perMessage, includeReactions, source: 'command', prize
   });
 
   const row = new ActionRowBuilder().addComponents(
     new ButtonBuilder().setLabel('查看原貼文').setStyle(ButtonStyle.Link).setURL(msg.url));
 
   await i.editReply({
-    content: winners.map(w => `<@${w.id}>`).join(' '),
+    content: (prize ? `🎁 **${prize}** 得獎者：` : '') + winners.map(w => `<@${w.id}>`).join(' '),
     embeds: [embed],
     components: [row]
   });
