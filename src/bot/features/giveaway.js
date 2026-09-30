@@ -113,11 +113,28 @@ async function postGiveaway(client, ga) {
 }
 
 async function refresh(client, ga) {
-  if (!ga.message_id) return;
+  if (!ga || !ga.message_id) return;
   const ch = await channelOf(client, ga);
   if (!ch) return;
   const msg = await ch.messages.fetch(ga.message_id).catch(() => null);
-  if (msg) await msg.edit({ embeds: [buildEmbed(ga)], components: [buildRow(ga)] }).catch(() => {});
+  // 資料在這一刻才讀：中間排隊的那幾秒可能又有人按，要以送出當下的狀態為準
+  const fresh = getGa(ga.id) || ga;
+  if (msg) await msg.edit({ embeds: [buildEmbed(fresh)], components: [buildRow(fresh)] }).catch(() => {});
+}
+
+// ---- 面板更新合併 ----
+// 抽獎一開始通常是十幾個人同時按「參加」。每按一次就編輯一次訊息的話，
+// 會撞上 Discord 的編輯速率限制，編輯被排隊，面板數字落後好幾秒 ——
+// 玩家自己看到「已參加．16 人」，面板還停在 12 人，就會以為系統算錯。
+// 這裡把短時間內的多次更新合併成一次（尾端再送一次，確保顯示的是最終人數）。
+const REFRESH_WAIT_MS = 1500;
+const pendingRefresh = new Map();   // giveaway_id → timer
+function refreshSoon(client, id) {
+  if (pendingRefresh.has(id)) return;                 // 已經排好了，這次併進去
+  pendingRefresh.set(id, setTimeout(() => {
+    pendingRefresh.delete(id);
+    refresh(client, getGa(id)).catch(() => {});
+  }, REFRESH_WAIT_MS));
 }
 
 // 抽出得獎者：保證中獎優先（不受黑名單/12H 限制由呼叫端保證），其餘隨機且排除黑名單、12H 內中獎者、已中者
@@ -324,7 +341,7 @@ function init(client) {
     if (isBlacklisted(ga.guild_id, i.user.id)) {
       // 保險：若他是「先參加、後被列黑名單」，把殘留的參加紀錄清掉，才不會佔用參加人數
       const had = db.prepare('DELETE FROM giveaway_entries WHERE giveaway_id=? AND user_id=?').run(id, i.user.id).changes;
-      if (had) await refresh(client, getGa(id));
+      if (had) refreshSoon(client, id);
       const key = `${id}:${i.user.id}`;
       const joined = !fakeJoined.has(key);
       if (joined) fakeJoined.add(key); else fakeJoined.delete(key);
@@ -339,14 +356,14 @@ function init(client) {
       // 已參加 → 再按一次＝取消參加
       db.prepare('DELETE FROM giveaway_entries WHERE giveaway_id=? AND user_id=?').run(id, i.user.id);
       await tempReply(i, `❌ **你目前狀態：未參加**\n你已取消參加【${ga.prize}】，不會被抽到。想重新參加就再按一次綠色按鈕。\n目前參加人數：${countOf()} 人`, 8);
-      await refresh(client, getGa(id));
+      refreshSoon(client, id);
       return;
     }
     // 尚未參加 → 參加
     db.prepare('INSERT OR IGNORE INTO giveaway_entries (guild_id, giveaway_id, user_id, username) VALUES (?,?,?,?)')
       .run(ga.guild_id || '', id, i.user.id, i.user.username);
     await tempReply(i, `✅ **你目前狀態：已參加**\n你已成功報名【${ga.prize}】，祝你好運！想退出就再按一次按鈕。\n目前參加人數：${countOf()} 人`, 8);
-    await refresh(client, getGa(id));
+    refreshSoon(client, id);
   });
 
   cron.schedule('* * * * *', async () => {
