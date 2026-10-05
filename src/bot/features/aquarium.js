@@ -8,6 +8,7 @@ const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, ButtonBuilder, 
 const { nameOf } = require('../../util/names');
 const { selectRows, isSelect } = require('../../util/menu');
 const { db, guildConfig, logError } = require('../../db');
+const { firstFreeSlot, freeSlots: freeSlotList } = require('../../util/slots');
 const { bump: bumpAch } = require('../../util/achievements');
 const { brandColor } = require('../../util/brand');
 const { wallet, addCoins, logCoins, safeMenu } = require('./gather');
@@ -82,9 +83,7 @@ const fishById = (gid, id) => db.prepare('SELECT * FROM aquarium_fish WHERE guil
 const slotsOf = (gid, uid) => db.prepare('SELECT * FROM aquarium_slots WHERE guild_id=? AND user_id=? ORDER BY slot').all(gid, uid);
 
 function freeSlot(gid, uid, max) {
-  const used = slotsOf(gid, uid).map(r => r.slot);
-  for (let s = 0; s < max; s++) if (!used.includes(s)) return s;
-  return -1;
+  return firstFreeSlot(slotsOf(gid, uid).map(r => r.slot), max);
 }
 
 // 結算：只有「有飼料的那段時間」才產星幣；餓著的時間不算。
@@ -173,12 +172,17 @@ function buyFishMulti(gid, uid, uname, ids) {
   const now = Date.now();
   const fedUntil = now + Math.max(1, c.feed_hours) * H;
   const bought = []; const skipped = [];
+  // 空格表只算一次：以前每買一條就重新掃一次整個魚缸，養到上千格時
+  // 買一批魚會把機器人卡住好幾秒（跟牧場同一個問題）。
+  const takenSlots = new Set(slotsOf(gid, uid).map(r => r.slot));
+  const nextFree = () => { for (let sl = 0; sl < max; sl++) if (!takenSlots.has(sl)) return sl; return -1; };
   db.transaction(() => {
     for (const id of ids) {
       const f = db.prepare('SELECT * FROM aquarium_fish WHERE guild_id=? AND enabled=1 AND id=?').get(gid, id);
       if (!f) continue;
-      const free = freeSlot(gid, uid, max);
+      const free = nextFree();
       if (free < 0) { skipped.push(`${f.emoji || '🐟'}${f.name}（沒空格）`); continue; }
+      takenSlots.add(free);
       const total = f.price + f.feed_cost;
       const w = wallet(gid, uid, uname);
       if (w.coins < total) { skipped.push(`${f.emoji || '🐟'}${f.name}（錢不夠）`); continue; }

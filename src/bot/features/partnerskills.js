@@ -16,6 +16,7 @@ const { EmbedBuilder } = require('discord.js');
 const { db, guildConfig, logError, activeGuildIds } = require('../../db');
 const { brandColor } = require('../../util/brand');
 const { eachSlice, runJob } = require('../../util/jobs');
+const { freeSlots: freeSlotList } = require('../../util/slots');
 
 const gcfg = (gid) => guildConfig('gather_config', gid);
 const today = () => new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);   // 台北時區的今天
@@ -316,7 +317,7 @@ function collectHatched(gid, uid, uname) {
   const maxSlots = Math.max(0, rcfg.max_slots || 0) + unlocked + facilitySlots(gid, uid, 'ranch');
   const used = db.prepare('SELECT slot FROM ranch_slots WHERE guild_id=? AND user_id=?').all(gid, uid).map(r => r.slot);
   const free = [];
-  for (let s = 0; s < maxSlots; s++) if (!used.includes(s)) free.push(s);
+  for (const s of freeSlotList(used, maxSlots)) free.push(s);
   const lines = [];
   let sold = 0;
   db.transaction(() => {

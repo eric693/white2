@@ -15,6 +15,7 @@ const stealFine = (gid) => {
 };
 const { bump: bumpAch } = require('../../util/achievements');
 const { brandColor } = require('../../util/brand');
+const { firstFreeSlot, freeSlots: freeSlotList } = require('../../util/slots');
 // 產物賣價會受財經新聞影響（新聞關閉時等於基準價）
 const { isSelect } = require('../../util/menu');
 const { livePrice, priceTag } = require('../../util/market');
@@ -112,10 +113,11 @@ function seedRanch(gid) {
 }
 
 // 找玩家的第一個空牧場格（沒有回 -1）
+function usedRanchSlots(gid, uid) {
+  return new Set(db.prepare('SELECT slot FROM ranch_slots WHERE guild_id=? AND user_id=?').all(gid, uid).map(r => r.slot));
+}
 function freeRanchSlot(gid, uid, maxSlots) {
-  const used = db.prepare('SELECT slot FROM ranch_slots WHERE guild_id=? AND user_id=?').all(gid, uid).map(r => r.slot);
-  for (let s = 0; s < maxSlots; s++) if (!used.includes(s)) return s;
-  return -1;
+  return firstFreeSlot(usedRanchSlots(gid, uid), maxSlots);
 }
 // 玩家用製作解鎖的額外牧場/孵化格；總格數＝設定初始格 + 解鎖數
 const ranchUnlocks = (gid, uid) => db.prepare('SELECT ranch, hatch FROM ranch_unlocks WHERE guild_id=? AND user_id=?').get(gid, uid) || { ranch: 0, hatch: 0 };
@@ -303,13 +305,33 @@ function buyAnimal(gid, uid, uname, animalId) {
 // 一次養多隻同款動物（畜牧商店：選動物→選數量）。有幾格養幾隻、錢不夠養到不能養為止。
 function buyAnimalMulti(gid, uid, uname, animalId, qty) {
   const gc = gcfg(gid);
+  const c = rcfg(gid);
   const a = animalById(gid, animalId);
-  const bought = []; let stopMsg = null;
-  for (let k = 0; k < Math.max(1, qty); k++) {
-    const r = buyAnimal(gid, uid, uname, animalId);
-    if (r.error) { stopMsg = r.error; break; }
-    bought.push(r);
-  }
+  if (!a || !a.enabled) return { error: '這隻動物已經不在商店裡了。' };
+  if (a.guard_pct > 0) return { error: '看門動物已經改成寵物了，去 `/寵物` 領養。' };
+  // 一隻一隻買會重算一次空格、扣一次錢、寫一次資料庫；格子開到上萬時光是
+  // 找空格就會把機器人卡住幾十秒。改成：空格一次算完、錢一次扣、資料一次寫進去。
+  const want = Math.max(1, Math.floor(qty) || 1);
+  const maxSlots = effRanchSlots(gid, uid, c);
+  if (maxSlots <= 0) return { error: '你還沒有牧場！可以用 `/設施商店` 直接買一座，或用 `/製作` 做「牧場」開一格。' };
+  const slots = freeSlotList(usedRanchSlots(gid, uid), maxSlots, want);
+  if (!slots.length) return { error: `你的牧場已經滿了（${maxSlots} 格）。可以先 \`/放生\` 一隻，或去 \`/設施商店\` 升級擴充。` };
+  const price = Math.max(0, a.price || 0);
+  const coins = wallet(gid, uid, uname).coins;
+  const affordable = price > 0 ? Math.floor(coins / price) : slots.length;
+  const n = Math.min(slots.length, affordable);
+  if (n < 1) return { error: `${gc.currency_name}不夠：${a.emoji || ''}${a.name} 一隻要 ${price.toLocaleString('en-US')}，你只有 ${coins.toLocaleString('en-US')}。` };
+  const now = Date.now();
+  db.transaction(() => {
+    const ins = db.prepare(`INSERT INTO ranch_slots (guild_id,user_id,slot,animal_id,pending,bought_at,last_produce_ms)
+                            VALUES (?,?,?,?,0,datetime('now','localtime'),?)`);
+    for (let k = 0; k < n; k++) ins.run(gid, uid, slots[k], a.id, now);
+    if (price > 0) addCoins(gid, uid, uname, -price * n, '買動物', `${a.name} ×${n}`);
+  })();
+  const bought = new Array(n).fill(null);
+  const stopMsg = n < want
+    ? (slots.length < want ? `牧場只剩 ${slots.length} 格` : `${gc.currency_name}只夠買 ${n} 隻`)
+    : null;
   if (!bought.length) return { error: stopMsg || '買不到動物。' };
   const used = db.prepare('SELECT COUNT(*) n FROM ranch_slots WHERE guild_id=? AND user_id=?').get(gid, uid).n;
   const bal = wallet(gid, uid, uname).coins;
@@ -341,6 +363,46 @@ function sellAnimal(gid, uid, uname, slot) {
     `。\n目前餘額 ${bal.toLocaleString('en-US')} ${gc.currency_name || '星幣'}。` };
 }
 
+// 一次賣掉多隻／全部：一隻一隻賣會各扣一次錢、各寫一次明細，上萬隻時會把機器人卡死。
+// 這裡把待收成的產物與回收金額先加總，再一次寫回去。
+function sellAnimalsBulk(gid, uid, uname, slotList) {
+  const gc = gcfg(gid);
+  const want = slotList && slotList.length
+    ? db.prepare(`SELECT * FROM ranch_slots WHERE guild_id=? AND user_id=? AND slot IN (${slotList.map(() => '?').join(',')})`).all(gid, uid, ...slotList)
+    : db.prepare('SELECT * FROM ranch_slots WHERE guild_id=? AND user_id=?').all(gid, uid);
+  if (!want.length) return { error: '牧場裡沒有可以賣的動物。' };
+  const animals = new Map();
+  const animalOf = (id) => { if (!animals.has(id)) animals.set(id, animalById(gid, id)); return animals.get(id); };
+  let refundTotal = 0;
+  const tally = new Map();        // 動物名 → 幾隻
+  const products = new Map();     // 產物 item_id → 數量
+  for (const r of want) {
+    const a = animalOf(r.animal_id);
+    refundTotal += a ? Math.max(1, Math.floor((a.price || 0) * SELL_PCT)) : 1;
+    const key = a ? `${a.emoji || '\u{1F43E}'}${a.name}` : '動物';
+    tally.set(key, (tally.get(key) || 0) + 1);
+    if (r.pending > 0 && a && a.product_item_id) products.set(a.product_item_id, (products.get(a.product_item_id) || 0) + r.pending);
+  }
+  db.transaction(() => {
+    for (const [itemId, n] of products) addToBag(gid, uid, itemId, n);
+    if (slotList && slotList.length) {
+      db.prepare(`DELETE FROM ranch_slots WHERE guild_id=? AND user_id=? AND slot IN (${slotList.map(() => '?').join(',')})`).run(gid, uid, ...slotList);
+    } else {
+      db.prepare('DELETE FROM ranch_slots WHERE guild_id=? AND user_id=?').run(gid, uid);
+    }
+    addCoins(gid, uid, uname, refundTotal, '賣動物', `一次 ${want.length} 隻`);
+  })();
+  const gained = [...products.entries()].map(([id, n]) => { const p = productOf(id); return `${p ? (p.emoji || '') + p.name : '產物'} ×${n}`; });
+  const bal = wallet(gid, uid, uname).coins;
+  return {
+    sold: want.length,
+    embed: new EmbedBuilder().setColor(brandColor()).setTitle(`\u{1F4B0} 一次賣掉 ${want.length} 隻`)
+      .setDescription([...tally.entries()].map(([k, n]) => `${k} ×${n}`).join('\n')
+        + (gained.length ? `\n\n\u{1F9FA} 待收成的產物一起進背包：${gained.join('、')}` : ''))
+      .setFooter({ text: `回收 ${refundTotal.toLocaleString('en-US')}｜餘額 ${bal.toLocaleString('en-US')} ${gc.currency_name}` })
+  };
+}
+
 // 把一顆蛋放進孵化室。/孵化 指令與孵化室的下拉選單共用。
 /**
  * 放蛋。qty 可以一次放多顆（有幾格放幾顆，蛋不夠就放到沒蛋為止）。
@@ -358,7 +420,7 @@ function hatchEgg(gid, uid, uname, eggItemId, qty = 1, defId = 0) {
   if (hMax <= 0) return { error: '你還沒有孵化室！去 `/設施商店` 買一個（小孵化箱 350 星幣），或用 `/製作` 的「蓋孵化室（+1 格）」。' };
   const usedSlots = db.prepare('SELECT slot FROM ranch_incubator WHERE guild_id=? AND user_id=?').all(gid, uid).map(r => r.slot);
   const freeSlots = [];
-  for (let sl = 0; sl < hMax; sl++) if (!usedSlots.includes(sl)) freeSlots.push(sl);
+  for (const sl of freeSlotList(usedSlots, hMax)) freeSlots.push(sl);
   if (!freeSlots.length) return { error: `孵化室滿了（${hMax} 格）。等現有的蛋孵化完領走，或去 \`/設施商店\` 升級孵化室。` };
 
   const n = Math.max(1, Math.min(qty, inv.count, freeSlots.length));
@@ -499,6 +561,43 @@ function init(client) {
       return safeMenu(i, '購買動物', () => buyAnimalMulti(i.guildId, i.user.id, i.user.username, id, qty));
     }
     // 牧場的「賣掉動物」選單（值＝格子索引）
+    // 一鍵全賣：先問一次再動手（賣掉不能復原）
+    if (i.isButton() && i.customId === 'ranchsellall') {
+      const gid = i.guildId, uid = i.user.id, gc = gcfg(gid);
+      const rows = db.prepare('SELECT animal_id, pending FROM ranch_slots WHERE guild_id=? AND user_id=?').all(gid, uid);
+      if (!rows.length) return i.reply({ content: '你的牧場是空的。', flags: MessageFlags.Ephemeral }).catch(() => {});
+      const cache = new Map();
+      let refund = 0, pend = 0;
+      for (const r of rows) {
+        if (!cache.has(r.animal_id)) cache.set(r.animal_id, animalById(gid, r.animal_id));
+        const a = cache.get(r.animal_id);
+        refund += a ? Math.max(1, Math.floor((a.price || 0) * SELL_PCT)) : 1;
+        pend += r.pending || 0;
+      }
+      return i.reply({
+        content: `\u{1F4B0} 真的要把牧場裡的 **${rows.length} 隻**全部賣掉嗎？\n`
+          + `・回收 **${refund.toLocaleString('en-US')} ${gc.currency_name}**（購買價的一半）\n`
+          + (pend ? `・待收成的 **${pend.toLocaleString('en-US')}** 份產物會一起進背包\n` : '')
+          + '・賣掉之後不能復原',
+        components: [new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId('ranchsellall:ok').setLabel(`確定全部賣掉（${rows.length} 隻）`).setStyle(ButtonStyle.Danger),
+          new ButtonBuilder().setCustomId('ranchsellall:no').setLabel('算了').setStyle(ButtonStyle.Secondary))],
+        flags: MessageFlags.Ephemeral
+      }).catch(() => {});
+    }
+    if (i.isButton() && i.customId === 'ranchsellall:no') {
+      return i.update({ content: '好，什麼都沒有動。', components: [] }).catch(() => {});
+    }
+    if (i.isButton() && i.customId === 'ranchsellall:ok') {
+      try {
+        const out = sellAnimalsBulk(i.guildId, i.user.id, i.user.username, null);
+        if (out.error) return i.update({ content: out.error, components: [] }).catch(() => {});
+        return i.update({ content: '', embeds: [out.embed], components: [] }).catch(() => {});
+      } catch (e) {
+        logError(i.guildId, '一鍵全賣失敗：', e.message);
+        return i.update({ content: '執行失敗，管理員可到後台的系統錯誤紀錄查看原因。', components: [] }).catch(() => {});
+      }
+    }
     if (i.isStringSelectMenu() && isSelect(i.customId, 'ranchsell')) {
       return safeMenu(i, '賣出動物', () => {
         const gid = i.guildId, uid = i.user.id, uname = i.user.username;
@@ -702,6 +801,11 @@ function init(client) {
         if (sellOpts.length > SHOWN) {
           embed.setDescription(embed.data.description
             + `\n\n（動物太多，選單先列出前 ${SHOWN} 隻／共 ${sellOpts.length} 隻；賣掉一批後重開 \`/牧場\` 就會遞補後面的。）`);
+        }
+        // 一鍵全賣：養到上萬隻時一隻一隻勾選根本做不完（選單一次最多 125 隻）
+        if (own && slots.length && rows.length < 5) {
+          rows.push(new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId('ranchsellall').setLabel(`💰 全部賣掉（${slots.length} 隻）`).setStyle(ButtonStyle.Danger)));
         }
         // 保險：不管前面怎麼算，送出去前一定壓在 Discord 的 4096 字以內
         if ((embed.data.description || '').length > 4096) embed.setDescription(embed.data.description.slice(0, 4093) + '…');
@@ -1071,4 +1175,4 @@ function init(client) {
   console.log('  ↳ 牧場經營模組已載入（養動物/每日產出/收成/偷偷樂/孵化室）');
 }
 
-module.exports = { init, seedRanch, hatchEgg, partnerHarvest, harvest };
+module.exports = { init, seedRanch, hatchEgg, partnerHarvest, harvest, buyAnimalMulti, sellAnimalsBulk, freeRanchSlot };

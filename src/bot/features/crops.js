@@ -2,6 +2,7 @@
 const { EmbedBuilder, ActionRowBuilder, StringSelectMenuBuilder, MessageFlags, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 const { nameOf } = require('../../util/names');
 const { db, guildConfig, logError } = require('../../db');
+const { freeSlots: freeSlotList } = require('../../util/slots');
 const { brandColor } = require('../../util/brand');
 // 產物賣價會受財經新聞影響（新聞關閉時等於基準價）
 const { livePrice, priceTag } = require('../../util/market');
@@ -154,8 +155,7 @@ function plantSeeds(gid, uid, uname, seedId, qty) {
   const max = slotsOf(c, seed.plot_type, unlockedOf(gid, uid), gid, uid);
   if (max <= 0) return { error: `你還沒有${PLOT[seed.plot_type]}！可以用 \`/設施商店\` 買一塊，或用 \`/製作\` 開一格。` };
   const used = db.prepare('SELECT slot FROM crop_plots WHERE guild_id=? AND user_id=? AND plot_type=?').all(gid, uid, seed.plot_type).map(r => r.slot);
-  const free = [];
-  for (let s = 0; s < max; s++) if (!used.includes(s)) free.push(s);
+  const free = freeSlotList(used, max);
   if (!free.length) return { error: `你的${PLOT[seed.plot_type]}已經滿了（${max} 格）。等成熟 \`/採收\` 後再種，或去 \`/設施商店\` 升級擴充。` };
   const it = seedItemOf(gid, seed);
   const have = seedsInBag(gid, uid, seed);

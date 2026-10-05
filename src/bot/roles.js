@@ -71,7 +71,7 @@ const BUTLER_COMPONENT_PREFIXES = new Set([
   "homebuyok", "homecard", "homecheck", "homenav", "homeup", "kbuild", "kbuy", "kbuyok",
   "kcollect", "keat", "kgift", "ksell", "kup", "led", "loan", "pan",
   "partnerbye", "partnerin", "partnerlog", "partnermoveout", "partnerout", "partnerpanel", "partnerstay", "partnerwork", "petbye", "petfeed", "petfood", "petkeep", "petrelease", "plantpick",
-  "plantqty", "ranchbuyone", "ranchbuyqty", "ranchsell", "repairpick", "seedbuy", "seedqty", "sellall", "smylog",
+  "plantqty", "ranchbuyone", "ranchbuyqty", "ranchsell", "ranchsellall", "repairpick", "seedbuy", "seedqty", "sellall", "smylog",
   "sellone", "sellpick", "sellqty", "sellqtypick", "shopgiftqty", "sqty", "sredeem", "stk",
   "strollgo", "strollpanel", "tax", "taxrules", "tg", "tgq", "trade", "tradeuser",
   "tw", "twq", "workarea", "workpick", "world"
