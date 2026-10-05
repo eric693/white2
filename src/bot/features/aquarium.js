@@ -396,7 +396,7 @@ function init(client) {
       const qty = Math.max(1, parseInt(i.values[0], 10) || 1);
       return safeMenu(i, '購買魚', () => buyFishMulti(i.guildId, i.user.id, i.user.username, Array(qty).fill(id)));
     }
-    if (i.isStringSelectMenu() && i.customId === 'aqsell') {
+    if (i.isStringSelectMenu() && isSelect(i.customId, 'aqsell')) {
       return safeMenu(i, '賣魚', () => sellFishMulti(i.guildId, i.user.id, i.user.username, i.values.map(v => parseInt(v, 10))));
     }
     // 存魚入缸：按鈕 → 列出背包裡「釣到的、可存的魚」→ 選單存入
