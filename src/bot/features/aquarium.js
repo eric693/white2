@@ -481,13 +481,19 @@ function init(client) {
         const { slots, died } = accrue(gid, target.id);
         const now = Date.now();
         const lines = []; let total = 0; let hungry = 0;
-        const shownMax = Math.max(effSlots(gid, target.id), slots.length ? Math.max(...slots.map(x => x.slot)) + 1 : 0);
+        const shownMax = Math.max(effSlots(gid, target.id), slots.length ? slots.reduce((m, x) => Math.max(m, x.slot), 0) + 1 : 0);
         if (shownMax <= 0) return await reply({ content: '你還沒有魚缸～ 去 `/設施商店` 買一個（很貴），或用 `/製作` 蓋魚缸（松木＋碎石，跟開闢農地一樣）。有了魚缸再去 `/水族商店` 買 SSR 魚。' });
-        for (let s = 0; s < shownMax; s++) {
-          const row = slots.find(x => x.slot === s);
+        // 格子查表＋魚種只查一次＋只組畫得下的行數（原本每格 slots.find() 是 O(n²)，
+        // 養到上千格就會把機器人卡住幾十秒）
+        const bySlot = new Map(slots.map(x => [x.slot, x]));
+        const fishCache = new Map();
+        const fishOf = (id) => { if (!fishCache.has(id)) fishCache.set(id, fishById(gid, id)); return fishCache.get(id); };
+        for (const r of slots) total += r.pending;
+        const LINE_CAP = 150;
+        for (let s = 0; s < shownMax && lines.length < LINE_CAP; s++) {
+          const row = bySlot.get(s);
           if (!row) { lines.push(`\`${s + 1}\`｜— 空缸 —`); continue; }
-          const f = fishById(gid, row.fish_id);
-          total += row.pending;
+          const f = fishOf(row.fish_id);
           const fed = row.fed_until_ms || 0;
           const state = fed > now
             ? `🍤 吃到 <t:${Math.floor(fed / 1000)}:R>`

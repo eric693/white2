@@ -742,21 +742,39 @@ function init(client) {
         const target = (!isBtn && i.options.getUser('玩家')) || i.user;
         accrue(gid, target.id);
         const slots = db.prepare('SELECT * FROM ranch_slots WHERE guild_id=? AND user_id=? ORDER BY slot').all(gid, target.id);
-        const lines = [];
+        // 牧場開到上萬格時，這裡原本每一格都 slots.find()（O(n²)）、每一格都回資料庫查
+        // 動物與產物價格，三萬多格就要跑十幾億次比對 ——《/牧場》一按就把整隻機器人
+        // 卡住一兩分鐘（2026-10 事故）。改成：格子查表、動物與價格各查一次、
+        // 待收成總值用加總算，而且只組「畫得下的行數」。
+        const bySlot = new Map(slots.map(x => [x.slot, x]));
+        const animalCache = new Map();
+        const animalOf = (id) => { if (!animalCache.has(id)) animalCache.set(id, animalById(gid, id)); return animalCache.get(id); };
+        const productCache = new Map();
+        const productOfAnimal = (a) => {
+          if (!a) return null;
+          if (!productCache.has(a.id)) productCache.set(a.id, productOf(a.product_item_id));
+          return productCache.get(a.id);
+        };
         let pendingValue = 0;
-        const shownMax = Math.max(effRanchSlots(gid, target.id, c), slots.length ? Math.max(...slots.map(x => x.slot)) + 1 : 0);
-        for (let s = 0; s < shownMax; s++) {
-          const row = slots.find(x => x.slot === s);
+        for (const r of db.prepare('SELECT animal_id, SUM(pending) p FROM ranch_slots WHERE guild_id=? AND user_id=? GROUP BY animal_id').all(gid, target.id)) {
+          const p = productOfAnimal(animalOf(r.animal_id));
+          if (p) pendingValue += (r.p || 0) * livePrice(gid, p);
+        }
+        const shownMax = Math.max(effRanchSlots(gid, target.id, c), slots.length ? slots[slots.length - 1].slot + 1 : 0);
+        const LINE_CAP = 150;            // 一則訊息最多塞得下約一百多行，多算的都是白做工
+        const lines = [];
+        for (let s = 0; s < shownMax && lines.length < LINE_CAP; s++) {
+          const row = bySlot.get(s);
           if (!row) { lines.push(`\`${s + 1}\`｜— 空格 —`); continue; }
-          const a = animalById(gid, row.animal_id);
-          const p = a ? productOf(a.product_item_id) : null;
-          if (p) pendingValue += row.pending * livePrice(gid, p);
+          const a = animalOf(row.animal_id);
+          const p = productOfAnimal(a);
           if (a && a.guard_pct > 0) { lines.push(`\`${s + 1}\`｜${(a.emoji || '🐾') + a.name}　🛡️ 看門中`); continue; }
           // 每單位獨立計時：顯示已成熟數量 + 下一單位倒數
           const nr = nextReadyMs(gid, row);
           const cd = nr ? `　下一顆 <t:${Math.floor(nr / 1000)}:R>` : (row.pending > 0 ? '　已滿' : '');
           lines.push(`\`${s + 1}\`｜${a ? (a.emoji || '🐾') + a.name : '未知動物'}　待收成 ${p ? (p.emoji || '') : ''}${row.pending}${cd}`);
         }
+        const hiddenLines = Math.max(0, shownMax - lines.length);
         // Embed 描述上限 4096 字：養到上百隻的玩家（靠 /製作 可解鎖 200 格以上）
         // 會直接超過，導致整個 /牧場 開不起來、只丟一句「執行失敗」。
         // 這裡逐行累加到裝得下為止，並說明還有幾格沒列出來。
@@ -770,8 +788,9 @@ function init(client) {
           desc += (desc ? '\n' : '') + ln;
           shownLines++;
         }
-        if (shownLines < lines.length) {
-          desc += `\n…還有 **${lines.length - shownLines}** 格沒列出來（格子太多，訊息長度有限）。`;
+        const notShown = (lines.length - shownLines) + hiddenLines;
+        if (notShown > 0) {
+          desc += `\n…還有 **${notShown}** 格沒列出來（格子太多，訊息長度有限）。`;
         }
         const embed = new EmbedBuilder().setColor(brandColor())
           .setTitle(`🏡 ${nameOf(i, target)} 的牧場`)
@@ -779,8 +798,9 @@ function init(client) {
           .setFooter({ text: `待收成總值約 ${pendingValue.toLocaleString('en-US')} ${gc.currency_name}｜/收成 收取、/畜牧商店 買動物` });
         // 只在看自己的牧場、且有動物時，給「賣掉」下拉（點一下就賣，不用打格子號碼）
         const own = isBtn || target.id === uid;
-        const sellOpts = own ? slots.map(s => {
-          const a = animalById(gid, s.animal_id);
+        // 選單最多只放得下 125 個選項，所以只組前 125 筆（以前是三萬多筆全組完再切）
+        const sellOpts = own ? slots.slice(0, 125).map(s => {
+          const a = animalOf(s.animal_id);
           const refund = a ? Math.max(1, Math.floor((a.price || 0) * SELL_PCT)) : 1;
           return { label: `第 ${s.slot + 1} 格：${a ? a.name : '動物'}`.slice(0, 100), description: `賣掉回收 ${refund} ${gc.currency_name}`.slice(0, 100), value: String(s.slot), emoji: (a && a.emoji) || '🐾' };
         }) : [];
@@ -798,14 +818,14 @@ function init(client) {
               .setMinValues(1).setMaxValues(slice.length)
               .addOptions(slice)));
         }
-        if (sellOpts.length > SHOWN) {
+        if (slots.length > SHOWN) {
           embed.setDescription(embed.data.description
-            + `\n\n（動物太多，選單先列出前 ${SHOWN} 隻／共 ${sellOpts.length} 隻；賣掉一批後重開 \`/牧場\` 就會遞補後面的。）`);
+            + `\n\n（動物太多，選單先列出前 ${SHOWN} 隻／共 ${slots.length.toLocaleString('en-US')} 隻；要全部清掉請用下面的「💰 全部賣掉」。）`);
         }
         // 一鍵全賣：養到上萬隻時一隻一隻勾選根本做不完（選單一次最多 125 隻）
         if (own && slots.length && rows.length < 5) {
           rows.push(new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('ranchsellall').setLabel(`💰 全部賣掉（${slots.length} 隻）`).setStyle(ButtonStyle.Danger)));
+            new ButtonBuilder().setCustomId('ranchsellall').setLabel(`💰 全部賣掉（${slots.length.toLocaleString('en-US')} 隻）`).setStyle(ButtonStyle.Danger)));
         }
         // 保險：不管前面怎麼算，送出去前一定壓在 Discord 的 4096 字以內
         if ((embed.data.description || '').length > 4096) embed.setDescription(embed.data.description.slice(0, 4093) + '…');
@@ -1044,10 +1064,21 @@ function init(client) {
         const rows = db.prepare('SELECT * FROM ranch_incubator WHERE guild_id=? AND user_id=? ORDER BY slot').all(gid, uid);
         const now = Date.now();
         const hatched = []; const blocked = []; const failed = [];
+        // 牧場空格表只建一次：以前每領一隻都重新掃一次整個牧場，
+        // 孵化室 25,000 格 × 牧場 28,000 格 ＝ 七億次比對，`/孵化室` 要跑 67 秒（實測）。
+        const ranchMax = effRanchSlots(gid, uid, c);
+        const takenRanch = usedRanchSlots(gid, uid);
+        let scanFrom = 0;
+        const nextRanchSlot = () => {
+          for (; scanFrom < ranchMax; scanFrom++) if (!takenRanch.has(scanFrom)) return scanFrom;
+          return -1;
+        };
+        const animalCacheH = new Map();
+        const animalOfH = (id) => { if (!animalCacheH.has(id)) animalCacheH.set(id, animalById(gid, id)); return animalCacheH.get(id); };
         // 先領取已孵化完成的（牧場有空格才放得進去）
         for (const r of rows) {
           if (r.ready_at > now) continue;
-          const a = animalById(gid, r.animal_id);
+          const a = animalOfH(r.animal_id);
           if (!a) { db.prepare('DELETE FROM ranch_incubator WHERE guild_id=? AND user_id=? AND slot=?').run(gid, uid, r.slot); continue; }
           // 孵化失敗機率：失敗那顆蛋就沒了。每顆蛋只骰一次（骰完就標記 rolled），
           // 否則牧場滿了領不走的動物，每重開一次孵化室就被重骰一輪，會愈看愈少。
@@ -1061,8 +1092,9 @@ function init(client) {
             db.prepare('UPDATE ranch_incubator SET rolled=1 WHERE guild_id=? AND user_id=? AND slot=?').run(gid, uid, r.slot);
             r.rolled = 1;
           }
-          const slot = freeRanchSlot(gid, uid, effRanchSlots(gid, uid, c));
+          const slot = nextRanchSlot();
           if (slot < 0) { blocked.push({ a, slot: r.slot }); continue; }
+          takenRanch.add(slot);
           // 先刪、刪得到才發動物：同居角色的「孵化室照顧」也會領同一格，
           // 先發後刪的話兩邊都會各發一隻出去（刪不到也不會有人發現）。
           let took = false;
@@ -1073,18 +1105,23 @@ function init(client) {
             db.prepare('INSERT INTO ranch_slots (guild_id,user_id,slot,animal_id,pending,last_produce_ms) VALUES (?,?,?,?,0,?)')
               .run(gid, uid, slot, a.id, Date.now());
           })();
-          if (!took) continue;
+          if (!took) { takenRanch.delete(slot); continue; }
           hatched.push({ a, slot });
         }
 
         const remain = db.prepare('SELECT * FROM ranch_incubator WHERE guild_id=? AND user_id=? ORDER BY slot').all(gid, uid);
         const lines = [];
-        const hMaxV = Math.max(effHatchSlots(gid, uid, c), remain.length ? Math.max(...remain.map(x => x.slot)) + 1 : 0);
+        const hMaxV = Math.max(effHatchSlots(gid, uid, c), remain.length ? remain.reduce((m, x) => Math.max(m, x.slot), 0) + 1 : 0);
         if (hMaxV <= 0) return await reply({ content: '你還沒有孵化室！用 `/製作` 做「孵化室」開一格才能孵蛋。' });
-        for (let s = 0; s < hMaxV; s++) {
-          const r = remain.find(x => x.slot === s);
+        // 格子查表＋動物只查一次＋只組畫得下的行數（原本每格 remain.find() 是 O(n²)）
+        const byHatchSlot = new Map(remain.map(x => [x.slot, x]));
+        const hatchAnimal = new Map();
+        const hatchAnimalOf = (id) => { if (!hatchAnimal.has(id)) hatchAnimal.set(id, animalById(gid, id)); return hatchAnimal.get(id); };
+        const HATCH_LINE_CAP = 150;
+        for (let s = 0; s < hMaxV && lines.length < HATCH_LINE_CAP; s++) {
+          const r = byHatchSlot.get(s);
           if (!r) { lines.push(`\`${s + 1}\`｜— 空 —`); continue; }
-          const a = animalById(gid, r.animal_id);
+          const a = hatchAnimalOf(r.animal_id);
           const nm = a ? (a.emoji || '🐾') + a.name : '動物';
           lines.push(r.ready_at > now
             ? `\`${s + 1}\`｜🥚→${nm}　<t:${Math.floor(r.ready_at / 1000)}:R>`

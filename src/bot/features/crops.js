@@ -426,10 +426,15 @@ function init(client) {
         }
         const plots = db.prepare('SELECT * FROM crop_plots WHERE guild_id=? AND user_id=? AND plot_type=?').all(gid, target.id, type);
         const lines = [];
-        for (let s = 0; s < max; s++) {
-          const row = plots.find(x => x.slot === s);
+        // 格子查表＋種子只查一次＋只組畫得下的行數（原本每格 plots.find() 是 O(n²)）
+        const bySlot = new Map(plots.map(x => [x.slot, x]));
+        const seedCacheV = new Map();
+        const seedOfV = (id) => { if (!seedCacheV.has(id)) seedCacheV.set(id, seedById(gid, id)); return seedCacheV.get(id); };
+        const LINE_CAP = 150;
+        for (let s = 0; s < max && lines.length < LINE_CAP; s++) {
+          const row = bySlot.get(s);
           if (!row) { lines.push(`\`${s + 1}\`｜— 空地 —`); continue; }
-          const seed = seedById(gid, row.seed_id);
+          const seed = seedOfV(row.seed_id);
           const nm = seed ? (seed.emoji || '🌱') + seed.name.replace('種子', '') : '作物';
           lines.push(row.ready_at > now
             ? `\`${s + 1}\`｜${nm}　<t:${Math.floor(row.ready_at / 1000)}:R>`
@@ -443,7 +448,8 @@ function init(client) {
           cdesc += (cdesc ? '\n' : '') + ln;
           cShown++;
         }
-        if (cShown < lines.length) cdesc += `\n…還有 **${lines.length - cShown}** 格沒列出來（格子太多，訊息長度有限）。`;
+        const cHidden = (lines.length - cShown) + Math.max(0, max - lines.length);
+        if (cHidden > 0) cdesc += `\n…還有 **${cHidden}** 格沒列出來（格子太多，訊息長度有限）。`;
         embed.setDescription(cdesc).setFooter({ text: `${max} 格｜/採收 收成　/種子商店 買種子` });
         // 看自己的田才給種植選單（看別人的只是觀看）
         const rows2 = [];
