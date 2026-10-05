@@ -787,13 +787,23 @@ function init(client) {
         const gc = gcfg(gid);
         // 結算結果只私訊本人：以前是公開發在頻道又 tag 人，等於把每個人的
         // 同居對象與收成全部攤在大家面前，還會洗版。
+        // 私訊通知：Discord 對「開私訊頻道」限制很嚴，人多時一封一封送會排隊好幾小時，
+        // 排程就一直掛著不結束（錯誤紀錄裡看到「每日結算已跑 11 小時」就是這個）。
+        // 這裡給單封 10 秒、整批 3 分鐘的上限，超過就放棄剩下的並記一筆。
+        const DM_EACH_MS = 10000, DM_BUDGET_MS = 180000;
+        const started = Date.now();
+        let sent = 0, skipped = 0;
+        const withTimeout = (p) => Promise.race([p, new Promise(r => setTimeout(() => r('timeout'), DM_EACH_MS))]);
         for (const d of done) {
-          const u = await client.users.fetch(d.user_id).catch(() => null);
-          if (!u) continue;
-          await u.send({ embeds: [new EmbedBuilder().setColor(0xeb459e).setTitle('💞 同居角色幫你做了事')
+          if (Date.now() - started > DM_BUDGET_MS) { skipped = done.length - sent; break; }
+          const u = await withTimeout(client.users.fetch(d.user_id).catch(() => null));
+          if (!u || u === 'timeout') { continue; }
+          await withTimeout(u.send({ embeds: [new EmbedBuilder().setColor(0xeb459e).setTitle('💞 同居角色幫你做了事')
             .setDescription(`**${d.role}**（${d.skill}）\n${d.lines.map(x => `・${x}`).join('\n')}`)
-            .setFooter({ text: `每天早上 8:40 結算｜${gc.currency_name || '星幣'}` })] }).catch(() => {});
+            .setFooter({ text: `每天早上 8:40 結算｜${gc.currency_name || '星幣'}` })] }).catch(() => {}));
+          sent++;
         }
+        if (skipped > 0) logError(gid, '同居每日通知未發完：', `已送 ${sent} 封、略過 ${skipped} 封（超過 ${DM_BUDGET_MS / 1000} 秒上限，結算本身已完成）`);
       } catch (e) { logError(gid, '同居能力每日結算失敗：', e.message); }
     }
   }, { timezone: 'Asia/Taipei' });
