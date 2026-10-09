@@ -117,7 +117,7 @@ function buySeeds(gid, uid, uname, seedId, qty) {
   const w = wallet(gid, uid, uname);
   const afford = Math.floor(w.coins / price);
   if (afford < 1) return { error: `${gc.currency_name}不夠：一包 ${price.toLocaleString('en-US')}，你只有 ${w.coins.toLocaleString('en-US')}。` };
-  const n = Math.min(Math.max(1, qty), afford, 9999);
+  const n = Math.min(Math.max(1, qty), afford, 99999);
   const cost = n * price;
   const it = seedItemOf(gid, seed);
   db.transaction(() => {
@@ -268,8 +268,8 @@ function init(client) {
         const price = Math.max(1, seed.seed_price);
         const afford = Math.floor(w.coins / price);
         if (afford <= 0) return i.update({ content: `${gc.currency_name}不夠：一包 ${price.toLocaleString('en-US')}，你只有 ${w.coins.toLocaleString('en-US')}。`, components: [], embeds: [] }).catch(() => {});
-        const cap = Math.min(afford, 9999);
-        const amts = [...new Set([1, 5, 10, 25, 50, 100, 500, 1000, 5000].filter(x => x < cap).concat([cap]))].sort((a, b) => a - b);
+        const cap = Math.min(afford, 99999);
+        const amts = [...new Set([1, 5, 10, 25, 50, 100, 500, 1000, 5000, 10000, 50000].filter(x => x < cap).concat([cap]))].sort((a, b) => a - b);
         const menu = new StringSelectMenuBuilder().setCustomId('seedqty:' + sid).setPlaceholder('要買幾包？')
           .addOptions(amts.slice(0, 24).map(a => ({
             label: a === cap && cap > 1 ? `買好買滿（${a} 包）` : `買 ${a} 包`,
@@ -328,7 +328,7 @@ function init(client) {
         const seed = seedById(i.guildId, sid);
         const modal = new ModalBuilder().setCustomId('seedqtymodal:' + sid).setTitle(`購買 ${seed ? seed.name : '種子'}`.slice(0, 45))
           .addComponents(new ActionRowBuilder().addComponents(new TextInputBuilder().setCustomId('qty')
-            .setLabel('要買幾包？（最多 9999）').setStyle(TextInputStyle.Short).setPlaceholder('例如 3000').setMaxLength(4).setRequired(true)));
+            .setLabel('要買幾包？（最多 99999）').setStyle(TextInputStyle.Short).setPlaceholder('例如 30000').setMaxLength(5).setRequired(true)));
         return i.showModal(modal).catch(() => {});
       }
       const qty = parseInt(i.values[0], 10);
@@ -337,7 +337,7 @@ function init(client) {
     if (i.isModalSubmit() && i.customId.startsWith('seedqtymodal:')) {
       const sid = parseInt(i.customId.split(':')[1], 10);
       const qty = parseInt(String(i.fields.getTextInputValue('qty')).replace(/[,\s]/g, ''), 10);
-      if (!Number.isInteger(qty) || qty < 1) return i.reply({ content: '請輸入 1～9999 的整數。', flags: MessageFlags.Ephemeral }).catch(() => {});
+      if (!Number.isInteger(qty) || qty < 1) return i.reply({ content: '請輸入 1～99999 的整數。', flags: MessageFlags.Ephemeral }).catch(() => {});
       return safeMenu(i, '購買種子', () => buySeeds(i.guildId, i.user.id, i.user.username, sid, qty));
     }
     const isBtn = i.isButton();

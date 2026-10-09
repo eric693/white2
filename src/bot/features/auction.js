@@ -245,6 +245,11 @@ function settleWinner(gid, a, bid) {
       homeOf(gid, bid.user_id, bid.username);
       db.prepare(`INSERT INTO pet_owned (guild_id,user_id,pet_id,nickname,level,exp,intimacy,personality,fed_ms)
                   VALUES (?,?,?,'',1,0,40,'',?)`).run(gid, bid.user_id, a.ref_id, Date.now());
+      // 圖鑑：領養那條路會記，拍賣得標以前沒記 —— 玩家明明養著，圖鑑卻顯示「???」
+      try {
+        const pd = db.prepare('SELECT name FROM pet_defs WHERE id=?').get(a.ref_id);
+        if (pd) require('./dex').markSeen(gid, bid.user_id, 'pet', pd.name);
+      } catch {}
     } else if (a.kind === 'title') {
       db.prepare('INSERT OR IGNORE INTO title_owned (guild_id,user_id,title_id,slot) VALUES (?,?,?,-1)')
         .run(gid, bid.user_id, a.ref_id);

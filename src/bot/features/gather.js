@@ -855,7 +855,7 @@ function buyThing(gid, uid, uname, kind, id, qty = 1) {
   if (kind === 'gift') {
     const g = db.prepare("SELECT * FROM gather_items WHERE guild_id=? AND id=? AND kind='gift'").get(gid, id);
     if (!g) return { error: '這個禮物已經不在商店裡了。' };
-    const n = Math.max(1, Math.min(100, Math.floor(qty) || 1));
+    const n = Math.max(1, Math.min(9999, Math.floor(qty) || 1));
     const total = g.price * n;
     const w = wallet(gid, uid, uname);
     if (w.coins < total) return { error: `${c.currency_name}不夠：${g.name} ×${n} 要 ${total.toLocaleString('en-US')}，你只有 ${w.coins.toLocaleString('en-US')}。` };
@@ -1311,8 +1311,9 @@ function init(client) {
         const coins = wallet(gid, i.user.id, i.user.username).coins;
         const afford = Math.max(0, Math.floor(coins / Math.max(1, g.price)));
         if (afford < 1) return i.reply({ content: `${c.currency_name}不夠：${g.name} 要 ${g.price.toLocaleString('en-US')}，你只有 ${coins.toLocaleString('en-US')}。`, flags: MessageFlags.Ephemeral });
-        const qtys = [1, 3, 5, 10, 25, 50, 100].filter(n => n <= Math.min(afford, 100));
-        if (afford > 1 && !qtys.includes(afford)) qtys.push(afford);   // 「買好買滿」也給一個選項
+        const qtys = [1, 3, 5, 10, 25, 50, 100, 500, 1000].filter(n => n <= Math.min(afford, 9999));
+        const giftCap = Math.min(afford, 9999);
+        if (giftCap > 1 && !qtys.includes(giftCap)) qtys.push(giftCap);   // 「買好買滿」也給一個選項
         // customId 不能叫 giftqty —— 好感度的送禮數量選單也用那個前綴，
         // 會被它先攔走然後回「找不到這位角色」。這裡是商店買東西，跟角色無關。
         const menu = new StringSelectMenuBuilder().setCustomId(`shopgiftqty:${g.id}`)

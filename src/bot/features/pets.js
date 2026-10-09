@@ -175,7 +175,7 @@ const foodCount = (gid, uid) => {
 function buyFood(gid, uid, uname, qty) {
   const c = guildConfig('home_config', gid);
   const it = ensureFoodItem(gid);
-  const n = Math.max(1, Math.min(50, qty));
+  const n = Math.max(1, Math.min(999, qty));
   const price = Math.max(1, c.pet_food_price || 500);
   const total = price * n;
   const gc = gcfg(gid);
@@ -274,7 +274,9 @@ function petPanel(gid, uid, uname) {
     rows.push(new ActionRowBuilder().addComponents(
       new ButtonBuilder().setCustomId('petfood:1').setLabel(`🥫 買 1 份（${price.toLocaleString('en-US')}）`).setStyle(ButtonStyle.Secondary),
       new ButtonBuilder().setCustomId('petfood:5').setLabel(`🥫 買 5 份（${(price * 5).toLocaleString('en-US')}）`).setStyle(ButtonStyle.Secondary),
-      new ButtonBuilder().setCustomId('petfood:10').setLabel(`🥫 買 10 份（${(price * 10).toLocaleString('en-US')}）`).setStyle(ButtonStyle.Secondary)));
+      new ButtonBuilder().setCustomId('petfood:10').setLabel(`🥫 買 10 份（${(price * 10).toLocaleString('en-US')}）`).setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId('petfood:100').setLabel(`🥫 買 100 份（${(price * 100).toLocaleString('en-US')}）`).setStyle(ButtonStyle.Secondary),
+      new ButtonBuilder().setCustomId('petfood:999').setLabel('🥫 買 999 份').setStyle(ButtonStyle.Secondary)));
   }
   if (list.length) {
     // 玩家最常問「到底多久要餵一次」，所以每一列直接寫「現在可以餵／還要等多久」，
