@@ -408,6 +408,7 @@ function partnerPanel(gid, uid, uname) {
       + `數值會隨**好感度階級**成長，好感度越高效果越強。\n`
       + `⚠️ 同居稅**倍增累進**：第 1 位 ${(tc.partner_base || 0).toLocaleString('en-US')}、`
       + `第 2 位 ×${step}、第 3 位 ×${step * step}…　住越多位，每一位的稅都比前一位貴一倍。`)
+    .setFooter({ text: '放著超過 15 分鐘，下面的選單就會點不開（Discord 的限制），重開一次面板即可' })
     .addFields({ name: `目前同居（每期同居稅合計 ${totalTax.toLocaleString('en-US')}）`, value: list.length
       ? list.map((p, idx) => {
         const { autoWorkText } = require('./partnerskills');
@@ -1010,7 +1011,7 @@ function init(client) {
               value: key
             })));
           return i.reply({
-            content: '🛠️ 一位角色可以包辦一個工作區域的完整流程。要安排哪一個？',
+            content: '🛠️ 一位角色可以包辦一個工作區域的完整流程。要安排哪一個？\n_（這個選單放超過 15 分鐘就會點不開，到時候重按一次「指派工作區域」即可）_',
             components: [new ActionRowBuilder().addComponents(menu)], ...eph
           }).catch(() => {});
         }

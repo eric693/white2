@@ -118,7 +118,7 @@ const navRows = (active) => {
 function tabPanel(key) {
   const t = TABS[key] || TABS.gather;
   const embed = new EmbedBuilder().setColor(t.color).setTitle(t.title).setDescription(t.desc)
-    .setFooter({ text: '只有你看得到這則訊息｜上排可切換分類' });
+    .setFooter({ text: '只有你看得到這則訊息｜上排可切換分類｜放著超過 15 分鐘按鈕會失效，重開 /冒險面板 即可' });
   const nav = navRows(key);
   // 一則訊息最多 5 行：導覽列佔掉幾行，內容就只能放剩下的幾行
   const contentRows = t.rows.slice(0, Math.max(0, 5 - nav.length))
