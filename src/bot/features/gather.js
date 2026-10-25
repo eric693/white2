@@ -1410,6 +1410,9 @@ function init(client) {
     if (i.isButton() && i.customId.startsWith('bagmove:')) {
       const gid = i.guildId, uid = i.user.id;
       const toStore = i.customId.split(':')[1] === 'store';
+      // 第三段＝第幾頁（一頁 100 種）。東西超過 100 種時，以前後面那幾種
+      // 沒有任何選單選得到，玩家只能整批搬 —— 現在用上一頁／下一頁翻。
+      const page = Math.max(0, parseInt(i.customId.split(':')[2], 10) || 0);
       const uses = itemUses(gid);
       const rows = toStore
         ? db.prepare(`SELECT v.count, it.* FROM gather_inventory v JOIN gather_items it ON it.id=v.item_id
@@ -1422,11 +1425,23 @@ function init(client) {
         new ButtonBuilder().setCustomId(`bagall:${toStore ? 'store' : 'take'}`)
           .setLabel(toStore ? `📦 全部收進倉庫（${rows.length} 種）` : `🎒 全部取回背包（${rows.length} 種）`)
           .setStyle(ButtonStyle.Primary))];
-      for (let p = 0; p < rows.length && menus.length < 5; p += 25) {
-        const slice = rows.slice(p, p + 25);
+      const PER_PAGE = 100;
+      const pages = Math.max(1, Math.ceil(rows.length / PER_PAGE));
+      const cur = Math.min(page, pages - 1);
+      const pageRows = rows.slice(cur * PER_PAGE, cur * PER_PAGE + PER_PAGE);
+      if (pages > 1) {
+        menus[0].addComponents(
+          new ButtonBuilder().setCustomId(`bagmove:${toStore ? 'store' : 'take'}:${cur - 1}`)
+            .setLabel('◀ 上一頁').setStyle(ButtonStyle.Secondary).setDisabled(cur === 0),
+          new ButtonBuilder().setCustomId(`bagmove:${toStore ? 'store' : 'take'}:${cur + 1}`)
+            .setLabel('下一頁 ▶').setStyle(ButtonStyle.Secondary).setDisabled(cur >= pages - 1));
+      }
+      for (let p = 0; p < pageRows.length && menus.length < 5; p += 25) {
+        const slice = pageRows.slice(p, p + 25);
+        const from = cur * PER_PAGE + p + 1;
         menus.push(new ActionRowBuilder().addComponents(
           new StringSelectMenuBuilder().setCustomId(`bagset:${toStore ? 'store' : 'take'}:${p / 25}`)
-            .setPlaceholder(rows.length > 25 ? `選要搬的東西（第 ${p + 1}-${p + slice.length} 種）` : '選要搬的東西')
+            .setPlaceholder(rows.length > 25 ? `選要搬的東西（第 ${from}-${from + slice.length - 1} 種）` : '選要搬的東西')
             .setMinValues(1).setMaxValues(slice.length)
             .addOptions(slice.map(r => ({
               label: `${r.emoji || ''}${r.name}`.slice(0, 100),
@@ -1434,12 +1449,15 @@ function init(client) {
               value: String(r.id)
             })))));
       }
-      return i.reply({
-        content: toStore
-          ? '要把哪些東西收進 📦 **倉庫**？（收進去就不會被 `/賣出` 動到，可以複選）'
-          : '要把哪些東西取回 🎒 **背包**？（取回來才賣得掉、才能拿去用，可以複選）',
-        components: menus, flags: MessageFlags.Ephemeral
-      }).catch(() => {});
+      const head = toStore
+        ? '要把哪些東西收進 📦 **倉庫**？（收進去就不會被 `/賣出` 動到，可以複選）'
+        : '要把哪些東西取回 🎒 **背包**？（取回來才賣得掉、才能拿去用，可以複選）';
+      const body = head + (pages > 1 ? `\n第 **${cur + 1}／${pages}** 頁（共 ${rows.length} 種，一頁 ${PER_PAGE} 種）` : '');
+      // 翻頁是在同一則訊息上換內容，不要每按一次就多丟一則新的出來
+      const paging = i.customId.split(':').length > 2;
+      return paging
+        ? i.update({ content: body, components: menus }).catch(() => {})
+        : i.reply({ content: body, components: menus, flags: MessageFlags.Ephemeral }).catch(() => {});
     }
     if (i.isButton() && i.customId.startsWith('bagall:')) {
       const gid = i.guildId, uid = i.user.id;
