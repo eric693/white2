@@ -1,0 +1,604 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>璃白Yu光 RWY® ｜原創角色 × 沉浸式戀愛故事</title>
+<meta name="description" content="璃白Yu光專注原創角色與沉浸式戀愛故事創作。從人物設定、世界觀到情感劇情，打造有血有肉、讓人又愛又恨的角色。歡迎來到璃白Yu光，找到那個讓你捨不得離開的人。">
+<meta property="og:type" content="website">
+<meta property="og:title" content="璃白Yu光 RWY®｜原創角色 × 沉浸式戀愛故事">
+<meta property="og:description" content="從人物設定、世界觀到情感劇情，打造有血有肉、讓人又愛又恨的角色。找到那個讓你捨不得離開的人。">
+<meta property="og:image" content="https://white.crownai.ink/official/img/og.jpg">
+<meta property="og:url" content="https://white.crownai.ink/official/">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="theme-color" content="#faf6ee">
+<link rel="icon" href="img/avatar.webp">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@500;700&family=Noto+Sans+TC:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --ivory: #faf6ee;
+    --cream: #f3ead9;
+    --paper: #fffdf9;
+    --ink: #2b2420;
+    --ink-soft: #5f5550;
+    --muted: #8f857d;
+    --gold: #b8935a;
+    --gold-deep: #94733f;
+    --gold-soft: #e8d9bd;
+    --blush: #e9b7b4;
+    --mint: #8cddbc;
+    --line: rgba(43, 36, 32, .10);
+    --night: #17120f;
+    --radius: 18px;
+    --shadow: 0 18px 40px -22px rgba(60, 40, 20, .35);
+    --serif: "Noto Serif TC", "Songti TC", "PMingLiU", serif;
+    --sans: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body {
+    margin: 0;
+    background: var(--ivory);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.75;
+    -webkit-font-smoothing: antialiased;
+  }
+  /* height:auto 必須寫：img 上的 width/height 屬性是給瀏覽器預留比例用的，不寫的話會蓋掉 aspect-ratio，照片被拉長 */
+  img { max-width: 100%; height: auto; display: block; }
+  a { color: inherit; }
+  .wrap { max-width: 1120px; margin: 0 auto; padding-inline: 20px; }
+
+  /* ---- 導覽列 ---- */
+  .nav {
+    position: sticky; top: 0; z-index: 20;
+    background: rgba(250, 246, 238, .82);
+    backdrop-filter: saturate(140%) blur(12px);
+    -webkit-backdrop-filter: saturate(140%) blur(12px);
+    border-bottom: 1px solid transparent;
+    transition: border-color .3s;
+  }
+  .nav.scrolled { border-bottom-color: var(--line); }
+  .nav .wrap { display: flex; align-items: center; justify-content: space-between; height: 64px; gap: 16px; }
+  .brand { display: flex; align-items: center; gap: 10px; text-decoration: none; }
+  .brand img { width: 34px; height: 34px; border-radius: 50%; object-fit: cover; }
+  .brand b { font-family: var(--serif); font-size: 19px; letter-spacing: .06em; }
+  .brand small { color: var(--gold); font-size: 12px; letter-spacing: .12em; }
+  .nav ul { list-style: none; display: flex; gap: 26px; margin: 0; padding: 0; }
+  .nav ul a { text-decoration: none; font-size: 14px; color: var(--ink-soft); letter-spacing: .06em; }
+  .nav ul a:hover { color: var(--gold-deep); }
+  .nav .cta-sm { text-decoration: none; font-size: 13px; padding: 7px 16px; border-radius: 999px; background: var(--ink); color: var(--ivory); letter-spacing: .06em; white-space: nowrap; }
+  .menu-btn { display: none; background: none; border: 0; font-size: 22px; color: var(--ink); cursor: pointer; padding: 6px; }
+
+  /* ---- 首屏 ---- */
+  .hero { position: relative; overflow: hidden; }
+  .hero::before {
+    content: ""; position: absolute; inset: 0;
+    background: url("img/bg.webp") center / cover no-repeat;
+    opacity: .55;
+  }
+  .hero::after {
+    content: ""; position: absolute; inset: 0;
+    background: radial-gradient(ellipse at 50% 40%, rgba(250, 246, 238, .55), var(--ivory) 78%);
+  }
+  .hero .wrap { position: relative; z-index: 1; text-align: center; padding-block: 88px 96px; }
+  .avatar { width: 132px; height: 132px; margin: 0 auto 26px; border-radius: 50%; object-fit: cover; border: 4px solid var(--paper); box-shadow: 0 0 0 1px var(--gold-soft), var(--shadow); }
+  .eyebrow { display: inline-block; font-size: 12px; letter-spacing: .32em; color: var(--gold-deep); margin-bottom: 14px; }
+  .hero h1 { font-family: var(--serif); font-weight: 700; font-size: clamp(40px, 8vw, 76px); line-height: 1.15; margin: 0 0 12px; letter-spacing: .08em; }
+  .hero h1 span { color: var(--gold); font-size: .42em; vertical-align: super; letter-spacing: .1em; }
+  .hero .tag { font-family: var(--serif); font-size: clamp(17px, 2.4vw, 22px); color: var(--ink-soft); margin: 0 0 22px; letter-spacing: .12em; }
+  .hero p.lead { max-width: 640px; margin: 0 auto 34px; color: var(--ink-soft); }
+  .btns { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 13px 26px; border-radius: 999px; text-decoration: none;
+    font-weight: 500; letter-spacing: .06em; font-size: 15px;
+    transition: transform .2s, box-shadow .2s, background .2s;
+  }
+  .btn:hover { transform: translateY(-2px); }
+  .btn-gold { background: linear-gradient(135deg, #c9a66c, var(--gold-deep)); color: #fff; box-shadow: 0 12px 26px -14px rgba(148, 115, 63, .8); }
+  .btn-ghost { background: rgba(255, 253, 249, .7); border: 1px solid var(--gold-soft); color: var(--ink); }
+  .btn-ink { background: var(--ink); color: var(--ivory); }
+  .socials { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; margin-top: 30px; }
+  .socials a { font-size: 13px; letter-spacing: .08em; text-decoration: none; color: var(--ink-soft); padding: 6px 14px; border: 1px solid var(--line); border-radius: 999px; background: rgba(255, 253, 249, .6); }
+  .socials a:hover { border-color: var(--gold); color: var(--gold-deep); }
+
+  /* ---- 區塊共用 ---- */
+  section { padding-block: 92px; }
+  .sec-head { text-align: center; margin-bottom: 52px; }
+  .sec-head .eyebrow { margin-bottom: 8px; }
+  .sec-head h2 { font-family: var(--serif); font-size: clamp(28px, 4.4vw, 40px); margin: 0 0 12px; letter-spacing: .1em; font-weight: 700; }
+  .sec-head p { color: var(--muted); margin: 0 auto; max-width: 560px; }
+  .orn { display: block; width: 60px; height: 1px; margin: 18px auto 0; background: linear-gradient(90deg, transparent, var(--gold), transparent); }
+
+  /* ---- 理念 ---- */
+  .quote { font-family: var(--serif); text-align: center; font-size: clamp(20px, 3.2vw, 28px); line-height: 1.7; letter-spacing: .08em; margin: 0 auto 52px; max-width: 760px; }
+  .quote em { font-style: normal; color: var(--gold-deep); }
+  .pillars { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; }
+  .pillar { background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); padding: 30px 26px; text-align: center; }
+  .pillar .n { font-family: var(--serif); color: var(--gold); font-size: 13px; letter-spacing: .3em; }
+  .pillar h3 { font-family: var(--serif); font-size: 21px; margin: 6px 0 8px; letter-spacing: .08em; }
+  .pillar p { margin: 0; color: var(--ink-soft); font-size: 15px; }
+
+  /* ---- 創作者 ---- */
+  .creators { background: var(--cream); }
+  .people { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; }
+  .person { background: var(--paper); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); display: flex; flex-direction: column; }
+  .person img { aspect-ratio: 1 / 1; object-fit: cover; width: 100%; transition: transform .6s; }
+  .person:hover img { transform: scale(1.04); }
+  .person .ph { overflow: hidden; }
+  .person .bd { padding: 20px 20px 22px; display: flex; flex-direction: column; flex: 1; }
+  .person h3 { font-family: var(--serif); font-size: 24px; margin: 0 0 6px; letter-spacing: .1em; }
+  .person p { margin: 0 0 16px; color: var(--ink-soft); font-size: 14px; line-height: 1.7; flex: 1; }
+  .person a.ig { align-self: flex-start; font-size: 13px; text-decoration: none; color: var(--gold-deep); border-bottom: 1px solid var(--gold-soft); letter-spacing: .04em; }
+
+  /* ---- 作品委託 ---- */
+  .works { display: grid; grid-template-columns: repeat(2, 1fr); gap: 24px; }
+  .work { background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; display: flex; flex-direction: column; transition: box-shadow .3s, transform .3s; }
+  .work:hover { box-shadow: var(--shadow); transform: translateY(-3px); }
+  .work img { aspect-ratio: 2 / 1; object-fit: cover; width: 100%; background: var(--night); }
+  .work .bd { padding: 22px 24px 26px; display: flex; flex-direction: column; flex: 1; }
+  .work .kind { font-size: 12px; letter-spacing: .2em; color: var(--gold-deep); }
+  .work h3 { font-family: var(--serif); font-size: 22px; margin: 4px 0 10px; letter-spacing: .06em; line-height: 1.4; }
+  .work p { margin: 0 0 18px; color: var(--ink-soft); font-size: 15px; flex: 1; }
+  .work .btn { align-self: flex-start; padding: 10px 20px; font-size: 14px; }
+  .work.wide { grid-column: 1 / -1; }
+  .work.wide { flex-direction: row; }
+  .work.wide img { width: 55%; aspect-ratio: auto; }
+  .work.wide .bd { justify-content: center; }
+
+  /* ---- 周邊 ---- */
+  .night { background: var(--night); color: #f3ead9; }
+  .night .sec-head p { color: #b9ab97; }
+  .goods { display: grid; grid-template-columns: 1fr 1fr; gap: 48px; align-items: center; }
+  .goods img { border-radius: var(--radius); box-shadow: 0 30px 60px -30px rgba(0, 0, 0, .8); }
+  .goods h3 { font-family: var(--serif); font-size: clamp(24px, 3.4vw, 34px); margin: 0 0 14px; letter-spacing: .08em; color: #fff; }
+  .goods ul { padding-left: 1.1em; margin: 0 0 26px; color: #d9cdb9; }
+  .goods li { margin-bottom: 6px; }
+  .goods .note { font-size: 13px; color: #9c8f7d; margin-top: 14px; }
+
+  /* ---- 和角色聊天 ---- */
+  .chat-table { width: 100%; border-collapse: separate; border-spacing: 0; background: var(--paper); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+  .chat-table th, .chat-table td { padding: 16px 18px; text-align: center; border-bottom: 1px solid var(--line); }
+  .chat-table tr:last-child td { border-bottom: 0; }
+  .chat-table thead th { background: var(--cream); font-family: var(--serif); letter-spacing: .1em; font-weight: 700; }
+  .chat-table tbody th { font-family: var(--serif); font-size: 18px; text-align: left; letter-spacing: .1em; white-space: nowrap; }
+  .chat-table a { display: inline-block; white-space: nowrap; padding: 8px 18px; border-radius: 999px; text-decoration: none; font-size: 14px; border: 1px solid var(--gold-soft); color: var(--gold-deep); background: #fff; transition: background .2s, color .2s; }
+  .chat-table a:hover { background: var(--gold); color: #fff; border-color: var(--gold); }
+  .table-scroll { overflow-x: auto; }
+  .hint { text-align: center; color: var(--muted); font-size: 14px; margin-top: 18px; }
+
+  /* ---- 星光嚴選 ---- */
+  .picks-sec { background: var(--cream); }
+  .picks { display: grid; grid-template-columns: repeat(4, 1fr); gap: 20px; }
+  .pick { background: var(--paper); border-radius: var(--radius); overflow: hidden; text-decoration: none; box-shadow: var(--shadow); display: flex; flex-direction: column; transition: transform .3s; }
+  .pick:hover { transform: translateY(-4px); }
+  .pick img { aspect-ratio: 1 / 1; object-fit: cover; width: 100%; }
+  .pick .bd { padding: 16px 18px 20px; }
+  .pick b { font-family: var(--serif); display: block; font-size: 18px; letter-spacing: .08em; margin-bottom: 4px; }
+  .pick span { font-size: 14px; color: var(--ink-soft); line-height: 1.65; display: block; }
+  .pick i { font-style: normal; font-size: 13px; color: var(--gold-deep); display: block; margin-top: 10px; }
+
+  /* ---- 最新活動 ---- */
+  .news { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; align-items: center; }
+  .news img { border-radius: var(--radius); box-shadow: var(--shadow); }
+  .news h3 { font-family: var(--serif); font-size: 28px; margin: 0 0 12px; letter-spacing: .08em; }
+  .news p { color: var(--ink-soft); margin: 0 0 24px; }
+
+  /* ---- 貼圖與社群 ---- */
+  .links { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .link {
+    display: flex; flex-direction: column; gap: 4px;
+    background: var(--paper); border: 1px solid var(--line); border-radius: 16px;
+    padding: 20px 22px; text-decoration: none; transition: border-color .2s, transform .2s;
+  }
+  .link:hover { border-color: var(--gold); transform: translateY(-2px); }
+  .link b { font-size: 16px; letter-spacing: .04em; }
+  .link span { font-size: 14px; color: var(--muted); }
+
+  /* ---- 贊助 ---- */
+  .support { text-align: center; padding-block: 80px; background: linear-gradient(135deg, #f6efe1, #f9e6e3 60%, #eef6f1); }
+  .support h2 { font-family: var(--serif); font-size: clamp(26px, 4vw, 36px); margin: 0 0 12px; letter-spacing: .1em; }
+  .support p { color: var(--ink-soft); margin: 0 auto 28px; max-width: 520px; }
+
+  footer { background: var(--night); color: #b9ab97; padding-block: 48px 40px; text-align: center; font-size: 14px; }
+  footer .socials a { color: #d9cdb9; border-color: rgba(255, 255, 255, .14); background: transparent; }
+  footer .socials a:hover { color: #fff; border-color: var(--gold); }
+  footer .copy { margin-top: 24px; letter-spacing: .08em; font-size: 13px; color: #8b7f6f; }
+
+  /* ---- 進場動畫 ---- */
+  .reveal { opacity: 0; transform: translateY(18px); transition: opacity .8s ease, transform .8s ease; }
+  .reveal.in { opacity: 1; transform: none; }
+  @media (prefers-reduced-motion: reduce) {
+    .reveal { opacity: 1; transform: none; transition: none; }
+    html { scroll-behavior: auto; }
+  }
+
+  /* ---- 響應式 ---- */
+  @media (max-width: 960px) {
+    .people, .picks { grid-template-columns: repeat(2, 1fr); }
+    .links { grid-template-columns: repeat(2, 1fr); }
+    .work.wide { flex-direction: column; }
+    .work.wide img { width: 100%; aspect-ratio: 2 / 1; }
+  }
+  @media (max-width: 760px) {
+    section { padding-block: 64px; }
+    .nav ul {
+      display: none; position: absolute; top: 64px; left: 0; right: 0;
+      flex-direction: column; gap: 0; background: var(--ivory); border-bottom: 1px solid var(--line);
+    }
+    .nav ul.open { display: flex; }
+    .nav ul a { display: block; padding: 14px 20px; border-top: 1px solid var(--line); }
+    .menu-btn { display: block; }
+    .nav .cta-sm { display: none; }
+    .pillars, .works, .goods, .news { grid-template-columns: 1fr; }
+    .goods, .news { gap: 28px; }
+    .links { grid-template-columns: 1fr; }
+    .hero .wrap { padding-block: 64px 72px; }
+    .avatar { width: 108px; height: 108px; }
+  }
+  @media (max-width: 460px) {
+    .people { grid-template-columns: 1fr; }
+    .person img { aspect-ratio: 4 / 3; }
+    .picks { gap: 12px; }
+    .pick .bd { padding: 12px 12px 14px; }
+    .pick b { font-size: 16px; }
+    .pick span { font-size: 13px; }
+    .chat-table th, .chat-table td { padding: 12px 4px; }
+    .chat-table thead th { font-size: 13px; letter-spacing: .02em; }
+    .chat-table tbody th { font-size: 15px; letter-spacing: .04em; padding-left: 12px; }
+    .chat-table a { padding: 6px 10px; font-size: 13px; }
+  }
+</style>
+</head>
+<body>
+
+<nav class="nav" id="nav">
+  <div class="wrap">
+    <a class="brand" href="#top">
+      <img src="img/avatar.webp" alt="" width="34" height="34">
+      <span><b>璃白Yu光</b> <small>RWY®</small></span>
+    </a>
+    <ul id="menu">
+      <li><a href="#about">關於</a></li>
+      <li><a href="#creators">創作者</a></li>
+      <li><a href="#works">作品委託</a></li>
+      <li><a href="#chat">和角色聊天</a></li>
+      <li><a href="#picks">星光嚴選</a></li>
+      <li><a href="#links">貼圖與社群</a></li>
+    </ul>
+    <a class="cta-sm" href="https://discord.gg/rwy" target="_blank" rel="noopener">加入 Discord</a>
+    <button class="menu-btn" id="menuBtn" aria-label="開啟選單" aria-expanded="false">☰</button>
+  </div>
+</nav>
+
+<header class="hero" id="top">
+  <div class="wrap">
+    <img class="avatar" src="img/avatar.webp" alt="璃白Yu光" width="132" height="132">
+    <span class="eyebrow">ORIGINAL CHARACTERS · IMMERSIVE ROMANCE</span>
+    <h1>璃白Yu光<span>RWY®</span></h1>
+    <p class="tag">原創角色 × 沉浸式戀愛故事</p>
+    <p class="lead">從人物設定、世界觀到情感劇情，打造有血有肉、讓人又愛又恨的角色。<br>歡迎來到璃白Yu光，找到那個讓你捨不得離開的人。</p>
+    <div class="btns">
+      <a class="btn btn-gold" href="https://discord.gg/rwy" target="_blank" rel="noopener">加入 Discord 社群</a>
+      <a class="btn btn-ghost" href="#works">看看作品委託</a>
+    </div>
+    <div class="socials">
+      <a href="https://www.instagram.com/sweet_0722_0722" target="_blank" rel="noopener">Instagram</a>
+      <a href="https://www.threads.com/@sweet_0722_0722" target="_blank" rel="noopener">Threads</a>
+      <a href="https://www.facebook.com/profile.php?id=61560294754248" target="_blank" rel="noopener">Facebook</a>
+      <a href="https://discord.gg/rwy" target="_blank" rel="noopener">Discord</a>
+      <a href="https://riewhiteyu.pixnet.net/blog" target="_blank" rel="noopener">痞客邦</a>
+    </div>
+  </div>
+</header>
+
+<section id="about">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <span class="eyebrow">ABOUT</span>
+      <h2>關於璃白Yu光</h2>
+      <span class="orn"></span>
+    </div>
+    <p class="quote reveal">難攻略、虐戀、BE 與反差萌——<br>我們想寫的，是<em>讓人又愛又恨</em>、<em>捨不得離開</em>的角色。</p>
+    <div class="pillars">
+      <div class="pillar reveal">
+        <div class="n">01</div>
+        <h3>人物設定</h3>
+        <p>每一位角色都有自己的來歷、脾氣與說話方式，不是模板，是一個人。</p>
+      </div>
+      <div class="pillar reveal">
+        <div class="n">02</div>
+        <h3>世界觀</h3>
+        <p>角色活在完整的世界裡，關係、規則與過去都經得起反覆推敲。</p>
+      </div>
+      <div class="pillar reveal">
+        <div class="n">03</div>
+        <h3>情感劇情</h3>
+        <p>心動、拉扯、遺憾與反轉，讓每一段相遇都值得被記住。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="creators" id="creators">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <span class="eyebrow">BEHIND THE STORIES</span>
+      <h2>幕後的我們</h2>
+      <p>四位創作者，四種讓小星光心跳加速的方式。</p>
+      <span class="orn"></span>
+    </div>
+    <div class="people">
+      <article class="person reveal">
+        <div class="ph"><img src="img/creator1.webp" alt="璃璃" loading="lazy" width="900" height="900"></div>
+        <div class="bd">
+          <h3>璃璃 🍓</h3>
+          <p>專門負責開車、曖昧與製造心跳，油門尺度永遠超標，一不小心就讓小星光上車後忘了怎麼下車 ♡</p>
+          <a class="ig" href="https://www.instagram.com/16_rie/" target="_blank" rel="noopener">@16_rie</a>
+        </div>
+      </article>
+      <article class="person reveal">
+        <div class="ph"><img src="img/creator2.webp" alt="白白" loading="lazy" width="900" height="900"></div>
+        <div class="bd">
+          <h3>白白 🫧</h3>
+          <p>專門負責虐心、拉扯與製造遺憾，攻略難度永遠超標，一不小心就讓小星光哭著捨不得走 ♡</p>
+          <a class="ig" href="https://www.instagram.com/sweet_0722_0722/" target="_blank" rel="noopener">@sweet_0722_0722</a>
+        </div>
+      </article>
+      <article class="person reveal">
+        <div class="ph"><img src="img/creator3.webp" alt="Yu" loading="lazy" width="900" height="900"></div>
+        <div class="bd">
+          <h3>Yu 🐬</h3>
+          <p>專門負責撒糖、寵人與製造心動，戀愛甜度永遠超標，一不小心就甜到小星光蛀牙 ♡</p>
+          <a class="ig" href="https://www.instagram.com/yu_mu.mu/" target="_blank" rel="noopener">@yu_mu.mu</a>
+        </div>
+      </article>
+      <article class="person reveal">
+        <div class="ph"><img src="img/creator4.webp" alt="墨墨" loading="lazy" width="900" height="900"></div>
+        <div class="bd">
+          <h3>墨墨</h3>
+          <p>專門負責鋪陳、反轉與製造沉浸感，劇情濃度永遠超標，一不小心就讓小星光追著故事捨不得走 ♡</p>
+          <a class="ig" href="https://www.instagram.com/ginkgo_54/" target="_blank" rel="noopener">@ginkgo_54</a>
+        </div>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section id="works">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <span class="eyebrow">STARLIGHT STUDIO</span>
+      <h2>星光映畫所</h2>
+      <p>把只存在於故事裡的你們，變成看得見、留得住的作品。</p>
+      <span class="orn"></span>
+    </div>
+    <div class="works">
+      <article class="work wide reveal">
+        <img src="img/product1.webp" alt="《嫁給你那天》AI精緻水晶婚紗本" loading="lazy" width="900" height="450">
+        <div class="bd">
+          <span class="kind">實體印刷 · A4 水晶封面</span>
+          <h3>《嫁給你那天》<br>AI精緻水晶婚紗本</h3>
+          <p>如果故事裡的婚禮，真的可以被一本一本收藏。從 6 套不同婚紗、專屬場景到情境式婚紗影像，把你們的婚禮故事完整製作成實體婚紗本。</p>
+          <a class="btn btn-ink" href="https://portaly.cc/sweet_0722_0722/product/QIAEb125LBOjshq4Iyii" target="_blank" rel="noopener">查看方案</a>
+        </div>
+      </article>
+      <article class="work reveal">
+        <img src="img/product2.webp" alt="《嫁給你那天》AI精緻婚紗寫真" loading="lazy" width="900" height="450">
+        <div class="bd">
+          <span class="kind">電子檔</span>
+          <h3>《嫁給你那天》AI精緻婚紗寫真</h3>
+          <p>如果真的有一天，可以穿上喜歡的婚紗，站在他的身邊。以你的女主人設，搭配指定角色製作專屬婚紗影像。</p>
+          <a class="btn btn-ink" href="https://portaly.cc/sweet_0722_0722/product/jv2tBOiGOf1qcvCUKNtk" target="_blank" rel="noopener">查看方案</a>
+        </div>
+      </article>
+      <article class="work reveal">
+        <img src="img/product3.webp" alt="《失控15秒》AI氛圍短片" loading="lazy" width="900" height="450">
+        <div class="bd">
+          <span class="kind">AI 氛圍短片</span>
+          <h3>《失控15秒》</h3>
+          <p>15 秒，不談劇情，只負責讓人心跳快一點。透過眼神、距離與鏡頭，留下令人反覆播放的瞬間。</p>
+          <a class="btn btn-ink" href="https://portaly.cc/sweet_0722_0722/product/cgI6BbnMcrUeQVLR6WpX" target="_blank" rel="noopener">查看方案</a>
+        </div>
+      </article>
+      <article class="work reveal">
+        <img src="img/product4.webp" alt="《一頁成影》AI專屬短篇劇情影片" loading="lazy" width="900" height="450">
+        <div class="bd">
+          <span class="kind">AI 專屬短篇劇情影片</span>
+          <h3>《一頁成影》</h3>
+          <p>你寫故事，我替你把它變成畫面。一段相遇、一場約會，或那個始終忘不了的瞬間，都能化成專屬影像。</p>
+          <a class="btn btn-ink" href="https://portaly.cc/sweet_0722_0722/product/kbsdPzlv3q2RsIU6elU4" target="_blank" rel="noopener">查看方案</a>
+        </div>
+      </article>
+      <article class="work reveal">
+        <img src="img/product5.webp" alt="《映你成歌》AI劇情MV" loading="lazy" width="900" height="450">
+        <div class="bd">
+          <span class="kind">AI 劇情 MV</span>
+          <h3>《映你成歌》</h3>
+          <p>把你們的故事寫成一首歌，再拍成一部電影。有些故事，不該只留在聊天紀錄裡。</p>
+          <a class="btn btn-ink" href="https://portaly.cc/sweet_0722_0722/product/RMMOveiEFlqMZ7xbMsS2" target="_blank" rel="noopener">查看方案</a>
+        </div>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section class="night" id="goods">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <span class="eyebrow">STARLIGHT VAULT</span>
+      <h2>星光藏所</h2>
+      <p>把喜歡的角色帶在身邊。</p>
+      <span class="orn"></span>
+    </div>
+    <div class="goods">
+      <img class="reveal" src="img/keychain.webp" alt="RWY® 頂級雙層壓克力鑰匙圈" loading="lazy" width="1100" height="1100">
+      <div class="reveal">
+        <h3>RWY® 頂級雙層壓克力鑰匙圈</h3>
+        <ul>
+          <li>客製化角色，4mm 厚度雙層透明壓克力</li>
+          <li>雙面印刷＋白墨升級，色彩飽和、細節清晰</li>
+          <li>高級金屬扣環，質感升級</li>
+        </ul>
+        <a class="btn btn-gold" href="https://httk6jgttp.cashier.ecpay.com.tw/product/000000001026531" target="_blank" rel="noopener">查看鑰匙圈</a>
+        <p class="note">實際開放時間與款式以活動公告為準，最新消息請到 Discord 查看。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="chat">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <span class="eyebrow">TALK TO THEM</span>
+      <h2>和角色聊天</h2>
+      <p>璃白Yu光的角色住在這些平台，挑一個喜歡的地方，開始你們的故事。</p>
+      <span class="orn"></span>
+    </div>
+    <div class="table-scroll reveal">
+      <table class="chat-table">
+        <thead>
+          <tr><th scope="col">作者</th><th scope="col">BeMi</th><th scope="col">Touchie</th><th scope="col">Dokichat</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <th scope="row">璃璃 🍓</th>
+            <td><a href="https://bemi.fo-shine.com/character/rFrCI4ODhPL3" target="_blank" rel="noopener">前往</a></td>
+            <td><a href="https://h5.touchieai.com/author?code=61B86D53-3B4F-4698-B3B8-900D1573AA3B" target="_blank" rel="noopener">前往</a></td>
+            <td><a href="https://www.dokichat.club/zh/role/343f8049-e2b5-474d-b42d-e805e8bf92c8" target="_blank" rel="noopener">前往</a></td>
+          </tr>
+          <tr>
+            <th scope="row">白白 🫧</th>
+            <td><a href="https://bemi.fo-shine.com/character/BI-1zY8OmBhq" target="_blank" rel="noopener">前往</a></td>
+            <td><a href="https://h5.touchieai.com/author?code=055A0B35-848D-4FBE-AE42-CEAB1770CFB0" target="_blank" rel="noopener">前往</a></td>
+            <td><a href="https://www.dokichat.club/zh/role/ac6c12aa-9806-4893-8022-06027fb20a46" target="_blank" rel="noopener">前往</a></td>
+          </tr>
+          <tr>
+            <th scope="row">Yu 🐬</th>
+            <td><a href="https://bemi.fo-shine.com/character/NFzzkgvh-guI" target="_blank" rel="noopener">前往</a></td>
+            <td><a href="https://h5.touchieai.com/author?code=d6758ea4-594e-494e-ac1a-befe4c1569c6" target="_blank" rel="noopener">前往</a></td>
+            <td><a href="https://www.dokichat.club/zh/role/43ba55a6-3363-4d0f-a031-60633b0050a4" target="_blank" rel="noopener">前往</a></td>
+          </tr>
+          <tr>
+            <th scope="row">墨墨</th>
+            <td><a href="https://bemi.fo-shine.com/character/Ddv4aLQO7XEK" target="_blank" rel="noopener">前往</a></td>
+            <td><a href="https://h5.touchieai.com/author?code=4743b5ec-1a35-4093-b5c6-7238a455b5e8" target="_blank" rel="noopener">前往</a></td>
+            <td><a href="https://www.dokichat.club/zh/role/7ef28305-c001-423f-95d8-cba30021954a" target="_blank" rel="noopener">前往</a></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <p class="hint">也可以加入 <a href="https://discord.gg/rwy" target="_blank" rel="noopener">Discord 社群</a>，和其他小星光一起交流。</p>
+  </div>
+</section>
+
+<section class="picks-sec" id="picks">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <span class="eyebrow">STARLIGHT PICKS</span>
+      <h2>星光嚴選</h2>
+      <p>由角色親自替你挑選的生活好物，從日常保養到質感生活，每一樣都值得收藏。</p>
+      <span class="orn"></span>
+    </div>
+    <div class="picks">
+      <a class="pick reveal" href="https://myship.7-11.com.tw/general/detail/GM2606080683427" target="_blank" rel="noopener">
+        <img src="img/pick1.webp" alt="向晨推薦" loading="lazy" width="768" height="1024">
+        <div class="bd"><b>向晨</b><span>晶透修護綻放光澤，迷人香氣留下專屬氣息。</span><i>看看他的推薦 →</i></div>
+      </a>
+      <a class="pick reveal" href="https://yidomart.com/index.php/product/birds-nest/" target="_blank" rel="noopener">
+        <img src="img/pick2.webp" alt="歐陽靳甫推薦" loading="lazy" width="768" height="768">
+        <div class="bd"><b>歐陽靳甫</b><span>燕窩晶透清甜不膩，乾挑原味入口滑潤又細緻。</span><i>看看他的推薦 →</i></div>
+      </a>
+      <a class="pick reveal" href="https://shopee.tw/product/211513310/55212243819" target="_blank" rel="noopener">
+        <img src="img/pick3.webp" alt="商允澈推薦" loading="lazy" width="768" height="768">
+        <div class="bd"><b>商允澈</b><span>綿密泡沫清新潔淨，馬鞭草香溫柔縈繞掌心。</span><i>看看他的推薦 →</i></div>
+      </a>
+      <a class="pick reveal" href="https://discord.com/channels/1417153218823065633/1509370265128145066" target="_blank" rel="noopener">
+        <img src="img/pick4.webp" alt="紀澄推薦" loading="lazy" width="640" height="640">
+        <div class="bd"><b>紀澄</b><span>人參精萃修護彈潤，清爽保濕養出細緻光澤。</span><i>到 Discord 看詳情 →</i></div>
+      </a>
+    </div>
+  </div>
+</section>
+
+<section id="news">
+  <div class="wrap">
+    <div class="news">
+      <img class="reveal" src="img/news.webp" alt="最新活動" loading="lazy" width="1200" height="1200">
+      <div class="reveal">
+        <span class="eyebrow">LATEST</span>
+        <h3>最新活動</h3>
+        <p>活動、預購與新角色都會第一時間公布在 Discord。加入社群，跟其他小星光一起追最新消息。</p>
+        <a class="btn btn-gold" href="https://discord.gg/rwy" target="_blank" rel="noopener">前往 Discord</a>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="links" style="padding-top:0">
+  <div class="wrap">
+    <div class="sec-head reveal">
+      <span class="eyebrow">STICKERS & COMMUNITY</span>
+      <h2>貼圖與社群</h2>
+      <span class="orn"></span>
+    </div>
+    <div class="links">
+      <a class="link reveal" href="https://line.me/S/shop/sticker/author/5746862/new?lang=zh-Hant" target="_blank" rel="noopener"><b>LINE 貼圖</b><span>璃白Yu光貼圖一覽｜LINE STORE</span></a>
+      <a class="link reveal" href="https://discord.gg/rwy" target="_blank" rel="noopener"><b>Discord 社群</b><span>和璃白Yu光一起交流互動</span></a>
+      <a class="link reveal" href="https://riewhiteyu.pixnet.net/blog" target="_blank" rel="noopener"><b>痞客邦 PIXNET</b><span>圖文創作分享・最新文章</span></a>
+      <a class="link reveal" href="https://giphy.com/channel/961c7d1774f24406bb2ac7904b635f0a/ai_rie" target="_blank" rel="noopener"><b>璃璃 🍓 GIF 貼圖</b><span>前往璃璃的貼圖下載頁面</span></a>
+      <a class="link reveal" href="https://giphy.com/channel/961c7d1774f24406bb2ac7904b635f0a/ai_white" target="_blank" rel="noopener"><b>白白 🫧 GIF 貼圖</b><span>前往白白的貼圖下載頁面</span></a>
+      <a class="link reveal" href="https://giphy.com/channel/961c7d1774f24406bb2ac7904b635f0a/ai_yu" target="_blank" rel="noopener"><b>Yu 🐬 GIF 貼圖</b><span>探索 Yu 的貼圖內容</span></a>
+    </div>
+  </div>
+</section>
+
+<div class="support">
+  <div class="wrap">
+    <h2>小星光贊助專區 ♡</h2>
+    <p>喜歡我們的角色與故事嗎？你的每一份支持，都會變成下一個讓人心動的角色。</p>
+    <div class="btns">
+      <a class="btn btn-gold" href="https://portaly.cc/sweet_0722_0722/support" target="_blank" rel="noopener">支持璃白Yu光</a>
+      <a class="btn btn-ghost" href="https://portaly.cc/sweet_0722_0722/contact" target="_blank" rel="noopener">合作與委託洽詢</a>
+    </div>
+  </div>
+</div>
+
+<footer>
+  <div class="wrap">
+    <div class="socials">
+      <a href="https://www.instagram.com/sweet_0722_0722" target="_blank" rel="noopener">Instagram</a>
+      <a href="https://www.threads.com/@sweet_0722_0722" target="_blank" rel="noopener">Threads</a>
+      <a href="https://www.facebook.com/profile.php?id=61560294754248" target="_blank" rel="noopener">Facebook</a>
+      <a href="https://discord.gg/rwy" target="_blank" rel="noopener">Discord</a>
+      <a href="https://linkgoods.com/rie0white0yu" target="_blank" rel="noopener">LINKGOODS</a>
+    </div>
+    <div class="copy">© <span id="yr">2026</span> 璃白Yu光 RWY®　All rights reserved.</div>
+  </div>
+</footer>
+
+<script>
+  // 導覽列：捲動後加底線；手機版漢堡選單
+  const nav = document.getElementById('nav');
+  addEventListener('scroll', () => nav.classList.toggle('scrolled', scrollY > 10), { passive: true });
+  const menu = document.getElementById('menu'), btn = document.getElementById('menuBtn');
+  btn.addEventListener('click', () => {
+    const open = menu.classList.toggle('open');
+    btn.setAttribute('aria-expanded', open);
+  });
+  menu.addEventListener('click', e => { if (e.target.tagName === 'A') { menu.classList.remove('open'); btn.setAttribute('aria-expanded', false); } });
+
+  // 進場淡入
+  const io = 'IntersectionObserver' in window ? new IntersectionObserver(es => {
+    for (const e of es) if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); }
+  }, { threshold: .12 }) : null;
+  document.querySelectorAll('.reveal').forEach(el => io ? io.observe(el) : el.classList.add('in'));
+
+  document.getElementById('yr').textContent = new Date().getFullYear();
+</script>
+</body>
+</html>
