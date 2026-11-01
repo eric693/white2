@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits, Partials, MessageFlags } = require('discord.js');
+const { Client, GatewayIntentBits, Partials, MessageFlags, Options } = require('discord.js');
 const path = require('path');
 const fs = require('fs');
 const { getSetting, setSetting, ensureGuild, db, claimBotJobs, finishBotJob } = require('../db');
@@ -65,7 +65,10 @@ const client = new Client({
     GatewayIntentBits.GuildVoiceStates,
     GatewayIntentBits.GuildMessageReactions
   ],
-  partials: [Partials.Message, Partials.Channel, Partials.Reaction]
+  partials: [Partials.Message, Partials.Channel, Partials.Reaction],
+  // 訊息快取：每個頻道最多 50 則，並每 30 分鐘清除超過 1 小時的訊息，避免長時間執行記憶體一直增加（2026-11-01）
+  makeCache: Options.cacheWithLimits({ ...Options.DefaultMakeCacheSettings, MessageManager: 50 }),
+  sweepers: { ...Options.DefaultSweeperSettings, messages: { interval: 1800, lifetime: 3600 } }
 });
 
 // 14 個功能模組各自監聽同一批事件，預設上限 10 會誤報記憶體洩漏警告
