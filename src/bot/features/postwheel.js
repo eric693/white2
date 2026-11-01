@@ -9,6 +9,10 @@ const {
 } = require('discord.js');
 const { db, logError } = require('../../db');
 const { brandColor } = require('../../util/brand');
+const { blacklisted } = require('../perm');
+// 貼文轉盤也是抽獎：跟一般抽獎共用同一份「抽獎」黑名單（後台黑名單選「抽獎」或「全部功能」的人都會被排除）。
+// 以前完全沒檢查，黑名單的人照樣抽得到。
+const notBlacklisted = (gid) => (p) => !blacklisted(gid, p.id, 'giveaways');
 
 // 從訊息連結或純 ID 取出訊息 ID 與（連結才有的）頻道 ID
 // 支援：https://discord.com/channels/<guild>/<channel>/<message>、以及直接貼訊息 ID
@@ -119,7 +123,7 @@ async function rerollDraw(client, drawId, { count, operatorName, excludePrevious
   const msg = await ch.messages.fetch(rec.message_id).catch(() => null);
   if (!msg) throw new Error('找不到原貼文（可能已被刪除）');
 
-  let people = await collectCommenters(msg, { includeReactions: !!rec.include_reactions });
+  let people = (await collectCommenters(msg, { includeReactions: !!rec.include_reactions })).filter(notBlacklisted(rec.guild_id));
   if (excludePrevious) {
     const past = new Set();
     for (const r of db.prepare('SELECT winners FROM postwheel_draws WHERE guild_id=? AND message_id=?').all(rec.guild_id, rec.message_id)) {
@@ -211,7 +215,8 @@ async function handle(i) {
     return i.editReply('讀取留言時發生錯誤，請確認機器人有「讀取訊息記錄」權限後再試一次。');
   }
 
-  if (!people.length) return i.editReply('這則貼文目前沒有任何留言者可以抽（機器人的留言不列入）。');
+  people = people.filter(notBlacklisted(i.guildId));
+  if (!people.length) return i.editReply('這則貼文目前沒有任何留言者可以抽（機器人的留言、抽獎黑名單的人不列入）。');
 
   // 「每則留言算一次資格」是明確打開才生效的例外；預設一人一票，避免洗留言灌機率
   const pool = perMessage
@@ -231,7 +236,7 @@ async function handle(i) {
       `**抽出**：${winners.length} 位${allowRepeat ? '（允許重複中獎）' : ''}\n\n` +
       winners.map((w, n) => `${n + 1}. <@${w.id}>`).join('\n')
     )
-    .setFooter({ text: perMessage ? '每則留言各算一次資格' : '同一人不論留幾則都只算 1 個資格' })
+    .setFooter({ text: (perMessage ? '每則留言各算一次資格' : '同一人不論留幾則都只算 1 個資格') + '｜已套用抽獎黑名單' })
     .setTimestamp();
 
   // 存檔：後台「貼文轉盤」頁靠這張表回查誰中過獎、以及事後補抽
