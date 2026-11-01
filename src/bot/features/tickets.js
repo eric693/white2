@@ -2,7 +2,7 @@
 const {
   EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle,
   ModalBuilder, TextInputBuilder, TextInputStyle,
-  ChannelType, PermissionFlagsBits, MessageFlags} = require('discord.js');
+  ChannelType, PermissionFlagsBits, OverwriteType, MessageFlags} = require('discord.js');
 const { db, guildConfig, logError } = require('../../db');
 const { brandColor } = require('../../util/brand');
 const { nameOf } = require('../../util/names');
@@ -141,14 +141,21 @@ async function openTicket(i, subject, panelId) {
   const categoryId = panel.category_id || c.category_id;
 
   // 建立專屬頻道：@everyone 不可見；開單者、客服身分組、機器人可見
+  // 每一筆都明確標出是「身分組」還是「成員」：沒標的話 discord.js 要靠記憶體快取去猜，
+  // 剛建立的身分組還沒進快取時，整張單會直接失敗（"Supplied parameter is not a cached User or Role"）。
   const overwrites = [
-    { id: i.guild.roles.everyone.id, deny: [PermissionFlagsBits.ViewChannel] },
-    { id: i.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.AttachFiles] },
-    { id: i.client.user.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ManageChannels, PermissionFlagsBits.ReadMessageHistory] }
+    { id: i.guild.roles.everyone.id, type: OverwriteType.Role, deny: [PermissionFlagsBits.ViewChannel] },
+    { id: i.user.id, type: OverwriteType.Member, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.AttachFiles] },
+    { id: i.client.user.id, type: OverwriteType.Member, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ManageChannels, PermissionFlagsBits.ReadMessageHistory] }
   ];
+  // 客服身分組：後台設定的身分組如果已經被刪掉，就跳過它（不要因為一個失效的身分組整張單開不起來）
+  if (supportRoles.some(rid => !i.guild.roles.cache.has(rid))) await i.guild.roles.fetch().catch(() => {});
+  const missingRoles = [];
   for (const rid of supportRoles) {
-    overwrites.push({ id: rid, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.AttachFiles] });
+    if (!i.guild.roles.cache.has(rid)) { missingRoles.push(rid); continue; }
+    overwrites.push({ id: rid, type: OverwriteType.Role, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory, PermissionFlagsBits.AttachFiles] });
   }
+  if (missingRoles.length) logError(gid, '客服身分組已不存在：', `${missingRoles.join('、')}（面板「${panel.name}」，請到後台客服單設定移除）`);
 
   let channel;
   const baseOpts = {
