@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>璃白冒險（離線）</title>
+<link rel="icon" type="image/png" href="/icon-192.png">
+<link rel="stylesheet" href="/play-app.css">
+</head>
+<body class="notice">
+<main>
+  <img src="/icon-192.png" alt="" width="72" height="72">
+  <h1>目前離線</h1>
+  <p>連不到伺服器，暫時看不到你的冒險資料。連上網路後再試一次。</p>
+  <button class="btn primary block" onclick="location.reload()">重新連線</button>
+</main>
+<script>window.addEventListener('online', function () { location.reload(); });</script>
+</body>
+</html>

@@ -83,23 +83,27 @@ function collect(gid, uid) {
   const stockVal = holdings.reduce((s, h) => s + Math.max(0, h.value), 0);
 
   // 魚缸
+  // 依品種彙總（有玩家養到上萬格，逐格列出手機會卡死）
   const fish = many(
-    `SELECT a.slot, a.pending, f.name, f.emoji, f.coin_per_day FROM aquarium_slots a JOIN aquarium_fish f ON f.id=a.fish_id
-      WHERE a.guild_id=? AND a.user_id=? ORDER BY a.slot`, uid);
+    `SELECT f.name, f.emoji, COUNT(*) AS n, SUM(a.pending) AS pending FROM aquarium_slots a JOIN aquarium_fish f ON f.id=a.fish_id
+      WHERE a.guild_id=? AND a.user_id=? GROUP BY a.fish_id ORDER BY n DESC, f.name`, uid);
   const fishPending = fish.reduce((s, x) => s + (x.pending || 0), 0);
 
   // 牧場
   const animals = many(
-    `SELECT r.slot, r.pending, a.name, a.emoji FROM ranch_slots r JOIN ranch_animals a ON a.id=r.animal_id
-      WHERE r.guild_id=? AND r.user_id=? ORDER BY r.slot`, uid);
+    `SELECT a.name, a.emoji, COUNT(*) AS n, SUM(r.pending) AS pending FROM ranch_slots r JOIN ranch_animals a ON a.id=r.animal_id
+      WHERE r.guild_id=? AND r.user_id=? GROUP BY r.animal_id ORDER BY n DESC, a.name`, uid);
   const ranchPending = animals.reduce((s, x) => s + (x.pending || 0), 0);
 
   // 農地／溫室
   const now = Date.now();
-  const plots = many(
-    `SELECT p.plot_type, p.slot, p.ready_at, s.name, s.emoji FROM crop_plots p JOIN crop_seeds s ON s.id=p.seed_id
-      WHERE p.guild_id=? AND p.user_id=? ORDER BY p.plot_type, p.slot`, uid)
-    .map(p => ({ ...p, ready: (p.ready_at || 0) <= now }));
+  let plots = [];
+  try { plots = db.prepare(
+    `SELECT p.plot_type, s.name, s.emoji, COUNT(*) AS n,
+            SUM(CASE WHEN COALESCE(p.ready_at,0) <= ? THEN 1 ELSE 0 END) AS ready,
+            MIN(CASE WHEN COALESCE(p.ready_at,0) > ? THEN p.ready_at END) AS next_at
+       FROM crop_plots p JOIN crop_seeds s ON s.id=p.seed_id
+      WHERE p.guild_id=? AND p.user_id=? GROUP BY p.plot_type, p.seed_id ORDER BY p.plot_type, n DESC`).all(now, now, gid, uid); } catch { plots = []; }
 
   // 任務進度（取每支任務最新一期的進度，唯讀顯示）
   const quests = many('SELECT * FROM quests WHERE guild_id=? AND enabled=1 ORDER BY period, id')
@@ -171,22 +175,52 @@ function redeemItems(gid) {
   catch { return []; }
 }
 
-// ---- 版面（手機卡片式，可安裝 PWA）----
+// ---- 版面（手機 App 外殼：底部分頁、深淺色、可安裝 PWA）----
+// 樣式與前端互動在 public/play-app.css / play-app.js（Service Worker 可快取，離線也開得起來）
+const PLAY_ASSET_VER = '3';
+// 主題開機程式：讀這台裝置的設定 → <html data-skin>、自訂背景圖（在 CSS 之後、內容之前執行，不會閃）
+const SKIN_BOOT = `(function(){try{var s=JSON.parse(localStorage.getItem('play-skin')||'{}'),k=s.skin||'auto',r=document.documentElement;
+if(k==='auto'){var d=new Date(),m=d.getMonth()+1,n=d.getDate();k=(m===10&&n>=15)||(m===11&&n===1)?'halloween':(m===12&&n<=26)?'christmas':(m===1||(m===2&&n<=15))?'newyear':'default';}
+r.setAttribute('data-skin',k);var bg=localStorage.getItem('play-bg');if(bg){r.setAttribute('data-hasbg','');r.style.setProperty('--bgimg','url('+bg+')');r.style.setProperty('--dim',((s.dim==null?35:s.dim)/100));}}catch(e){}})();`;
+const TABS = [
+  ['home', '總覽', '<path d="M3.5 10.5 12 3.8l8.5 6.7v9.2a.8.8 0 0 1-.8.8h-5.1v-6.2H9.4v6.2H4.3a.8.8 0 0 1-.8-.8z"/>'],
+  ['play', '玩法', '<circle cx="12" cy="12" r="8.5"/><path d="m15.7 8.3-2.1 5.3-5.3 2.1 2.1-5.3z"/>'],
+  ['farm', '家園', '<path d="M12 21c-4.4-2.3-7-6-7-10.2C5 7 8 4 12 3c4 1 7 4 7 7.8 0 4.2-2.6 7.9-7 10.2Z"/><path d="M12 21V9"/>'],
+  ['market', '市場', '<path d="M4 19V9m5.3 10V5m5.4 14v-7M20 19V8"/>'],
+  ['me', '我的', '<circle cx="12" cy="8" r="4"/><path d="M4.5 21a7.5 7.5 0 0 1 15 0"/>']
+];
+
 function render(d, token, msg, authed) {
   const c = d.cur;
   const money = (n) => `${c.emoji} ${num(n)}`;
   const coins = d.wallet.coins;
   const arrears = d.wallet.tax_arrears || 0;
+  const base = `/play/${token}`;
 
-  const card = (title, body) => `<section class="card"><h2>${title}</h2>${body}</section>`;
-  const row = (l, r) => `<div class="row"><span>${l}</span><b>${r}</b></div>`;
-  // 一鍵領取按鈕（表單 POST，安全動作：只把自己的東西收進自己身上）
-  const actBtn = (path, label) => `<form method="post" action="/play/${token}/${path}" style="margin-top:10px"><button class="act">${label}</button></form>`;
-  const flash = msg ? `<div class="flash">${esc(msg)}</div>` : '';
+  const card = (title, body, extra = '') => `<section class="card${extra}"><h2>${title}</h2>${body}</section>`;
+  const row = (l, r, cls = '') => `<div class="row"><span>${l}</span><b class="${cls}">${r}</b></div>`;
+  const empty = (t) => `<p class="empty">${t}</p>`;
+  // 表單一律 POST，前端 play-app.js 會在送出時鎖按鈕防連點、記住目前分頁
+  const actBtn = (path, label, cls = '') => `<form method="post" action="${base}/${path}"><button class="btn primary block ${cls}">${label}</button></form>`;
+  const lockNote = `<a class="lock" href="${base}/login"><span>🔐</span><span>用 Discord 登入後才能操作<small>確保是你本人，避免別人花你的星幣</small></span></a>`;
+  const needAuth = (body) => authed ? body : lockNote;
+  const mini = (path, name, ph, btn) => `<form method="post" action="${base}/${path}" class="inline"><input name="${name}" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="off" placeholder="${ph}" required><button class="btn primary">${btn}</button></form>`;
+  const selForm = (path, rows, optOf, btn, withQty) => {
+    if (!rows.length) return empty('目前沒有可選的項目。');
+    const qty = withQty ? `<input class="qty" name="qty" type="text" inputmode="numeric" pattern="[0-9]*" autocomplete="off" value="1" aria-label="數量">` : '';
+    return `<form method="post" action="${base}/${path}" class="inline"><select name="id" aria-label="選擇">${rows.map(optOf).join('')}</select>${qty}<button class="btn primary">${btn}</button></form>`;
+  };
 
-  // 稅單
+  // ---------- 總覽 ----------
+  const readyN = d.plots.reduce((s, p) => s + (p.ready || 0), 0);
+  const claim = [];
+  if (d.fishPending > 0) claim.push(actBtn('collect', `🐠 撈金 ${money(d.fishPending)}`));
+  if (d.ranchPending > 0) claim.push(actBtn('harvest', `🐔 牧場收成`));
+  if (readyN > 0) claim.push(actBtn('reap', `🌾 採收 ${readyN} 格`));
+  const claimBody = claim.length ? `<div class="stack">${claim.join('')}</div><p class="hint">一鍵領取不用登入，東西只會進你自己的錢包或背包。</p>` : empty('目前沒有可領取的東西，晚點再來看看 🌙');
+
   let taxBody;
-  if (!d.tax) taxBody = `<p class="muted">目前沒有開徵稅金，或你在免稅名單內。</p>`;
+  if (!d.tax) taxBody = empty('目前沒有開徵稅金，或你在免稅名單內。');
   else {
     const t = d.tax; const lines = [];
     if (t.income) lines.push(row('💰 所得稅', money(t.income)));
@@ -194,228 +228,208 @@ function render(d, token, msg, authed) {
     if (t.land) lines.push(row('🌾 農地稅', money(t.land)));
     if (t.breed) lines.push(row('🐄 養殖稅', money(t.breed)));
     if (t.spend) lines.push(row('🛍️ 消費稅', money(t.spend)));
-    if (t.credit) lines.push(row('❤️ 慈善折抵', `−${money(t.credit)}`));
-    if (t.arrears) lines.push(row('🔁 上期未繳補收', money(t.arrears)));
-    taxBody = (lines.join('') || '<p class="muted">本期免稅 🎉</p>') +
+    if (t.credit) lines.push(row('❤️ 慈善折抵', `−${money(t.credit)}`, 'up'));
+    if (t.arrears) lines.push(row('🔁 上期未繳補收', money(t.arrears), 'down'));
+    taxBody = (lines.join('') || empty('本期免稅 🎉')) +
       `<div class="tot">本期預估合計 <b>${money(t.total)}</b></div>` +
-      (arrears ? `<p class="warn">⚠️ 你有累積欠稅 ${money(arrears)}，下次結算會補收（也可在 Discord 用 /稅單 補繳）。</p>` : '');
+      (arrears ? `<p class="warn">⚠️ 累積欠稅 ${money(arrears)}，下次結算會補收（也可在 Discord 用 /稅單 補繳）。</p>` : '');
   }
 
-  // 持股
-  const stockBody = d.holdings.length
-    ? `<table><tr><th>股票</th><th>股數</th><th>市值</th><th>損益</th></tr>` +
-      d.holdings.map(h => `<tr><td>${esc((h.emoji || '') + h.name)} <span class="muted">${esc(h.code)}</span></td><td>${num(h.shares)}</td><td>${num(h.value)}</td><td class="${h.pnl >= 0 ? 'up' : 'down'}">${h.pnl >= 0 ? '+' : ''}${num(h.pnl)}</td></tr>`).join('') +
-      `</table><div class="tot">持股總市值 <b>${money(d.stockVal)}</b></div>`
-    : `<p class="muted">目前沒有持股。</p>`;
-
-  // 魚缸 / 牧場 / 農地
-  const aqBody = (d.fish.length
-    ? d.fish.map(f => `<div class="row"><span>${esc((f.emoji || '🐠') + f.name)}（第 ${f.slot + 1} 格）</span><b>未領 ${money(f.pending)}</b></div>`).join('') + `<div class="tot">可撈金 <b>${money(d.fishPending)}</b></div>`
-    : `<p class="muted">魚缸還沒養魚。</p>`) + (d.fishPending > 0 ? actBtn('collect', `🪙 一鍵撈金 ${money(d.fishPending)}`) : '');
-  const ranchBody = (d.animals.length
-    ? d.animals.map(a => `<div class="row"><span>${esc((a.emoji || '🐔') + a.name)}（第 ${a.slot + 1} 格）</span><b>未領 ${money(a.pending)}</b></div>`).join('') + `<div class="tot">可收 <b>${money(d.ranchPending)}</b></div>`
-    : `<p class="muted">牧場還沒養動物。</p>`) + (d.ranchPending > 0 ? actBtn('harvest', '🧺 一鍵收成') : '');
-  const readyN = d.plots.filter(p => p.ready).length;
-  const cropBody = (d.plots.length
-    ? d.plots.map(p => `<div class="row"><span>${esc((p.emoji || '🌱') + p.name)}（${p.plot_type === 'greenhouse' ? '溫室' : '農地'} 第 ${p.slot + 1} 格）</span><b class="${p.ready ? 'up' : 'muted'}">${p.ready ? '✅ 可採收' : '⏳ 成長中'}</b></div>`).join('')
-    : `<p class="muted">農地／溫室還沒種東西。</p>`) + (readyN > 0 ? actBtn('reap', `🧺 一鍵採收（${readyN} 格成熟）`) : '');
-
-  // 任務
   const qBody = d.quests.length
-    ? d.quests.map(q => `<div class="qrow"><div class="qname">${q.done ? (q.claimed ? '✅' : '🎁') : '📜'} ${esc(q.name)} <span class="muted">${q.cur}/${q.goal}</span></div><div class="bar"><span style="width:${Math.min(100, Math.round(q.cur / Math.max(1, q.goal) * 100))}%"></span></div></div>`).join('')
-    : `<p class="muted">目前沒有任務。</p>`;
+    ? d.quests.map(q => {
+        const pct = Math.min(100, Math.round(q.cur / Math.max(1, q.goal) * 100));
+        const tag = q.done ? (q.claimed ? '<span class="tag ok">已領</span>' : '<span class="tag hot">可領獎</span>') : '';
+        return `<div class="quest"><div class="qh"><span>${esc(q.name)} ${tag}</span><span class="muted">${q.cur}/${q.goal}</span></div><div class="bar"><span style="width:${pct}%"></span></div></div>`;
+      }).join('') + (d.quests.some(q => q.done && !q.claimed) ? `<p class="hint">達成的任務請回 Discord 用 /任務 領獎。</p>` : '')
+    : empty('目前沒有任務。');
 
-  // 背包
-  const bagBody = Object.keys(d.bag).length
-    ? Object.entries(d.bag).map(([k, items]) => `<h3>${k}</h3><div class="chips">` +
-      items.map(it => `<span class="chip">${esc((it.emoji || '') + it.name)} ×${num(it.count)}</span>`).join('') + `</div>`).join('') +
-      `<div class="tot">全部賣掉約 <b>${money(d.bagValue)}</b></div>`
-    : `<p class="muted">背包是空的。</p>`;
+  const homeTab = `
+    ${card('🎁 可領取', claimBody)}
+    ${card('📜 任務', qBody)}
+    ${card('🧾 稅單（本期預估）', taxBody)}`;
 
-  // 買賣股票（登入後才出現；花星幣所以要本人登入）
-  const opts = tradableStocks(d.gid).map(s =>
-    `<option value="${esc(s.code)}">${esc((s.emoji || '') + s.name)} ${esc(s.code)}｜現價 ${num(s.price)}</option>`).join('');
-  const tradeBody = opts
-    ? `<form method="post" action="/play/${token}/stock" class="trade">
-        <select name="code">${opts}</select>
-        <div class="seg">
-          <label><input type="radio" name="side" value="buy" checked> 📥 買進</label>
-          <label><input type="radio" name="side" value="sell"> 📤 賣出</label>
-        </div>
-        <input name="shares" type="text" inputmode="numeric" autocomplete="off" placeholder="股數（賣出可填「全部」）">
-        <button class="act">送出交易</button>
-      </form>
-      <p class="muted">交易會扣手續費；買進受每人持股上限限制。</p>`
-    : `<p class="muted">目前沒有掛牌的股票。</p>`;
-
-  // 主動玩法（登入後才出現；會消耗體力/冷卻，所以要本人登入）
-  const gBtn = (kind, label) => `<form method="post" action="/play/${token}/gather" class="gitem"><input type="hidden" name="kind" value="${kind}"><button class="gbtn">${label}</button></form>`;
-  const gameBody = `<div class="grid5">
-      ${gBtn('fish', '🎣 釣魚')}${gBtn('mine', '⛏️ 挖礦')}${gBtn('wood', '🪓 伐木')}${gBtn('forage', '🧺 採集')}${gBtn('hunt', '🏹 狩獵')}
-    </div><p class="muted">每次消耗體力／有冷卻，抽到的東西直接進背包。想換地圖、看圖鑑仍可回 Discord。</p>`;
-
-  // 花錢操作區（登入後才出現）
-  const mini = (path, ph, btn) => `<form method="post" action="/play/${token}/${path}" class="mini"><input name="amount" type="text" inputmode="numeric" autocomplete="off" placeholder="${ph}"><button class="act sm">${btn}</button></form>`;
-  // 下拉選 + （可選）數量 + 送出
-  const selForm = (path, rows, optOf, btn, withQty) => {
-    if (!rows.length) return `<p class="muted">目前沒有可選的項目。</p>`;
-    const options = rows.map(optOf).join('');
-    const qty = withQty ? `<input name="qty" type="text" inputmode="numeric" autocomplete="off" placeholder="數量" value="1" style="max-width:80px">` : '';
-    return `<form method="post" action="/play/${token}/${path}" class="mini"><select name="id">${options}</select>${qty}<button class="act sm">${btn}</button></form>`;
-  };
+  // ---------- 玩法 ----------
+  const GATHER = [['fish', '🎣', '釣魚'], ['mine', '⛏️', '挖礦'], ['wood', '🪓', '伐木'], ['forage', '🧺', '採集'], ['hunt', '🏹', '狩獵']];
+  const gatherBody = needAuth(`<div class="tiles">${GATHER.map(([k, e, l]) =>
+      `<form method="post" action="${base}/gather"><input type="hidden" name="kind" value="${k}"><button class="tile"><span class="te">${e}</span><span>${l}</span></button></form>`).join('')}</div>
+    <p class="hint">每次消耗體力、有冷卻時間，抽到的東西直接進背包。換地圖、看圖鑑請回 Discord。</p>`);
   const tools = buyableTools(d.gid, d.uid), seeds = buyableSeeds(d.gid), plantable = plantableList(d.gid, d.uid), redeems = redeemItems(d.gid);
   const exOffers = exchangeOffers(d.gid, d.uid);
+  const plotLabel = (t) => t === 'greenhouse' ? '溫室' : '農地';
+  const playTab = `
+    ${card('🎮 採集玩法', gatherBody)}
+    ${card('🌱 種田', needAuth(`
+      <h3>買種子</h3>${selForm('buyseed', seeds, s => `<option value="${s.id}">${esc((s.emoji || '') + s.name)}｜${num(s.seed_price)}（${plotLabel(s.plot_type)}）</option>`, '買', true)}
+      <h3>種下背包裡的種子</h3>${selForm('plant', plantable, p => `<option value="${p.id}">${esc((p.emoji || '') + p.name)}｜有 ${p.have}（${plotLabel(p.type)}）</option>`, '種', true)}`))}
+    ${card('🐟 照顧', needAuth(`<div class="stack">${actBtn('feed', '🍤 一鍵餵魚')}</div>`))}`;
 
-  const actionsBody = `
-    <div class="acts">${actBtn('feed', '🍤 一鍵餵魚')}${actBtn('sellbag', '🎒 一鍵賣光背包')}</div>
-    <h3>❤️ 捐款慈善基金會（可折抵所得稅）</h3>${mini('donate', '捐款金額', '捐')}
-    <h3>💳 貸款／還款</h3>${mini('repay', '還款金額', '還款')}${mini('credit', '信用貸款金額（免抵押）', '借')}${mini('loan', '物資貸款金額（用工具/作物/魚抵押）', '借')}
-    <h3>🛒 神秘商店兌換</h3>${selForm('redeem', redeems, r => `<option value="${r.id}">${esc((r.emoji || '') + r.name)}｜${num(r.price)}</option>`, '兌換', true)}
-    <h3>♻️ 素材兌換所（今天這批）</h3>${exOffers.length
-      ? selForm('exchange', exOffers, o => `<option value="${o.id}">${esc((o.emoji || '') + o.title)}｜可換 ${o.cap} 次</option>`, '換', true)
-        + `<p class="muted">不花星幣，用背包裡的素材換。清單每天午夜換一批。</p>`
-      : `<p class="muted">今天沒有開出兌換項目（或兌換所還沒開啟）。</p>`}
-    <h3>🛠️ 買工具</h3>${selForm('buytool', tools, t => `<option value="${t.id}">${esc((t.emoji || '') + t.name)}｜${num(t.price)}</option>`, '買', false)}
-    <h3>🌱 買種子</h3>${selForm('buyseed', seeds, s => `<option value="${s.id}">${esc((s.emoji || '') + s.name)}｜${num(s.seed_price)}（${s.plot_type === 'greenhouse' ? '溫室' : '農地'}）</option>`, '買', true)}
-    <h3>🌾 種植（種背包裡的種子）</h3>${selForm('plant', plantable, p => `<option value="${p.id}">${esc((p.emoji || '') + p.name)}｜有 ${p.have}（${p.type === 'greenhouse' ? '溫室' : '農地'}）</option>`, '種', true)}`;
+  // ---------- 家園 ----------
+  const slotRow = (emoji, name, sub, right, cls) => `<div class="slot"><span class="se">${esc(emoji)}</span><span class="sn">${esc(name)}<small>${sub}</small></span><b class="${cls || ''}">${right}</b></div>`;
+  const totalN = (rows) => rows.reduce((s, r) => s + (r.n || 0), 0);
+  const aqBody = (d.fish.length
+    ? d.fish.map(f => slotRow(f.emoji || '🐠', f.name, `${num(f.n)} 隻`, `未領 ${money(f.pending)}`)).join('') + `<div class="tot">共 ${num(totalN(d.fish))} 隻・可撈金 <b>${money(d.fishPending)}</b></div>`
+    : empty('魚缸還沒養魚。')) + (d.fishPending > 0 ? actBtn('collect', `🪙 一鍵撈金 ${money(d.fishPending)}`) : '');
+  const ranchBody = (d.animals.length
+    ? d.animals.map(a => slotRow(a.emoji || '🐔', a.name, `${num(a.n)} 隻`, `未領 ${money(a.pending)}`)).join('') + `<div class="tot">共 ${num(totalN(d.animals))} 隻・可收 <b>${money(d.ranchPending)}</b></div>`
+    : empty('牧場還沒養動物。')) + (d.ranchPending > 0 ? actBtn('harvest', '🧺 一鍵收成') : '');
+  const cropBody = (d.plots.length
+    ? d.plots.map(p => `<div class="slot"><span class="se">${esc(p.emoji || '🌱')}</span><span class="sn">${esc(p.name)}<small>${plotLabel(p.plot_type)}・${num(p.n)} 格${p.ready && p.ready < p.n ? `・${num(p.ready)} 格可採收` : ''}</small></span>${p.ready >= p.n ? '<b class="tag ok">可採收</b>' : `<b class="muted" data-ready="${Number(p.next_at) || 0}">成長中</b>`}</div>`).join('')
+    : empty('農地／溫室還沒種東西。')) + (readyN > 0 ? actBtn('reap', `🧺 一鍵採收（${readyN} 格成熟）`) : '');
+  const farmTab = `
+    ${card('🐠 魚缸', aqBody)}
+    ${card('🐔 牧場', ranchBody)}
+    ${card('🌾 農地／溫室', cropBody)}`;
 
-  // 推播通知（登入後、且伺服器有設定 VAPID 才出現）
+  // ---------- 市場 ----------
+  const stockBody = d.holdings.length
+    ? `<div class="list">${d.holdings.map(h => `<div class="slot"><span class="se">${esc(h.emoji || '📈')}</span><span class="sn">${esc(h.name)}<small>${esc(h.code)}｜${num(h.shares)} 股｜均價 ${num(h.avg)}</small></span><span class="rt"><b>${num(h.value)}</b><small class="${h.pnl >= 0 ? 'up' : 'down'}">${h.pnl >= 0 ? '+' : ''}${num(h.pnl)}</small></span></div>`).join('')}</div>
+      <div class="tot">持股總市值 <b>${money(d.stockVal)}</b></div>`
+    : empty('目前沒有持股。');
+  const opts = tradableStocks(d.gid).map(s => `<option value="${esc(s.code)}">${esc((s.emoji || '') + s.name)} ${esc(s.code)}｜現價 ${num(s.price)}</option>`).join('');
+  const tradeBody = opts
+    ? `<form method="post" action="${base}/stock" class="form">
+        <select name="code" aria-label="股票">${opts}</select>
+        <div class="seg" role="radiogroup">
+          <label><input type="radio" name="side" value="buy" checked><span>📥 買進</span></label>
+          <label><input type="radio" name="side" value="sell"><span>📤 賣出</span></label>
+        </div>
+        <input name="shares" type="text" inputmode="numeric" autocomplete="off" placeholder="股數（賣出可填「全部」）" required>
+        <button class="btn primary block">送出交易</button>
+      </form><p class="hint">交易會扣手續費；買進受每人持股上限限制。</p>`
+    : empty('目前沒有掛牌的股票。');
+  const marketTab = `
+    ${card('📈 我的持股', stockBody)}
+    ${card('💹 買賣股票', needAuth(tradeBody))}
+    ${card('🛠️ 買工具', needAuth(selForm('buytool', tools, t => `<option value="${t.id}">${esc((t.emoji || '') + t.name)}｜${num(t.price)}</option>`, '買', false)))}
+    ${card('🛒 神秘商店', needAuth(selForm('redeem', redeems, r => `<option value="${r.id}">${esc((r.emoji || '') + r.name)}｜${num(r.price)}</option>`, '兌換', true)))}
+    ${card('♻️ 素材兌換所', needAuth(exOffers.length
+      ? selForm('exchange', exOffers, o => `<option value="${o.id}">${esc((o.emoji || '') + o.title)}｜可換 ${o.cap} 次</option>`, '換', true) + `<p class="hint">不花星幣，用背包裡的素材換。清單每天午夜更新。</p>`
+      : empty('今天沒有開出兌換項目（或兌換所還沒開啟）。')))}`;
+
+  // ---------- 我的 ----------
+  const bagKinds = Object.keys(d.bag);
+  const bagBody = bagKinds.length
+    ? bagKinds.map((k, i) => `<details class="bag"${i === 0 || bagKinds.length <= 2 ? ' open' : ''}><summary>${k}<span class="muted">${d.bag[k].length} 種</span></summary><div class="chips">` +
+        d.bag[k].map(it => `<span class="chip">${esc((it.emoji || '') + it.name)}<b>×${num(it.count)}</b></span>`).join('') + `</div></details>`).join('') +
+      `<div class="tot">全部賣掉約 <b>${money(d.bagValue)}</b></div>` + (authed ? actBtn('sellbag', '🎒 一鍵賣光背包', 'warnbtn') : '')
+    : empty('背包是空的。');
+  const financeBody = needAuth(`
+    <h3>❤️ 捐款慈善基金會（可折抵所得稅）</h3>${mini('donate', 'amount', '捐款金額', '捐款')}
+    <h3>💳 還款</h3>${mini('repay', 'amount', '還款金額', '還款')}
+    <h3>💳 信用貸款（免抵押）</h3>${mini('credit', 'amount', '借款金額', '借款')}
+    <h3>📦 物資貸款（用工具／作物／魚抵押）</h3>${mini('loan', 'amount', '借款金額', '借款')}`);
   const pushOn = authed && push.enabled() && push.publicKey();
   const subscribed = pushOn && push.hasSubscription(d.gid, d.uid);
-  const pushBody = `
-    <button class="act" id="pushbtn">${subscribed ? '🔔 推播已開啟（可重新綁定這台裝置）' : '🔔 開啟推播通知'}</button>
-    <p class="muted" id="pushmsg">開啟後，稅單開徵、貸款到期、魚缸/牧場滿了會推播到手機。iPhone 要先把本頁「加到主畫面」再開啟。</p>
-    ${subscribed ? actBtn('push-test', '🔔 傳一則測試推播') : ''}`;
-  const pushScript = pushOn ? `<script>
-  (function(){
-    var VAPID=${JSON.stringify(push.publicKey())};
-    var btn=document.getElementById('pushbtn'),msg=document.getElementById('pushmsg');
-    if(!btn)return;
-    if(!('serviceWorker'in navigator)||!('PushManager'in window)){btn.disabled=true;msg.textContent='這個裝置或瀏覽器不支援推播（iPhone 需 iOS16.4+ 且加到主畫面）。';return;}
-    function b64(s){var p='='.repeat((4-s.length%4)%4);var b=(s+p).replace(/-/g,'+').replace(/_/g,'/');var r=atob(b);var a=new Uint8Array(r.length);for(var i=0;i<r.length;i++)a[i]=r.charCodeAt(i);return a;}
-    btn.onclick=async function(){
-      try{
-        btn.disabled=true;msg.textContent='處理中…';
-        var reg=await navigator.serviceWorker.register('/sw.js');await navigator.serviceWorker.ready;
-        var perm=await Notification.requestPermission();
-        if(perm!=='granted'){msg.textContent='你沒有允許通知，無法推播。';btn.disabled=false;return;}
-        var sub=await reg.pushManager.getSubscription();
-        if(!sub)sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:b64(VAPID)});
-        var res=await fetch(location.pathname.replace(/\\/$/,'')+'/push-subscribe',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(sub)});
-        if(res.ok){msg.textContent='✅ 已開啟推播！重新整理頁面就能看到測試按鈕。';btn.textContent='🔔 推播已開啟';}
-        else{msg.textContent='開啟失敗，請重試。';btn.disabled=false;}
-      }catch(e){msg.textContent='開啟失敗：'+((e&&e.message)||e);btn.disabled=false;}
-    };
-  })();
-  </script>` : '';
+  const pushBody = `<button class="btn primary block" id="pushbtn" type="button" data-vapid="${esc(push.publicKey() || '')}">${subscribed ? '🔔 推播已開啟（重新綁定這台裝置）' : '🔔 開啟推播通知'}</button>
+    <p class="hint" id="pushmsg">稅單開徵、貸款到期、魚缸／牧場滿了會推播到手機。iPhone 要先「加入主畫面」再開啟。</p>
+    ${subscribed ? actBtn('push-test', '傳一則測試推播', 'ghost') : ''}`;
+  const appBody = `<button class="btn block ghost" id="installBtn" type="button" hidden>📲 安裝到主畫面</button>
+    <div class="ios-tip" id="iosTip" hidden>iPhone／iPad：點 Safari 下方的 <b>分享</b> → <b>加入主畫面</b>，就能像 App 一樣全螢幕開啟。</div>
+    <div class="row"><span>登入狀態</span><b>${authed ? '🔓 已登入' : '🔒 唯讀'}</b></div>
+    ${authed ? `<a class="btn block ghost" href="${base}/logout">登出</a>` : `<a class="btn block primary" href="${base}/login">🔐 用 Discord 登入</a>`}`;
+  // 外觀主題：存在這台裝置（localStorage），前端 play-app.js 套用
+  const SKINS = [['auto', '🗓️', '自動'], ['default', '💜', '預設'], ['christmas', '🎄', '聖誕節'], ['halloween', '🎃', '萬聖節'],
+    ['newyear', '🧧', '新年'], ['sakura', '🌸', '春櫻'], ['osmanthus', '🍂', '秋桂']];
+  const skinBody = `<div class="skins" role="radiogroup" aria-label="主題">${SKINS.map(([k, e, l]) =>
+      `<label class="skin skin-${k}"><input type="radio" name="skin" value="${k}"><span class="sw"><i>${e}</i></span><span>${l}</span></label>`).join('')}</div>
+    <p class="hint">「自動」會依節日切換：10/15–11/1 萬聖節、12/1–12/26 聖誕節、1/1–2/15 新年。</p>
+    <h3>自訂背景圖</h3>
+    <div class="bgpick">
+      <div class="bgthumb" id="bgThumb"><span>尚未設定</span></div>
+      <div class="bgbtns">
+        <label class="btn primary">📷 上傳圖片<input id="bgFile" type="file" accept="image/*" hidden></label>
+        <button class="btn ghost" id="bgClear" type="button" hidden>移除背景圖</button>
+      </div>
+    </div>
+    <label class="slider" id="dimRow" hidden><span>背景亮度</span><input id="bgDim" type="range" min="0" max="80" step="5" value="35" aria-label="背景遮罩"><output id="bgDimOut"></output></label>
+    <label class="switch"><input id="decoOn" type="checkbox" checked><span>飄落動畫（雪花、花瓣…）</span></label>
+    <p class="hint">背景圖只存在這台裝置，不會上傳到伺服器。建議用直式或風景照，系統會自動縮小。</p>`;
+  const meTab = `
+    ${card('🎨 外觀主題', skinBody)}
+    ${card('🎒 背包', bagBody)}
+    ${card('🏦 金融', financeBody)}
+    ${pushOn ? card('🔔 推播通知', pushBody) : ''}
+    ${card('📱 App 與帳號', appBody)}`;
 
-  // 登入狀態列：唯讀時給「登入解鎖」，登入後給操作區＋登出
-  const authBar = authed
-    ? `<div class="authbar ok">🔓 已用本人身分登入，可在這裡買賣操作　·　<a href="/play/${token}/logout">登出</a></div>`
-    : `<form method="get" action="/play/${token}/login" class="authbar"><button class="act">🔐 用 Discord 登入，解鎖買賣操作</button><div class="muted" style="margin-top:6px">看數據免登入；要花星幣（買賣、兌換等）才需登入，確保是你本人。</div></form>`;
+  const tabs = { home: homeTab, play: playTab, farm: farmTab, market: marketTab, me: meTab };
+  const badge = { home: claim.length, farm: (d.fishPending > 0) + (d.ranchPending > 0) + (readyN > 0) };
+  const isOk = msg && !/失敗|錯誤|不足|無法|不能|請先|請填|沒有|不認得|已經不在|冷卻|體力/.test(msg);
 
-  const manifest = `/play/${token}/manifest.json`;
   return `<!doctype html><html lang="zh-Hant"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="robots" content="noindex"><title>${esc(d.username)} 的冒險</title>
-<link rel="manifest" href="${manifest}">
-<meta name="theme-color" content="#5865f2">
+<link rel="manifest" href="${base}/manifest.json">
+<meta name="theme-color" content="#fff5fa" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#17141f" media="(prefers-color-scheme: dark)">
+<link rel="icon" type="image/png" href="/icon-192.png">
 <link rel="apple-touch-icon" href="/icon-192.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="冒險">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="璃白冒險">
 <meta name="mobile-web-app-capable" content="yes">
-<style>
-:root{--bg1:#fff5fa;--bg2:#f2f0ff;--pink:#e879b9;--line:#eadaf0;--ink:#3b3340;--muted:#9b8fa3;--card:#fff}
-*{box-sizing:border-box}
-body{margin:0;font-family:"Noto Sans TC","PingFang TC","Microsoft JhengHei",system-ui,sans-serif;
-  background:linear-gradient(160deg,var(--bg1),var(--bg2));color:var(--ink);padding:14px;padding-bottom:40px}
-.wrap{max-width:640px;margin:0 auto;display:flex;flex-direction:column;gap:14px}
-.hero{background:linear-gradient(135deg,#e879b9,#8b7cf6);color:#fff;border-radius:20px;padding:20px}
-.hero .name{font-size:20px;font-weight:800}
-.hero .coins{font-size:30px;font-weight:800;margin-top:6px}
-.hero .sub{opacity:.9;font-size:13px;margin-top:4px}
-.card{background:var(--card);border:1px solid var(--line);border-radius:18px;padding:16px;box-shadow:0 4px 18px rgba(190,140,180,.08)}
-h2{margin:0 0 12px;font-size:16px}
-h3{margin:12px 0 6px;font-size:13px;color:var(--muted)}
-.row{display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px dashed var(--line);font-size:14px}
-.row:last-child{border:0}
-.tot{margin-top:10px;text-align:right;font-size:14px}
-.tot b{font-size:16px;color:var(--pink)}
-.muted{color:var(--muted);font-size:13px;margin:4px 0}
-.warn{color:#c0392b;font-size:13px;margin-top:8px}
-table{width:100%;border-collapse:collapse;font-size:13px}
-td,th{padding:6px 6px;text-align:left;border-bottom:1px solid var(--line)}
-th{color:var(--muted);font-weight:600}
-td:nth-child(n+2),th:nth-child(n+2){text-align:right}
-.up{color:#2f9e44;font-weight:700}.down{color:#e03131;font-weight:700}
-.chips{display:flex;flex-wrap:wrap;gap:6px}
-.chip{background:var(--bg1);border:1px solid var(--line);border-radius:99px;padding:4px 10px;font-size:12px}
-.qrow{padding:8px 0;border-bottom:1px dashed var(--line)}.qrow:last-child{border:0}
-.qname{font-size:14px;margin-bottom:5px}
-.bar{height:8px;background:#f2e8f2;border-radius:99px;overflow:hidden}
-.bar span{display:block;height:100%;background:linear-gradient(90deg,#e879b9,#8b7cf6);border-radius:99px}
-.foot{text-align:center;color:var(--muted);font-size:12px;margin-top:6px}
-.act{width:100%;padding:11px;border:0;border-radius:12px;background:linear-gradient(135deg,#e879b9,#8b7cf6);color:#fff;font-size:15px;font-weight:700;cursor:pointer}
-.act:active{opacity:.85}
-.flash{background:#e7f7ec;border:1px solid #b7e4c7;color:#1b6b3a;border-radius:14px;padding:12px 14px;font-size:14px}
-.authbar{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:14px}
-.authbar.ok{background:#eef7ff;border-color:#cfe6ff;color:#1c5a8f;font-size:13px}
-.authbar a{color:#8b7cf6}
-.trade select,.trade input{width:100%;padding:11px;margin:0 0 10px;border:1px solid var(--line);border-radius:12px;font-size:15px;background:#fff;color:var(--ink)}
-.trade .seg{display:flex;gap:10px;margin-bottom:10px}
-.trade .seg label{flex:1;display:flex;align-items:center;justify-content:center;gap:6px;padding:9px;border:1px solid var(--line);border-radius:12px;font-size:14px;cursor:pointer}
-.acts{display:flex;gap:10px;margin-bottom:6px}.acts form{flex:1;margin-top:0!important}
-.mini{display:flex;gap:8px;margin-bottom:6px}
-.mini input,.mini select{flex:1;min-width:0;padding:11px;border:1px solid var(--line);border-radius:12px;font-size:15px;background:#fff;color:var(--ink)}
-.act.sm{width:auto;padding:11px 18px;font-size:14px}
-.grid5{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
-.gitem{margin:0!important}
-.gbtn{width:100%;padding:14px 4px;border:1px solid var(--line);border-radius:14px;background:var(--bg1);color:var(--ink);font-size:15px;font-weight:700;cursor:pointer}
-.gbtn:active{background:#fbe7f3}
-</style></head><body><div class="wrap">
+<link rel="stylesheet" href="/play-app.css?v=${PLAY_ASSET_VER}">
+<script>${SKIN_BOOT}</script>
+</head><body>
+<header class="appbar">
   <div class="hero">
-    <div class="name">👋 ${esc(d.username)}</div>
-    <div class="coins">${c.emoji} ${num(coins)} <span style="font-size:15px">${esc(c.name)}</span></div>
-    <div class="sub">總市值（含持股 ${num(d.stockVal)}）　·　背包約 ${num(d.bagValue)}</div>
+    <div class="who"><span class="hi">👋 ${esc(d.username)}</span><span class="pill ${authed ? 'on' : ''}">${authed ? '已登入' : '唯讀'}</span></div>
+    <div class="coins">${c.emoji} <b>${num(coins)}</b> <small>${esc(c.name)}</small></div>
+    <div class="stats">
+      <span>📈 持股 <b>${num(d.stockVal)}</b></span>
+      <span>🎒 背包 <b>${num(d.bagValue)}</b></span>
+      ${arrears ? `<span class="down">⚠️ 欠稅 <b>${num(arrears)}</b></span>` : ''}
+    </div>
   </div>
-  ${flash}
-  ${authBar}
-  ${card('🧾 稅單（本期預估）', taxBody)}
-  ${card('📈 我的持股', stockBody)}
-  ${pushOn ? card('🔔 推播通知', pushBody) : ''}
-  ${authed ? card('🎮 玩法（採集）', gameBody) : ''}
-  ${authed ? card('💹 買賣股票', tradeBody) : ''}
-  ${authed ? card('🛠️ 操作', actionsBody) : ''}
-  ${card('🐠 魚缸', aqBody)}
-  ${card('🐔 牧場', ranchBody)}
-  ${card('🌾 農地／溫室', cropBody)}
-  ${card('📜 任務', qBody)}
-  ${card('🎒 背包', bagBody)}
-  <div class="foot">撈金／收成／採收免登入就能一鍵領取；買賣股票等花星幣的操作，登入後就能在這裡做。重新整理看最新資料。</div>
-</div>${pushScript}</body></html>`;
+</header>
+<main class="tabs">
+${TABS.map(([k]) => `<div class="tab" id="tab-${k}" data-tab="${k}">${tabs[k]}</div>`).join('\n')}
+  <p class="foot">資料與 Discord 同步　·　下拉或切回 App 會自動更新</p>
+</main>
+<nav class="tabbar" aria-label="分頁">
+${TABS.map(([k, l, svg]) => `<a href="#${k}" data-go="${k}"><span class="ic"><svg viewBox="0 0 24 24" aria-hidden="true">${svg}</svg>${badge[k] ? `<i class="dot">${badge[k]}</i>` : ''}</span><span>${l}</span></a>`).join('')}
+</nav>
+${msg ? `<div class="toast ${isOk ? 'ok' : 'err'}" role="status">${esc(msg)}</div>` : ''}
+<div class="offline" id="offline" hidden>📡 目前離線，顯示的是上次的資料</div>
+<script src="/play-app.js?v=${PLAY_ASSET_VER}" defer></script>
+</body></html>`;
+}
+
+// 無 token 的說明頁（連結無效、/play 首頁）—— 沿用 App 樣式
+function notice(title, body) {
+  return `<!doctype html><html lang="zh-Hant"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="robots" content="noindex">
+<title>${esc(title)}</title><link rel="icon" type="image/png" href="/icon-192.png"><link rel="stylesheet" href="/play-app.css?v=${PLAY_ASSET_VER}">
+</head><body class="notice"><main><img src="/icon-192.png" alt="" width="72" height="72"><h1>${esc(title)}</h1>${body}</main></body></html>`;
 }
 
 // ---- 路由 ----
 router.get('/play/:token/manifest.json', (req, res) => {
   const t = parseToken(req.params.token);
   if (!t) return res.status(404).json({ error: 'bad token' });
-  res.json({
-    name: '璃白冒險', short_name: '冒險', description: '你的冒險數據：錢包、稅單、持股、魚缸、牧場、農地、任務。',
-    start_url: `/play/${req.params.token}`, scope: `/play/${req.params.token}`,
-    display: 'standalone', orientation: 'portrait-primary',
-    background_color: '#fff5fa', theme_color: '#5865f2', lang: 'zh-Hant-TW',
+  const base = `/play/${req.params.token}`;
+  res.set('Cache-Control', 'no-cache');
+  res.type('application/manifest+json').send(JSON.stringify({
+    id: base, name: '璃白冒險', short_name: '璃白冒險',
+    description: '璃白Yu光管家的網頁版：採集、種田、魚缸、牧場、股市、背包與稅單，和 Discord 同步。',
+    start_url: `${base}#home`, scope: base,
+    display: 'standalone', display_override: ['standalone', 'minimal-ui'], orientation: 'portrait',
+    background_color: '#fff5fa', theme_color: '#fff5fa', lang: 'zh-Hant-TW', categories: ['games', 'entertainment'],
     icons: [
       { src: '/icon-192.png', sizes: '192x192', type: 'image/png', purpose: 'any' },
       { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'any' },
       { src: '/icon-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' }
+    ],
+    shortcuts: [
+      { name: '採集玩法', short_name: '玩法', url: `${base}#play`, icons: [{ src: '/icon-192.png', sizes: '192x192' }] },
+      { name: '魚缸／牧場／農地', short_name: '家園', url: `${base}#farm`, icons: [{ src: '/icon-192.png', sizes: '192x192' }] },
+      { name: '股市', short_name: '市場', url: `${base}#market`, icons: [{ src: '/icon-192.png', sizes: '192x192' }] }
     ]
-  });
+  }));
 });
 
 router.get('/play/:token', (req, res) => {
   const t = parseToken(req.params.token);
-  if (!t) return res.status(403).type('html').send('<h2 style="font-family:sans-serif">連結無效或已過期</h2><p>請回 Discord 用 <b>/家園網頁</b> 或 <b>/遊戲</b> 重新取得你的連結。</p>');
+  if (!t) return res.status(403).type('html').send(notice('連結無效或已過期', '<p>請回 Discord 用 <b>/遊戲</b> 或 <b>/家園網頁</b> 重新取得你的專屬連結。</p>'));
   const d = collect(t.gid, t.uid);
   res.set('Cache-Control', 'no-cache');
   res.type('html').send(render(d, req.params.token, String(req.query.msg || '').slice(0, 200), authedFor(req, t)));
@@ -439,7 +453,7 @@ router.get('/play/auth/callback', async (req, res) => {
   const forSpell = state.startsWith('spell.');
   const token = forSpell ? state.slice('spell.'.length) : state;
   const t = parseToken(token);
-  if (!t) return res.status(400).type('html').send('<h2 style="font-family:sans-serif">登入狀態無效</h2><p>請回 Discord 用 /遊戲 重新取得連結。</p>');
+  if (!t) return res.status(400).type('html').send(notice('登入狀態無效', '<p>請回 Discord 用 <b>/遊戲</b> 重新取得連結。</p>'));
   const code = req.query.code;
   const home = forSpell ? `/spell/${token}` : `/play/${token}`;
   const back = (m) => res.redirect(`${home}?msg=${encodeURIComponent(m)}`);
@@ -458,7 +472,7 @@ router.get('/play/auth/callback', async (req, res) => {
     const meRes = await fetch('https://discord.com/api/users/@me', { headers: { Authorization: `Bearer ${tok.access_token}` } });
     const me = await meRes.json();
     if (!me || !me.id) return back('讀不到 Discord 帳號，請再試一次。');
-    if (me.id !== t.uid) return res.status(403).type('html').send('<h2 style="font-family:sans-serif">帳號不符</h2><p>你登入的 Discord 帳號跟這個連結綁定的不是同一人，無法代為操作。請用自己的連結。</p>');
+    if (me.id !== t.uid) return res.status(403).type('html').send(notice('帳號不符', '<p>你登入的 Discord 帳號跟這個連結綁定的不是同一人，無法代為操作。請用自己的連結。</p>'));
     if (forSpell) {
       require('./spell').setSessionCookie(res, t.gid, t.uid);
       return res.redirect(home);
@@ -643,7 +657,7 @@ router.post('/play/:token/redeem', (req, res) => doAuthedActAsync(req, res, asyn
 }));
 
 router.get('/play', (req, res) => {
-  res.type('html').send('<h2 style="font-family:sans-serif">璃白冒險 App</h2><p>請回 Discord 用 <b>/遊戲</b>（或 /家園網頁）取得你的專屬連結，就能在手機上看自己的冒險數據，還能「加到主畫面」當 App 用。</p>');
+  res.type('html').send(notice('璃白冒險 App', '<p>在 Discord 輸入 <b>/遊戲</b>（或 /家園網頁），機器人會私訊你的專屬連結。</p><ol><li>打開連結就能看錢包、背包、魚缸、牧場、農地與股票</li><li>用 Discord 登入後，可以採集、種田、買賣股票</li><li>「加入主畫面」就能像 App 一樣使用，還能收推播</li></ol>'));
 });
 
 module.exports = router;

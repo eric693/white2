@@ -2,11 +2,12 @@
 //
 // 後台的內容是即時的（餘額、稅單、庫存），快取 API 回應只會讓管理員看到舊資料做錯決定，
 // 所以這裡刻意只快取靜態外殼（HTML/CSS/JS），/api/* 完全不碰。
-const SHELL = 'w2-shell-v42';
+const SHELL = 'w2-shell-v43';
 const SHELL_FILES = [
   '/', '/index.html', '/css/style.css',
   '/js/api.js', '/js/ui.js', '/js/helpers.js', '/js/table-tools.js', '/js/app.js',
-  '/manifest.json'
+  '/manifest.json',
+  '/play-app.css', '/play-app.js', '/play-offline.html', '/icon-192.png'
 ];
 
 self.addEventListener('install', (e) => {
@@ -55,6 +56,8 @@ self.addEventListener('fetch', (e) => {
         }
         return res;
       })
-      .catch(() => caches.match(e.request).then(hit => hit || caches.match('/index.html')))
+      // 玩家 App（/play）離線時：先給上次看過的那頁，沒有才給 App 專屬的離線頁，不要掉到後台首頁
+      .catch(() => caches.match(e.request, { ignoreSearch: url.pathname.startsWith('/play') }).then(hit =>
+        hit || (url.pathname.startsWith('/play') ? caches.match('/play-offline.html') : caches.match('/index.html'))))
   );
 });
