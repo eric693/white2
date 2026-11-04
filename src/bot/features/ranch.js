@@ -142,50 +142,41 @@ function intervalMs(a) {
 }
 // 結算：每單位獨立計時，成熟一單位就 +1（成熟一瓶就能收一瓶，不用等整批）；上限 max_accrue_days 天的量
 function accrue(gid, uid) {
+  // 牧場開到十幾萬格時，逐格在 JS 裡算再逐格寫回會把機器人卡住好幾秒
+  // （2026-11：一位玩家 156,000 格，同居每 5 分鐘代收一次就卡一次，玩家按 /農地、/種植 都沒反應）。
+  // 改成每種動物一句 SQL 在資料庫裡整批算完。算法跟以前完全一樣：
+  //   units  ＝ 經過時間 ÷ 產出間隔（整數除法）
+  //   gained ＝ units ×（1＋產量加成）取整，小數部分用機率補 1 —— 長期期望值剛好等於加成％
+  //   上限 cap ＝ 每日產量 × 可囤天數 ×（1＋加成）；滿了就把計時停在現在，收成後才重新開始
   const c = rcfg(gid);
   const now = Date.now();
-  const fb = facilityBonus(gid, uid, 'ranch');
   const speed = speedFor(gid, uid, 'ranch');               // 牧場等級＋家園加成 → 產出時間縮短 %
-  const yieldPct = fb.yield || 0;                          // 牧場等級 → 每次產出的量變多
-  const upd = db.prepare('UPDATE ranch_slots SET pending=?, last_produce_ms=? WHERE guild_id=? AND user_id=? AND slot=?');
-  let slots = [];
-  // 動物種類只有幾十種，格子卻可能有上千格 —— 每一格都回資料庫查一次同一隻動物
-  // 是白費的（N+1）。先快取起來，整個迴圈只查每種動物一次。
-  const animalCache = new Map();
-  const animalOf = (id) => {
-    if (!animalCache.has(id)) animalCache.set(id, animalById(gid, id));
-    return animalCache.get(id);
-  };
-  // 整批更新包成一個交易：沒包的話 1300 格就是 1300 次獨立提交，每次都要寫 WAL、
-  // 等 fsync —— 實測一位 1300 格的玩家光這裡就佔住 event loop 約 147ms，
-  // 而這段在 /收成、/牧場 與每 5 分鐘的排程都會跑到。
+  const pct = Math.max(0, Math.round(facilityBonus(gid, uid, 'ranch').yield || 0));   // 牧場等級 → 每次產出的量變多
+  // SELECT 與 UPDATE 包在同一個交易裡：last_produce_ms 是「已經結算到哪一刻」的指標，
+  // 兩個行程（管家排程與後台）各自讀到舊指標的話，同一段時間的產量會被加兩次。
   db.transaction(() => {
-    // SELECT 也要在交易裡：last_produce_ms 是「已經結算到哪一刻」的指標，
-    // 在交易外讀的話，兩個行程（管家的排程與後台／另一隻機器人）會各自讀到同一個
-    // 舊指標，然後各自把同一段時間的產量再加一次 —— 實測會多發幾百份。
-    slots = db.prepare('SELECT * FROM ranch_slots WHERE guild_id=? AND user_id=?').all(gid, uid);
-    for (const s of slots) {
-      const a = animalOf(s.animal_id);
+    // 從沒結算過的格子：計時從現在開始
+    db.prepare('UPDATE ranch_slots SET last_produce_ms=? WHERE guild_id=? AND user_id=? AND (last_produce_ms IS NULL OR last_produce_ms=0)')
+      .run(now, gid, uid);
+    const kinds = db.prepare('SELECT DISTINCT animal_id FROM ranch_slots WHERE guild_id=? AND user_id=?').all(gid, uid);
+    const upd = db.prepare(`
+      UPDATE ranch_slots SET
+        pending = MIN(@cap, pending
+          + (((@now - last_produce_ms) / @iv) * (100 + @pct)) / 100
+          + CASE WHEN (ABS(RANDOM()) % 100) < ((((@now - last_produce_ms) / @iv) * (100 + @pct)) % 100) THEN 1 ELSE 0 END),
+        last_produce_ms = CASE
+          WHEN pending + (((@now - last_produce_ms) / @iv) * (100 + @pct)) / 100 >= @cap THEN @now
+          ELSE last_produce_ms + ((@now - last_produce_ms) / @iv) * @iv END
+      WHERE guild_id = @gid AND user_id = @uid AND animal_id = @aid
+        AND @now - last_produce_ms >= @iv`);
+    for (const { animal_id } of kinds) {
+      const a = animalById(gid, animal_id);
       if (!a || a.guard_pct > 0) continue;                 // 看門動物不生產
-      if (!s.last_produce_ms) { upd.run(s.pending, now, gid, uid, s.slot); s.last_produce_ms = now; continue; }
-      const iv = applySpeed(intervalMs(a), speed);
-      const units = Math.floor((now - s.last_produce_ms) / iv);
-      if (units <= 0) continue;
-      // 產量加成：小數的部分用機率補一個，長期期望值剛好等於加成％。
-      // （舊寫法是 floor(units × 倍率)，units 通常是 1 → floor(1.35)=1，加成等於完全沒作用）
-      const rawGain = units * (1 + yieldPct / 100);
-      const gained = Math.max(units, Math.floor(rawGain) + (Math.random() < (rawGain % 1) ? 1 : 0));
-      // 上限也要先乘天數再套加成再取整，否則 floor(2 × 1.35)=2 跟沒加成一樣
-      const cap = Math.max(1, Math.floor(a.produce_per_day * Math.max(1, c.max_accrue_days) * (1 + yieldPct / 100)));
-      const pending = Math.min(cap, s.pending + gained);
-      const added = pending - s.pending;
-      // 未滿：時間往前推 added 個間隔（餘數保留）；已滿：計時暫停到現在，收成後才重新開始
-      const nextMs = pending >= cap ? now : s.last_produce_ms + units * iv;
-      upd.run(pending, nextMs, gid, uid, s.slot);
-      s.pending = pending; s.last_produce_ms = nextMs;
+      const iv = Math.max(1, Math.round(applySpeed(intervalMs(a), speed)));
+      const cap = Math.max(1, Math.floor(a.produce_per_day * Math.max(1, c.max_accrue_days) * (1 + pct / 100)));
+      upd.run({ cap, now, iv, pct, gid, uid, aid: animal_id });
     }
   })();
-  return slots;
 }
 // 某格下一單位成熟的 unix 毫秒（已滿或看門回 0）
 function nextReadyMs(gid, s) {
@@ -232,13 +223,15 @@ function harvest(gid, uid) {
     return animalCache.get(id);
   };
   db.transaction(() => {
-    const slots = db.prepare('SELECT * FROM ranch_slots WHERE guild_id=? AND user_id=? AND pending > 0').all(gid, uid);
-    if (!slots.length) return;
+    // 依動物種類在資料庫裡加總就好，不用把十幾萬列讀進來。
+    // 腐壞一份一份擲骰，跟「整批一起擲」在統計上完全相同（同機率的二項分佈相加還是二項分佈）。
+    const groups = db.prepare('SELECT animal_id, SUM(pending) n FROM ranch_slots WHERE guild_id=? AND user_id=? AND pending > 0 GROUP BY animal_id').all(gid, uid);
+    if (!groups.length) return;
     found = true;
-    for (const s of slots) {
-      const a = animalOf(s.animal_id);
+    for (const g of groups) {
+      const a = animalOf(g.animal_id);
       if (!a) continue;
-      let n = s.pending;
+      let n = g.n || 0;
       if (spoilPct > 0) { const bad = spoilCount(n, spoilPct); spoiled += bad; n -= bad; }
       if (n > 0) gained.set(a.product_item_id, (gained.get(a.product_item_id) || 0) + n);
     }
